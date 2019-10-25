@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+	"youmubot-osu",
+	"youmubot",
+]
