@@ -7,7 +7,8 @@ use serenity::{
 };
 use std::collections::HashSet;
 
-mod admin;
+pub mod admin;
+mod args;
 
 pub use admin::ADMIN_GROUP;
 

@@ -7,6 +7,7 @@ use serenity::{
 };
 
 mod commands;
+mod db;
 
 struct Handler;
 
@@ -29,6 +30,12 @@ fn main() {
         // Attempt to connect and set up a framework
         setup_framework(Client::new(token, Handler).expect("Cannot connect..."))
     };
+
+    // Setup initial data
+    db::setup_db(&mut client).expect("Setup db should succeed");
+
+    // Create handler threads
+    std::thread::spawn(commands::admin::watch_soft_bans(&mut client));
 
     println!("Starting...");
     if let Err(v) = client.start() {
