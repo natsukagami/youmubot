@@ -37,15 +37,15 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         )
     } else {
         let choices: Vec<_> = args.iter().map(|v| v.unwrap()).collect();
+        if choices.len() < 2 {
+            // Where are the choices?
+            msg.reply(
+                ctx,
+                "😒 Can't have a nice voting session if you only have one choice.",
+            )?;
+            return Ok(());
+        }
         if choices.len() > MAX_CHOICES {
-            if choices.len() < 2 {
-                // Where are the choices?
-                msg.reply(
-                    ctx,
-                    "😒 Can't have a nice voting session if you only have one choice.",
-                )?;
-                return Ok(());
-            }
             // Too many choices!
             msg.reply(
                 ctx,
