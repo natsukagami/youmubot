@@ -20,7 +20,6 @@ use votes::VOTE_COMMAND;
 group!({
     name: "fun",
     options: {
-        prefixes: ["fun", "f"],
         description: "Random commands",
     },
     commands: [roll, pick, name, vote],

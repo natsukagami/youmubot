@@ -16,7 +16,6 @@ group!({
     name: "admin",
     options: {
         only_in: "guilds",
-        prefixes: ["admin", "a"],
         description: "Administrative commands for the server.",
     },
     commands: [clean, ban, kick, soft_ban, soft_ban_init],
