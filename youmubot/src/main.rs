@@ -80,12 +80,20 @@ fn setup_framework(mut client: Client) -> Client {
                 }
             })
             .on_dispatch_error(|ctx, msg, error| {
-                if let DispatchError::Ratelimited(seconds) = error {
-                    let _ = msg.channel_id.say(
-                        &ctx.http,
-                        &format!("Try this again in {} seconds.", seconds),
-                    );
-                }
+                msg.reply(
+                    &ctx,
+                    &match error {
+                        DispatchError::Ratelimited(seconds) => format!(
+                            "⏳ You are being rate-limited! Try this again in **{} seconds**.",
+                            seconds
+                        ),
+                        DispatchError::NotEnoughArguments { min, given } => format!("😕 The command needs at least **{}** arguments, I only got **{}**!\nDid you know command arguments are separated with a slash (`/`)?", min, given),
+                        DispatchError::TooManyArguments { max, given } => format!("😕 I can only handle at most **{}** arguments, but I got **{}**!", max, given),
+                        DispatchError::OnlyForGuilds => format!("🔇 This command cannot be used in DMs."),
+                        _ => return,
+                    },
+                )
+                .unwrap(); // Invoke
             })
             // Set a function that's called whenever an attempted command-call's
             // command could not be found.
@@ -93,8 +101,8 @@ fn setup_framework(mut client: Client) -> Client {
                 println!("Could not find command named '{}'", unknown_command_name);
             })
             // Set a function that's called whenever a message is not a command.
-            .normal_message(|_, message| {
-                println!("Message is not a command '{}'", message.content);
+            .normal_message(|_, _| {
+                // println!("Message is not a command '{}'", message.content);
             })
             .bucket("voting", |c| {
                 c.delay(120 /* 2 minutes */).time_span(120).limit(1)
