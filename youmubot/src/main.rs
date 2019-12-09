@@ -96,8 +96,12 @@ fn setup_framework(mut client: Client) -> Client {
             .normal_message(|_, message| {
                 println!("Message is not a command '{}'", message.content);
             })
+            .bucket("voting", |c| {
+                c.delay(120 /* 2 minutes */).time_span(120).limit(1)
+            })
             // groups here
-            .group(&commands::ADMIN_GROUP),
+            .group(&commands::ADMIN_GROUP)
+            .group(&commands::FUN_GROUP),
     );
     client
 }

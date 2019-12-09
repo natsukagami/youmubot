@@ -2,7 +2,8 @@ pub use duration::Duration;
 
 mod duration {
     use chrono::Duration as StdDuration;
-    use serenity::framework::standard::CommandError as Error;
+    use std::fmt;
+    use String as Error;
     // Parse a single duration unit
     fn parse_duration_string(s: &str) -> Result<StdDuration, Error> {
         // We reject the empty case
@@ -28,12 +29,12 @@ mod duration {
                     (item, Some(v)) => Ok(ParseStep {
                         current_value: None,
                         current_duration: s.current_duration
-                            + match item {
+                            + match item.to_ascii_lowercase() {
                                 's' => StdDuration::seconds,
                                 'm' => StdDuration::minutes,
                                 'h' => StdDuration::hours,
-                                'D' => StdDuration::days,
-                                'W' => StdDuration::weeks,
+                                'd' => StdDuration::days,
+                                'w' => StdDuration::weeks,
                                 _ => return Err(Error::from("Not a valid duration")),
                             }(v as i64),
                     }),
@@ -61,6 +62,40 @@ mod duration {
     impl From<Duration> for StdDuration {
         fn from(d: Duration) -> Self {
             d.0
+        }
+    }
+
+    impl fmt::Display for Duration {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let d = &self.0;
+            // weeks
+            let weeks = d.num_weeks();
+            let days = d.num_days() - d.num_weeks() * 7;
+            let hours = d.num_hours() - d.num_days() * 24;
+            let minutes = d.num_minutes() - d.num_hours() * 60;
+            let seconds = d.num_seconds() - d.num_minutes() * 60;
+            let formats = [
+                (weeks, "week"),
+                (days, "day"),
+                (hours, "hour"),
+                (minutes, "minute"),
+                (seconds, "second"),
+            ];
+            let mut first = true;
+            for (val, counter) in formats.into_iter() {
+                if *val > 0 {
+                    write!(
+                        f,
+                        "{}{} {}{}",
+                        (if first { "" } else { " " }),
+                        val,
+                        counter,
+                        (if *val == 1 { "" } else { "s" })
+                    )?;
+                    first = false;
+                }
+            }
+            Ok(())
         }
     }
 

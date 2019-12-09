@@ -7,10 +7,13 @@ use serenity::{
 };
 use std::collections::HashSet;
 
-pub mod admin;
 mod args;
 
+pub mod admin;
+pub mod fun;
+
 pub use admin::ADMIN_GROUP;
+pub use fun::FUN_GROUP;
 
 // A help command
 #[help]

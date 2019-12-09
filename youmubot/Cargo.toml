@@ -11,6 +11,8 @@ serenity = "0.7"
 dotenv = "0.15"
 serde = { version = "1.0", features = ["derive"] }
 chrono = "0.4.9"
+rand = "0.7.2"
+static_assertions = "1.1.0"
 
 [dependencies.rustbreak]
 version = "2.0.0-rc3"
