@@ -33,6 +33,7 @@ group!({
 Note that only online/idle users in the channel are chosen from."]
 #[usage = "[title = the chosen one]"]
 #[example = "the strongest in Gensokyo"]
+#[bucket = "community"]
 #[max_args(1)]
 pub fn choose(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
     let title = if args.is_empty() {
