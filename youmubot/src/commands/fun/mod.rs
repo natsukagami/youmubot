@@ -14,17 +14,15 @@ use serenity::{
 
 mod images;
 mod names;
-mod votes;
 
 use images::*;
-use votes::VOTE_COMMAND;
 
 group!({
     name: "fun",
     options: {
         description: "Random commands",
     },
-    commands: [roll, pick, name, vote, image, nsfw],
+    commands: [roll, pick, name, image, nsfw],
 });
 
 #[command]

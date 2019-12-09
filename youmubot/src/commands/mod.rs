@@ -10,9 +10,11 @@ use std::collections::HashSet;
 mod args;
 
 pub mod admin;
+pub mod community;
 pub mod fun;
 
 pub use admin::ADMIN_GROUP;
+pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
 
 // A help command

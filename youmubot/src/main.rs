@@ -115,9 +115,13 @@ fn setup_framework(mut client: Client) -> Client {
                 c.delay(120 /* 2 minutes */).time_span(120).limit(1)
             })
             .bucket("images", |c| c.time_span(60).limit(2))
+            .bucket("community", |c| {
+                c.delay(30).time_span(30).limit(1)
+            })
             // groups here
             .group(&commands::ADMIN_GROUP)
-            .group(&commands::FUN_GROUP),
+            .group(&commands::FUN_GROUP)
+            .group(&commands::COMMUNITY_GROUP),
     );
     client
 }
