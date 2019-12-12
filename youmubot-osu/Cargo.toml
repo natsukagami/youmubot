@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 serenity = "0.7"
+chrono = "0.4.10"
