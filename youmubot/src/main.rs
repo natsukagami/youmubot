@@ -114,6 +114,7 @@ fn setup_framework(mut client: Client) -> Client {
             .bucket("voting", |c| {
                 c.delay(120 /* 2 minutes */).time_span(120).limit(1)
             })
+            .bucket("images", |c| c.time_span(60).limit(2))
             // groups here
             .group(&commands::ADMIN_GROUP)
             .group(&commands::FUN_GROUP),

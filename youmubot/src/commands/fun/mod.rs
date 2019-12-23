@@ -12,9 +12,11 @@ use serenity::{
     utils::MessageBuilder,
 };
 
+mod images;
 mod names;
 mod votes;
 
+use images::*;
 use votes::VOTE_COMMAND;
 
 group!({
@@ -22,7 +24,7 @@ group!({
     options: {
         description: "Random commands",
     },
-    commands: [roll, pick, name, vote],
+    commands: [roll, pick, name, vote, image, nsfw],
 });
 
 #[command]
