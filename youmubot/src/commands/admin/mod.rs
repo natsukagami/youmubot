@@ -4,7 +4,10 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::{channel::Message, id::UserId},
+    model::{
+        channel::{Channel, Message},
+        id::UserId,
+    },
 };
 use soft_ban::{SOFT_BAN_COMMAND, SOFT_BAN_INIT_COMMAND};
 use std::{thread::sleep, time::Duration};
@@ -15,7 +18,6 @@ pub use soft_ban::watch_soft_bans;
 group!({
     name: "admin",
     options: {
-        only_in: "guilds",
         description: "Administrative commands for the server.",
     },
     commands: [clean, ban, kick, soft_ban, soft_ban_init],
@@ -24,7 +26,7 @@ group!({
 #[command]
 #[aliases("cleanall")]
 #[required_permissions(MANAGE_MESSAGES)]
-#[description = "Clean at most X latest messages from the current channel. Defaults to 10."]
+#[description = "Clean at most X latest messages from the current channel (only clean Youmu's messages in DMs). Defaults to 10."]
 #[usage = "clean 50"]
 #[min_args(0)]
 #[max_args(1)]
@@ -33,11 +35,25 @@ fn clean(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let messages = msg
         .channel_id
         .messages(&ctx.http, |b| b.before(msg.id).limit(limit))?;
-    msg.channel_id.delete_messages(&ctx.http, messages.iter())?;
+    let channel = msg.channel_id.to_channel(&ctx)?;
+    match &channel {
+        Channel::Private(_) | Channel::Group(_) => {
+            let self_id = ctx.http.get_current_application_info()?.id;
+            messages
+                .into_iter()
+                .filter(|v| v.author.id == self_id)
+                .try_for_each(|m| m.delete(&ctx))?;
+        }
+        _ => {
+            msg.channel_id
+                .delete_messages(&ctx.http, messages.into_iter())?;
+        }
+    };
     msg.react(&ctx, "🌋")?;
-
-    sleep(Duration::from_secs(2));
-    msg.delete(&ctx)?;
+    if let Channel::Guild(_) = &channel {
+        sleep(Duration::from_secs(2));
+        msg.delete(&ctx)?;
+    }
 
     Ok(())
 }
@@ -48,6 +64,7 @@ fn clean(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 #[usage = "ban user#1234 spam"]
 #[min_args(1)]
 #[max_args(2)]
+#[only_in("guilds")]
 fn ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user = args.single::<UserId>()?.to_user(&ctx)?;
     let reason = args
@@ -73,6 +90,7 @@ fn ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 #[usage = "kick user#1234 spam"]
 #[min_args(1)]
 #[max_args(2)]
+#[only_in("guilds")]
 fn kick(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user = args.single::<UserId>()?.to_user(&ctx)?;
     let reason = args

@@ -12,17 +12,17 @@ use serenity::{
     utils::MessageBuilder,
 };
 
+mod images;
 mod names;
-mod votes;
 
-use votes::VOTE_COMMAND;
+use images::*;
 
 group!({
     name: "fun",
     options: {
         description: "Random commands",
     },
-    commands: [roll, pick, name, vote],
+    commands: [roll, pick, name, image, nsfw],
 });
 
 #[command]

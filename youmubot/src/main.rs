@@ -1,5 +1,6 @@
 use dotenv;
 use dotenv::var;
+use reqwest;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
     model::gateway,
@@ -8,6 +9,7 @@ use serenity::{
 
 mod commands;
 mod db;
+mod http;
 
 struct Handler;
 
@@ -33,6 +35,11 @@ fn main() {
 
     // Setup initial data
     db::setup_db(&mut client).expect("Setup db should succeed");
+    // Setup shared instances of things
+    {
+        let mut data = client.data.write();
+        data.insert::<http::HTTP>(reqwest::Client::new());
+    }
 
     // Create handler threads
     std::thread::spawn(commands::admin::watch_soft_bans(&mut client));
@@ -107,9 +114,14 @@ fn setup_framework(mut client: Client) -> Client {
             .bucket("voting", |c| {
                 c.delay(120 /* 2 minutes */).time_span(120).limit(1)
             })
+            .bucket("images", |c| c.time_span(60).limit(2))
+            .bucket("community", |c| {
+                c.delay(30).time_span(30).limit(1)
+            })
             // groups here
             .group(&commands::ADMIN_GROUP)
-            .group(&commands::FUN_GROUP),
+            .group(&commands::FUN_GROUP)
+            .group(&commands::COMMUNITY_GROUP),
     );
     client
 }
