@@ -30,11 +30,8 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         return Ok(());
     }
     let question = args.single::<String>()?;
-    let (choices, reactions) = if args.is_empty() {
-        (
-            vec!["Yes! 😍".to_owned(), "No! 🤢".to_owned()],
-            vec!["😍", "🤢"],
-        )
+    let choices = if args.is_empty() {
+        vec![("😍", "Yes! 😍".to_owned()), ("🤢", "No! 🤢".to_owned())]
     } else {
         let choices: Vec<_> = args.iter().map(|v| v.unwrap()).collect();
         if choices.len() < 2 {
@@ -57,14 +54,15 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             return Ok(());
         }
 
-        let reactions = pick_n_reactions(choices.len())?;
-        (choices, reactions)
+        pick_n_reactions(choices.len())?
+            .into_iter()
+            .zip(choices.into_iter())
+            .collect()
     };
 
     let fields: Vec<_> = {
         choices
             .iter()
-            .zip(reactions.iter())
             .map(|(choice, reaction)| {
                 (
                     MessageBuilder::new().push_bold_safe(choice).build(),
@@ -92,12 +90,14 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     })?;
     msg.delete(&ctx)?;
     // React on all the choices
-    reactions.iter().try_for_each(|v| panel.react(&ctx, *v))?;
+    choices
+        .iter()
+        .try_for_each(|(v, _)| panel.react(&ctx, *v))?;
 
     // Start sleeping
     thread::sleep(duration.to_std()?);
 
-    let result = collect_reactions(ctx, panel, &reactions, &choices)?;
+    let result = collect_reactions(ctx, &panel, &choices)?;
     if result.len() == 0 {
         msg.reply(
             &ctx,
@@ -136,7 +136,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             })
         })?;
     }
-    msg.delete(&ctx)?;
+    panel.delete(&ctx)?;
 
     Ok(())
     // unimplemented!();
@@ -145,41 +145,33 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 // Collect reactions and store them as a map from choice to
 fn collect_reactions<'a>(
     ctx: &mut Context,
-    msg: Message,
-    reaction_emojis: &[&'static str],
-    choices: &'a [String],
+    msg: &Message,
+    choices: &'a [(&'static str, String)],
 ) -> Result<Vec<(&'a str, Vec<UserId>)>, Error> {
     // Get a brand new version of the Message
     let reactions = msg.channel_id.message(&ctx, msg.id)?.reactions;
-    let reaction_to_choice: Map<_, _> = reaction_emojis
+    let reaction_to_choice: Map<_, _> = choices.into_iter().map(|r| (r.0, &r.1)).collect();
+    let mut vec: Vec<(&str, Vec<UserId>)> = Vec::new();
+    reactions
         .into_iter()
-        .zip(choices.into_iter())
-        .collect();
-    let result: Result<Vec<_>, Error> = {
-        let mut vec: Vec<(&str, Vec<UserId>)> = Vec::new();
-        reactions
-            .into_iter()
-            .filter_map(|r| {
-                if let ReactionType::Unicode(ref v) = r.reaction_type {
-                    reaction_to_choice
-                        .get(&&v[..])
-                        .cloned()
-                        .filter(|_| r.count > 1)
-                        .map(|choice| (r.clone(), choice))
-                } else {
-                    None
-                }
-            })
-            .try_for_each(|(r, choice)| -> Result<_, Error> {
-                let users = collect_reaction_users(ctx, &msg, &r)?;
-                vec.push((choice, users));
-                Ok(())
-            })?;
-        vec.sort_by(|(_, b): &(_, Vec<_>), (_, d)| d.len().cmp(&b.len()));
-        Ok(vec)
-    };
-    let result = result?;
-    Ok(result)
+        .filter_map(|r| {
+            if let ReactionType::Unicode(ref v) = r.reaction_type {
+                reaction_to_choice
+                    .get(&&v[..])
+                    .cloned()
+                    .filter(|_| r.count > 1)
+                    .map(|choice| (r.clone(), choice))
+            } else {
+                None
+            }
+        })
+        .try_for_each(|(r, choice)| -> Result<_, Error> {
+            let users = collect_reaction_users(ctx, &msg, &r)?;
+            vec.push((choice, users));
+            Ok(())
+        })?;
+    vec.sort_by(|(_, b): &(_, Vec<_>), (_, d)| d.len().cmp(&b.len()));
+    Ok(vec)
 }
 
 fn collect_reaction_users(
