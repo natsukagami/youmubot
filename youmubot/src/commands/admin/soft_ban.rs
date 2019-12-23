@@ -20,6 +20,7 @@ use std::cmp::max;
 #[example = "user#1234 5s"]
 #[min_args(1)]
 #[max_args(2)]
+#[only_in("guilds")]
 pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user = args.single::<UserId>()?.to_user(&ctx)?;
     let duration = if args.is_empty() {
@@ -84,6 +85,7 @@ pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResu
 #[description = "Sets up the soft-ban command. This command can only be run once.\nThe soft-ban command assigns a role, temporarily, to a user."]
 #[usage = "{soft_ban_role_id}"]
 #[num_args(1)]
+#[only_in("guilds")]
 pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let role_id = args.single::<RoleId>()?;
     let guild = msg.guild(&ctx).ok_or(Error::from("Guild-only command"))?;
