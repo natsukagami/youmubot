@@ -7,35 +7,17 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'youmubot-osu'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=youmubot-osu",
-                    "--package=youmubot-osu"
-                ],
-                "filter": {
-                    "name": "youmubot-osu",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'youmubot-osu'",
+            "name": "Debug unit tests in library 'youmubot-osu'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=youmubot-osu",
+                    "--lib",
                     "--package=youmubot-osu"
                 ],
                 "filter": {
                     "name": "youmubot-osu",
-                    "kind": "bin"
+                    "kind": "lib"
                 }
             },
             "args": [],
