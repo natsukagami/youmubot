@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use std::string::ToString;
+use std::fmt;
 
 pub mod deser;
 pub(crate) mod raw;
@@ -13,6 +13,16 @@ pub enum ApprovalStatus {
     Pending,
     WIP,
     Graveyarded,
+}
+
+impl fmt::Display for ApprovalStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let ApprovalStatus::Ranked(ref d) = self {
+            write!(f, "Ranked on {}", d.format("%F %T"))
+        } else {
+            write!(f, "{:?}", self)
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -46,6 +56,17 @@ pub enum Genre {
     Electronic,
 }
 
+impl fmt::Display for Genre {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Genre::*;
+        match self {
+            VideoGame => write!(f, "Video Game"),
+            HipHop => write!(f, "Hip Hop"),
+            v => write!(f, "{:?}", v),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Language {
     Any,
@@ -61,6 +82,13 @@ pub enum Language {
     Spanish,
     Italian,
 }
+
+impl fmt::Display for Language {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Std,
@@ -69,8 +97,8 @@ pub enum Mode {
     Mania,
 }
 
-impl std::fmt::Display for Mode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Mode::*;
         write!(
             f,

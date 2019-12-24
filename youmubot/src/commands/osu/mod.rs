@@ -3,9 +3,9 @@ use crate::http;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serenity::{
-    builder::CreateEmbed,
-    framework::standard::{macros::group, CommandResult},
-    model::{channel::Message, id::ChannelId},
+    builder::{CreateEmbed, CreateMessage},
+    framework::standard::{macros::group, CommandError as Error, CommandResult},
+    model::channel::Message,
     prelude::*,
     utils::MessageBuilder,
 };
@@ -33,20 +33,45 @@ lazy_static! {
 }
 
 pub fn hook(ctx: &mut Context, msg: &Message) -> () {
-    Some(msg)
-        .filter(|&m| !m.author.bot) // Don't react to bot messages
-        .map(|m| {
-            if let Err(v) = handle_old_links(ctx, &m.content, m.channel_id) {
-                println!("Error on old link handling: {:?}", v);
+    if msg.author.bot {
+        return;
+    }
+    let mut v = move || -> CommandResult {
+        let old_links = handle_old_links(ctx, &msg.content)?;
+        let new_links = handle_new_links(ctx, &msg.content)?;
+        for l in old_links.into_iter().chain(new_links.into_iter()) {
+            if let Err(v) = msg.channel_id.send_message(&ctx, |m| match l.embed {
+                EmbedType::Beatmap(b) => handle_beatmap(b, l.link, l.mode, l.mods, m),
+                EmbedType::Beatmapset(b) => handle_beatmapset(b, l.link, l.mode, l.mods, m),
+            }) {
+                println!("Error in osu! hook: {:?}", v)
             }
-        });
+        }
+        Ok(())
+    };
+    if let Err(v) = v() {
+        println!("Error in osu! hook: {:?}", v)
+    }
 }
 
-fn handle_old_links(ctx: &mut Context, content: impl AsRef<str>, ch: ChannelId) -> CommandResult {
+enum EmbedType {
+    Beatmap(Beatmap),
+    Beatmapset(Vec<Beatmap>),
+}
+
+struct ToPrint<'a> {
+    embed: EmbedType,
+    link: &'a str,
+    mode: Option<Mode>,
+    mods: Option<&'a str>,
+}
+
+fn handle_old_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPrint<'a>>, Error> {
     let data = ctx.data.write();
     let reqwest = data.get::<http::HTTP>().unwrap();
     let osu = data.get::<http::Osu>().unwrap();
-    for capture in OLD_LINK_REGEX.captures_iter(content.as_ref()) {
+    let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
+    for capture in OLD_LINK_REGEX.captures_iter(content) {
         let req_type = capture.name("link_type").unwrap().as_str();
         let req = match req_type {
             "b" => BeatmapRequestKind::Beatmap(capture["id"].parse()?),
@@ -66,46 +91,118 @@ fn handle_old_links(ctx: &mut Context, content: impl AsRef<str>, ch: ChannelId) 
                     _ => return None,
                 })
             });
-        let mut beatmaps = osu.beatmaps(reqwest, req, |v| match mode {
+        let beatmaps = osu.beatmaps(reqwest, req, |v| match mode {
             Some(m) => v.mode(m, true),
             None => v,
         })?;
         match req_type {
             "b" => {
-                for beatmap in beatmaps.iter() {
-                    if let Err(v) = ch.send_message(&ctx, |m| {
-                        m.content(
-                            MessageBuilder::new()
-                                .push("Beatmap information for ")
-                                .push_mono_safe(&capture[0])
-                                .build(),
-                        )
-                        .embed(|b| beatmap_embed(beatmap, mode.unwrap_or(beatmap.mode), b))
-                    }) {
-                        println!("Error on printing beatmap {}: {:?}", beatmap.beatmap_id, v);
-                    }
+                for b in beatmaps.into_iter() {
+                    to_prints.push(ToPrint {
+                        embed: EmbedType::Beatmap(b),
+                        link: capture.get(0).unwrap().as_str(),
+                        mode,
+                        mods: capture.name("mods").map(|v| v.as_str()),
+                    })
                 }
             }
-            "s" => {
-                beatmaps.sort_by(|a, b| {
-                    (mode.unwrap_or(a.mode) as u8, a.difficulty.stars)
-                        .partial_cmp(&(mode.unwrap_or(b.mode) as u8, b.difficulty.stars))
-                        .unwrap()
-                });
-                ch.send_message(&ctx, |m| {
-                    m.content(
-                        MessageBuilder::new()
-                            .push("Beatmapset information for ")
-                            .push_mono_safe(&capture[0])
-                            .build(),
-                    )
-                    .embed(|b| beatmapset_embed(&beatmaps, mode, b))
-                })?;
-            }
+            "s" => to_prints.push(ToPrint {
+                embed: EmbedType::Beatmapset(beatmaps),
+                link: capture.get(0).unwrap().as_str(),
+                mode,
+                mods: capture.name("mods").map(|v| v.as_str()),
+            }),
             _ => (),
         }
     }
-    Ok(())
+    Ok(to_prints)
+}
+
+fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPrint<'a>>, Error> {
+    let data = ctx.data.write();
+    let reqwest = data.get::<http::HTTP>().unwrap();
+    let osu = data.get::<http::Osu>().unwrap();
+    let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
+    for capture in NEW_LINK_REGEX.captures_iter(content) {
+        let mode = capture.name("mode").and_then(|v| {
+            Some(match v.as_str() {
+                "osu" => Mode::Std,
+                "taiko" => Mode::Taiko,
+                "fruits" => Mode::Catch,
+                "mania" => Mode::Mania,
+                _ => return None,
+            })
+        });
+        let mods = capture.name("mods").map(|v| v.as_str());
+        let link = capture.get(0).unwrap().as_str();
+        let req = match capture.name("beatmap_id") {
+            Some(ref v) => BeatmapRequestKind::Beatmap(v.as_str().parse()?),
+            None => {
+                BeatmapRequestKind::Beatmapset(capture.name("set_id").unwrap().as_str().parse()?)
+            }
+        };
+        let beatmaps = osu.beatmaps(reqwest, req, |v| match mode {
+            Some(m) => v.mode(m, true),
+            None => v,
+        })?;
+        match capture.name("beatmap_id") {
+            Some(_) => {
+                for beatmap in beatmaps.into_iter() {
+                    to_prints.push(ToPrint {
+                        embed: EmbedType::Beatmap(beatmap),
+                        link,
+                        mods,
+                        mode,
+                    })
+                }
+            }
+            None => to_prints.push(ToPrint {
+                embed: EmbedType::Beatmapset(beatmaps),
+                link,
+                mods,
+                mode,
+            }),
+        }
+    }
+    Ok(to_prints)
+}
+
+fn handle_beatmap<'a, 'b>(
+    beatmap: Beatmap,
+    link: &'_ str,
+    mode: Option<Mode>,
+    mods: Option<&'_ str>,
+    m: &'a mut CreateMessage<'b>,
+) -> &'a mut CreateMessage<'b> {
+    m.content(
+        MessageBuilder::new()
+            .push("Beatmap information for ")
+            .push_mono_safe(link)
+            .build(),
+    )
+    .embed(|b| beatmap_embed(&beatmap, mode.unwrap_or(beatmap.mode), b))
+}
+
+fn handle_beatmapset<'a, 'b>(
+    beatmaps: Vec<Beatmap>,
+    link: &'_ str,
+    mode: Option<Mode>,
+    mods: Option<&'_ str>,
+    m: &'a mut CreateMessage<'b>,
+) -> &'a mut CreateMessage<'b> {
+    let mut beatmaps = beatmaps;
+    beatmaps.sort_by(|a, b| {
+        (mode.unwrap_or(a.mode) as u8, a.difficulty.stars)
+            .partial_cmp(&(mode.unwrap_or(b.mode) as u8, b.difficulty.stars))
+            .unwrap()
+    });
+    m.content(
+        MessageBuilder::new()
+            .push("Beatmapset information for ")
+            .push_mono_safe(link)
+            .build(),
+    )
+    .embed(|b| beatmapset_embed(&beatmaps, mode, b))
 }
 
 const NEW_MODE_NAMES: [&'static str; 4] = ["osu", "taiko", "fruits", "mania"];
@@ -184,7 +281,7 @@ fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a mut
     )
     .description(
         MessageBuilder::new()
-            .push_line({
+            .push({
                 let link = format!("https://osu.ppy.sh/beatmapsets/{}/download", b.beatmap_id);
                 format!(
                     "Download: [[Link]]({}) [[No Video]]({}?noVideo=1)",
@@ -192,9 +289,14 @@ fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a mut
                 )
             })
             .push_line(format!(
-                "Beatmapset: https://osu.ppy.sh/beatmapsets/{}/#{}",
+                " [[Beatmapset]](https://osu.ppy.sh/beatmapsets/{}/#{})",
                 b.beatmapset_id, NEW_MODE_NAMES[b.mode as usize],
             ))
+            .push_line(&b.approval)
+            .push("Language: ")
+            .push_bold(&b.language)
+            .push(" | Genre: ")
+            .push_bold(&b.genre)
             .build(),
     )
 }
@@ -239,6 +341,11 @@ fn beatmapset_embed<'a>(
                     link, link
                 )
             })
+            .push_line(&b.approval)
+            .push("Language: ")
+            .push_bold(&b.language)
+            .push(" | Genre: ")
+            .push_bold(&b.genre)
             .build(),
     )
     .field(
@@ -264,7 +371,7 @@ fn beatmapset_embed<'a>(
     .footer(|f| {
         if too_many_diffs {
             f.text(format!(
-                "This map has {} diffs, we are showing the first {}.",
+                "This map has {} diffs, we are showing the last {}.",
                 bs.len(),
                 MAX_DIFFS
             ))
@@ -272,7 +379,7 @@ fn beatmapset_embed<'a>(
             f
         }
     })
-    .fields(bs.iter().take(MAX_DIFFS).map(|b: &Beatmap| {
+    .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
         (
             format!("[{}]", b.difficulty_name),
             MessageBuilder::new()
