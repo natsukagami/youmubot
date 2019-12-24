@@ -25,15 +25,15 @@ impl<'de> Deserialize<'de> for Beatmap {
             bpm: parse_from_str(&raw.bpm)?,
             creator: raw.creator,
             creator_id: parse_from_str(&raw.creator_id)?,
-            source: raw.source,
+            source: raw.source.filter(|v| !v.is_empty()),
             genre: parse_genre(&raw.genre_id)?,
             language: parse_language(&raw.language_id)?,
             tags: raw.tags.split_whitespace().map(|v| v.to_owned()).collect(),
             difficulty_name: raw.version,
             difficulty: Difficulty {
                 stars: parse_from_str(&raw.difficultyrating)?,
-                aim: parse_from_str(&raw.diff_aim)?,
-                speed: parse_from_str(&raw.diff_speed)?,
+                aim: raw.diff_aim.map(parse_from_str).transpose()?,
+                speed: raw.diff_speed.map(parse_from_str).transpose()?,
                 cs: parse_from_str(&raw.diff_size)?,
                 od: parse_from_str(&raw.diff_overall)?,
                 ar: parse_from_str(&raw.diff_approach)?,
@@ -41,7 +41,7 @@ impl<'de> Deserialize<'de> for Beatmap {
                 count_normal: parse_from_str(&raw.count_normal)?,
                 count_slider: parse_from_str(&raw.count_slider)?,
                 count_spinner: parse_from_str(&raw.count_spinner)?,
-                max_combo: parse_from_str(&raw.max_combo)?,
+                max_combo: raw.max_combo.map(parse_from_str).transpose()?,
             },
             drain_length: parse_duration(&raw.hit_length)?,
             total_length: parse_duration(&raw.total_length)?,
@@ -61,8 +61,8 @@ fn parse_mode<E: de::Error>(s: impl AsRef<str>) -> Result<Mode, E> {
     Ok(match t {
         0 => Std,
         1 => Taiko,
-        2 => Mania,
-        3 => Catch,
+        2 => Catch,
+        3 => Mania,
         _ => return Err(E::custom(format!("invalid value {} for mode", t))),
     })
 }
@@ -83,7 +83,7 @@ fn parse_language<E: de::Error>(s: impl AsRef<str>) -> Result<Language, E> {
         9 => Swedish,
         10 => Spanish,
         11 => Italian,
-        _ => return Err(E::custom(format!("Invalid value {} for language", t))),
+        _ => return Err(E::custom(format!("invalid value {} for language", t))),
     })
 }
 
@@ -101,7 +101,7 @@ fn parse_genre<E: de::Error>(s: impl AsRef<str>) -> Result<Genre, E> {
         7 => Novelty,
         9 => HipHop,
         10 => Electronic,
-        _ => return Err(E::custom(format!("Invalid value {} for genre", t))),
+        _ => return Err(E::custom(format!("invalid value {} for genre", t))),
     })
 }
 
@@ -110,14 +110,14 @@ fn parse_duration<E: de::Error>(s: impl AsRef<str>) -> Result<Duration, E> {
 }
 
 fn parse_from_str<T: FromStr, E: de::Error>(s: impl AsRef<str>) -> Result<T, E> {
-    T::from_str(s.as_ref()).map_err(|_| E::custom(format!("Invalid value {}", s.as_ref())))
+    T::from_str(s.as_ref()).map_err(|_| E::custom(format!("invalid value {}", s.as_ref())))
 }
 
 fn parse_bool<E: de::Error>(b: impl AsRef<str>) -> Result<bool, E> {
     match b.as_ref() {
         "1" => Ok(true),
         "0" => Ok(false),
-        _ => Err(E::custom("Invalid value for bool")),
+        _ => Err(E::custom("invalid value for bool")),
     }
 }
 
@@ -127,11 +127,15 @@ fn parse_approval_status<E: de::Error>(b: &raw::Beatmap) -> Result<ApprovalStatu
         "4" => Loved,
         "3" => Qualified,
         "2" => Approved,
-        "1" => Ranked(parse_date(&b.approved_date)?),
+        "1" => Ranked(parse_date(
+            b.approved_date
+                .as_ref()
+                .ok_or(E::custom("expected approved date got none"))?,
+        )?),
         "0" => Pending,
         "-1" => WIP,
         "-2" => Graveyarded,
-        _ => return Err(E::custom("Invalid value for approval status")),
+        _ => return Err(E::custom("invalid value for approval status")),
     })
 }
 
@@ -142,15 +146,15 @@ fn parse_date<E: de::Error>(date: impl AsRef<str>) -> Result<DateTime<Utc>, E> {
         date.as_ref(),
         (&[
             Item::Numeric(Numeric::Year, Pad::Zero),
-            Item::Literal("/"),
+            Item::Literal("-"),
             Item::Numeric(Numeric::Month, Pad::Zero),
-            Item::Literal("/"),
+            Item::Literal("-"),
             Item::Numeric(Numeric::Day, Pad::Zero),
             Item::Space(""),
             Item::Numeric(Numeric::Hour, Pad::Zero),
-            Item::Literal("-"),
+            Item::Literal(":"),
             Item::Numeric(Numeric::Minute, Pad::Zero),
-            Item::Literal("-"),
+            Item::Literal(":"),
             Item::Numeric(Numeric::Second, Pad::Zero),
         ])
             .iter(),

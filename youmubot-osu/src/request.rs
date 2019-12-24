@@ -15,9 +15,12 @@ impl<T: ToQuery> ToQuery for Option<T> {
     }
 }
 
-impl ToQuery for Mode {
+impl ToQuery for (Mode, bool) {
     fn to_query(&self) -> Vec<(&'static str, String)> {
-        vec![("m", (*self as u8).to_string())]
+        vec![
+            ("m", (self.0 as u8).to_string()),
+            ("a", (self.1 as u8).to_string()),
+        ]
     }
 }
 
@@ -74,27 +77,24 @@ pub mod builders {
     pub struct BeatmapRequestBuilder {
         kind: BeatmapRequestKind,
         since: Option<DateTime<Utc>>,
-        mode: Mode,
-        converted: bool,
+        mode: Option<(Mode, /* Converted */ bool)>,
     }
     impl BeatmapRequestBuilder {
         pub(crate) fn new(kind: BeatmapRequestKind) -> Self {
             BeatmapRequestBuilder {
                 kind,
                 since: None,
-                mode: Mode::Std,
-                converted: false,
+                mode: None,
             }
         }
 
-        pub fn since(&mut self, since: DateTime<Utc>) -> &Self {
+        pub fn since(&mut self, since: DateTime<Utc>) -> &mut Self {
             self.since = Some(since);
             self
         }
 
-        pub fn mode(&mut self, mode: Mode, converted: bool) -> &Self {
-            self.mode = mode;
-            self.converted = converted;
+        pub fn mode(&mut self, mode: Mode, converted: bool) -> &mut Self {
+            self.mode = Some((mode, converted));
             self
         }
 
@@ -104,14 +104,6 @@ pub mod builders {
                 .query(&self.kind.to_query())
                 .query(&self.since.map(|v| ("since", v)).to_query())
                 .query(&self.mode.to_query())
-                .query(
-                    &(if self.converted {
-                        Some(("a", "1".to_owned()))
-                    } else {
-                        None
-                    })
-                    .to_query(),
-                )
         }
     }
 }

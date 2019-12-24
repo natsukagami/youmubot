@@ -18,8 +18,8 @@ pub enum ApprovalStatus {
 #[derive(Debug)]
 pub struct Difficulty {
     pub stars: f64,
-    pub aim: f64,
-    pub speed: f64,
+    pub aim: Option<f64>,
+    pub speed: Option<f64>,
 
     pub cs: f64,
     pub od: f64,
@@ -29,7 +29,7 @@ pub struct Difficulty {
     pub count_normal: u64,
     pub count_slider: u64,
     pub count_spinner: u64,
-    pub max_combo: u64,
+    pub max_combo: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -61,17 +61,27 @@ pub enum Language {
     Spanish,
     Italian,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Std,
     Taiko,
-    Mania,
     Catch,
+    Mania,
 }
 
-impl ToString for Mode {
-    fn to_string(&self) -> String {
-        (*self as u64).to_string()
+impl std::fmt::Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Mode::*;
+        write!(
+            f,
+            "{}",
+            match self {
+                Std => "osu!",
+                Taiko => "osu!taiko",
+                Mania => "osu!mania",
+                Catch => "osu!catch",
+            }
+        )
     }
 }
 

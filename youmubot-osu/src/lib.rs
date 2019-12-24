@@ -2,6 +2,9 @@ pub mod models;
 
 pub mod request;
 
+#[cfg(test)]
+mod test;
+
 use models::*;
 use request::builders::*;
 use request::*;
@@ -25,13 +28,11 @@ impl Client {
         &self,
         client: &HTTPClient,
         kind: BeatmapRequestKind,
-        f: impl FnOnce(BeatmapRequestBuilder) -> BeatmapRequestBuilder,
+        f: impl FnOnce(&mut BeatmapRequestBuilder) -> &mut BeatmapRequestBuilder,
     ) -> Result<Vec<Beatmap>, Error> {
-        let res = f(BeatmapRequestBuilder::new(kind))
-            .build(client)
-            .query(&[("k", &self.key)])
-            .send()?
-            .json()?;
+        let mut r = BeatmapRequestBuilder::new(kind);
+        f(&mut r);
+        let res = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
         Ok(res)
     }
 }

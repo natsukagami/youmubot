@@ -12,6 +12,7 @@ mod args;
 pub mod admin;
 pub mod community;
 pub mod fun;
+pub mod osu;
 
 pub use admin::ADMIN_GROUP;
 pub use community::COMMUNITY_GROUP;

@@ -3,19 +3,26 @@ use dotenv::var;
 use reqwest;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
-    model::gateway,
+    model::{channel::Message, gateway},
     prelude::*,
 };
+use youmubot_osu::Client as OsuClient;
 
 mod commands;
 mod db;
 mod http;
+
+const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [commands::osu::hook];
 
 struct Handler;
 
 impl EventHandler for Handler {
     fn ready(&self, _: Context, ready: gateway::Ready) {
         println!("{} is connected!", ready.user.name);
+    }
+
+    fn message(&self, mut ctx: Context, message: Message) {
+        MESSAGE_HOOKS.iter().for_each(|f| f(&mut ctx, &message));
     }
 }
 
@@ -39,6 +46,9 @@ fn main() {
     {
         let mut data = client.data.write();
         data.insert::<http::HTTP>(reqwest::Client::new());
+        data.insert::<http::Osu>(OsuClient::new(
+            var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
+        ));
     }
 
     // Create handler threads

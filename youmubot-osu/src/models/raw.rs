@@ -1,10 +1,10 @@
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub(crate) struct Beatmap {
     pub approved: String,
     pub submit_date: String,
-    pub approved_date: String,
+    pub approved_date: Option<String>,
     pub last_update: String,
     pub artist: String,
     pub beatmap_id: String,
@@ -13,8 +13,8 @@ pub(crate) struct Beatmap {
     pub creator: String,
     pub creator_id: String,
     pub difficultyrating: String,
-    pub diff_aim: String,
-    pub diff_speed: String,
+    pub diff_aim: Option<String>,
+    pub diff_speed: Option<String>,
     pub diff_size: String,
     pub diff_overall: String,
     pub diff_approach: String,
@@ -36,7 +36,7 @@ pub(crate) struct Beatmap {
     pub count_normal: String,
     pub count_slider: String,
     pub count_spinner: String,
-    pub max_combo: String,
+    pub max_combo: Option<String>,
     pub download_unavailable: String,
     pub audio_unavailable: String,
 }
