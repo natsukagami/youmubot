@@ -17,6 +17,7 @@ pub mod osu;
 pub use admin::ADMIN_GROUP;
 pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
+pub use osu::OSU_GROUP;
 
 // A help command
 #[help]

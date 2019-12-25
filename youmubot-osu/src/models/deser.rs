@@ -30,6 +30,7 @@ impl<'de> Deserialize<'de> for User {
             count_sh: parse_from_str(&raw.count_rank_sh)?,
             count_a: parse_from_str(&raw.count_rank_a)?,
             rank: parse_from_str(&raw.pp_rank)?,
+            country_rank: parse_from_str(&raw.pp_country_rank)?,
             level: parse_from_str(&raw.level)?,
             pp: Some(parse_from_str(&raw.pp_raw)?).filter(|v| *v != 0.0),
             accuracy: parse_from_str(&raw.accuracy)?,

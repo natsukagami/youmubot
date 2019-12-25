@@ -175,6 +175,7 @@ pub struct User {
     pub events: Vec<UserEvent>,
     // Rankings
     pub rank: u64,
+    pub country_rank: u64,
     pub level: f64,
     pub pp: Option<f64>,
     pub accuracy: f64,

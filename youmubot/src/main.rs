@@ -131,7 +131,8 @@ fn setup_framework(mut client: Client) -> Client {
             // groups here
             .group(&commands::ADMIN_GROUP)
             .group(&commands::FUN_GROUP)
-            .group(&commands::COMMUNITY_GROUP),
+            .group(&commands::COMMUNITY_GROUP)
+            .group(&commands::OSU_GROUP)
     );
     client
 }
