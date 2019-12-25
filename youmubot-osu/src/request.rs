@@ -15,6 +15,12 @@ impl<T: ToQuery> ToQuery for Option<T> {
     }
 }
 
+impl ToQuery for Mode {
+    fn to_query(&self) -> Vec<(&'static str, String)> {
+        vec![("m", (*self as u8).to_string())]
+    }
+}
+
 impl ToQuery for (Mode, bool) {
     fn to_query(&self) -> Vec<(&'static str, String)> {
         vec![
@@ -104,6 +110,45 @@ pub mod builders {
                 .query(&self.kind.to_query())
                 .query(&self.since.map(|v| ("since", v)).to_query())
                 .query(&self.mode.to_query())
+        }
+    }
+
+    pub struct UserRequestBuilder {
+        user: UserID,
+        mode: Option<Mode>,
+        event_days: Option<u8>,
+    }
+
+    impl UserRequestBuilder {
+        pub(crate) fn new(user: UserID) -> Self {
+            UserRequestBuilder {
+                user,
+                mode: None,
+                event_days: None,
+            }
+        }
+
+        pub fn mode(&mut self, mode: Mode) -> &mut Self {
+            self.mode = Some(mode);
+            self
+        }
+
+        pub fn event_days(&mut self, event_days: u8) -> &mut Self {
+            self.event_days = Some(event_days).filter(|&v| v <= 31).or(self.event_days);
+            self
+        }
+
+        pub(crate) fn build(&self, client: &Client) -> RequestBuilder {
+            client
+                .get("https://osu.ppy.sh/api/get_user")
+                .query(&self.user.to_query())
+                .query(&self.mode.to_query())
+                .query(
+                    &self
+                        .event_days
+                        .map(|v| ("event_days", v.to_string()))
+                        .to_query(),
+                )
         }
     }
 }

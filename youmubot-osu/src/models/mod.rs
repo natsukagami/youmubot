@@ -176,7 +176,7 @@ pub struct User {
     // Rankings
     pub rank: u64,
     pub level: f64,
-    pub pp: Option<u64>,
+    pub pp: Option<f64>,
     pub accuracy: f64,
 }
 

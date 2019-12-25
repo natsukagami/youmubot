@@ -6,6 +6,44 @@ use chrono::{
 use serde::{de, Deserialize, Deserializer};
 use std::str::FromStr;
 
+impl<'de> Deserialize<'de> for User {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw: raw::User = raw::User::deserialize(deserializer)?;
+        Ok(User {
+            id: parse_from_str(&raw.user_id)?,
+            username: raw.username,
+            joined: parse_date(&raw.join_date)?,
+            country: raw.country,
+            count_300: parse_from_str(&raw.count300)?,
+            count_100: parse_from_str(&raw.count100)?,
+            count_50: parse_from_str(&raw.count50)?,
+            play_count: parse_from_str(&raw.playcount)?,
+            played_time: parse_duration(&raw.total_seconds_played)?,
+            ranked_score: parse_from_str(&raw.ranked_score)?,
+            total_score: parse_from_str(&raw.total_score)?,
+            count_ss: parse_from_str(&raw.count_rank_ss)?,
+            count_ssh: parse_from_str(&raw.count_rank_ssh)?,
+            count_s: parse_from_str(&raw.count_rank_s)?,
+            count_sh: parse_from_str(&raw.count_rank_sh)?,
+            count_a: parse_from_str(&raw.count_rank_a)?,
+            rank: parse_from_str(&raw.pp_rank)?,
+            level: parse_from_str(&raw.level)?,
+            pp: Some(parse_from_str(&raw.pp_raw)?).filter(|v| *v != 0.0),
+            accuracy: parse_from_str(&raw.accuracy)?,
+            events: {
+                let mut v = Vec::new();
+                for e in raw.events.into_iter() {
+                    v.push(parse_user_event(e)?);
+                }
+                v
+            },
+        })
+    }
+}
+
 impl<'de> Deserialize<'de> for Beatmap {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -53,6 +91,16 @@ impl<'de> Deserialize<'de> for Beatmap {
             pass_count: parse_from_str(&raw.passcount)?,
         })
     }
+}
+
+fn parse_user_event<E: de::Error>(s: raw::UserEvent) -> Result<UserEvent, E> {
+    Ok(UserEvent {
+        display_html: s.display_html,
+        beatmap_id: parse_from_str(&s.beatmap_id)?,
+        beatmapset_id: parse_from_str(&s.beatmapset_id)?,
+        date: parse_date(&s.date)?,
+        epic_factor: parse_from_str(&s.epicfactor)?,
+    })
 }
 
 fn parse_mode<E: de::Error>(s: impl AsRef<str>) -> Result<Mode, E> {

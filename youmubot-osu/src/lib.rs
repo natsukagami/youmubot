@@ -35,4 +35,16 @@ impl Client {
         let res = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
         Ok(res)
     }
+
+    pub fn user(
+        &self,
+        client: &HTTPClient,
+        user: UserID,
+        f: impl FnOnce(&mut UserRequestBuilder) -> &mut UserRequestBuilder,
+    ) -> Result<Option<User>, Error> {
+        let mut r = UserRequestBuilder::new(user);
+        f(&mut r);
+        let res: Vec<_> = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
+        Ok(res.into_iter().next())
+    }
 }

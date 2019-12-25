@@ -40,3 +40,38 @@ pub(crate) struct Beatmap {
     pub download_unavailable: String,
     pub audio_unavailable: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct User {
+    pub user_id: String,
+    pub username: String,
+    pub join_date: String,
+    pub count300: String,
+    pub count100: String,
+    pub count50: String,
+    pub playcount: String,
+    pub ranked_score: String,
+    pub total_score: String,
+    pub pp_rank: String,
+    pub level: String,
+    pub pp_raw: String,
+    pub accuracy: String,
+    pub count_rank_ss: String,
+    pub count_rank_ssh: String,
+    pub count_rank_s: String,
+    pub count_rank_sh: String,
+    pub count_rank_a: String,
+    pub country: String,
+    pub total_seconds_played: String,
+    pub pp_country_rank: String,
+    pub events: Vec<UserEvent>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct UserEvent {
+    pub display_html: String,
+    pub beatmap_id: String,
+    pub beatmapset_id: String,
+    pub date: String,
+    pub epicfactor: String,
+}
