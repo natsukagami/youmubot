@@ -1,4 +1,4 @@
-use crate::models::Mode;
+use crate::models::{Mode, Mods};
 use chrono::{DateTime, Utc};
 use reqwest::{Client, RequestBuilder};
 
@@ -12,6 +12,12 @@ impl<T: ToQuery> ToQuery for Option<T> {
             Some(ref v) => v.to_query(),
             None => vec![],
         }
+    }
+}
+
+impl ToQuery for Mods {
+    fn to_query(&self) -> Vec<(&'static str, String)> {
+        vec![("mods", format!("{}", self.bits()))]
     }
 }
 
@@ -151,19 +157,58 @@ pub mod builders {
                 )
         }
     }
+
+    pub struct ScoreRequestBuilder {
+        beatmap_id: u64,
+        user: Option<UserID>,
+        mode: Option<Mode>,
+        mods: Option<Mods>,
+        limit: Option<u8>,
+    }
+
+    impl ScoreRequestBuilder {
+        pub(crate) fn new(beatmap_id: u64) -> Self {
+            ScoreRequestBuilder {
+                beatmap_id,
+                user: None,
+                mode: None,
+                mods: None,
+                limit: None,
+            }
+        }
+
+        pub fn user(&mut self, u: UserID) -> &mut Self {
+            self.user = Some(u);
+            self
+        }
+
+        pub fn mode(&mut self, mode: Mode) -> &mut Self {
+            self.mode = Some(mode);
+            self
+        }
+
+        pub fn mods(&mut self, mods: Mods) -> &mut Self {
+            self.mods = Some(mods);
+            self
+        }
+
+        pub fn limit(&mut self, limit: u8) -> &mut Self {
+            self.limit = Some(limit).filter(|&v| v <= 100).or(self.limit);
+            self
+        }
+
+        pub(crate) fn build(&self, client: &Client) -> RequestBuilder {
+            client
+                .get("https://osu.ppy.sh/api/get_scores")
+                .query(&[("b", self.beatmap_id)])
+                .query(&self.user.to_query())
+                .query(&self.mode.to_query())
+                .query(&self.mods.to_query())
+                .query(&self.limit.map(|v| ("limit", v.to_string())).to_query())
+        }
+    }
 }
 
-pub struct UserRequest {
-    pub user: UserID,
-    pub mode: Option<Mode>,
-    pub event_days: Option<u8>,
-}
-pub struct ScoreRequest {
-    pub beatmap_id: u64,
-    pub user: Option<UserID>,
-    pub mode: Option<Mode>,
-    pub mods: u64, // Later
-}
 pub struct UserBestRequest {
     pub user: UserID,
     pub mode: Option<Mode>,

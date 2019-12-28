@@ -2,7 +2,10 @@ use chrono::{DateTime, Duration, Utc};
 use std::fmt;
 
 pub mod deser;
+pub mod mods;
 pub(crate) mod raw;
+
+pub use mods::Mods;
 
 #[derive(Debug)]
 pub enum ApprovalStatus {
@@ -146,6 +149,7 @@ pub struct Beatmap {
     pub pass_count: u64,
 }
 
+#[derive(Debug)]
 pub struct UserEvent {
     pub display_html: String,
     pub beatmap_id: u64,
@@ -154,6 +158,7 @@ pub struct UserEvent {
     pub epic_factor: u8,
 }
 
+#[derive(Debug)]
 pub struct User {
     pub id: u64,
     pub username: String,
@@ -181,6 +186,7 @@ pub struct User {
     pub accuracy: f64,
 }
 
+#[derive(Debug)]
 pub enum Rank {
     SS,
     SSH,
@@ -193,6 +199,31 @@ pub enum Rank {
     F,
 }
 
+impl std::str::FromStr for Rank {
+    type Err = String;
+    fn from_str(a: &str) -> Result<Self, Self::Err> {
+        Ok(match &a.to_uppercase()[..] {
+            "SS" => Rank::SS,
+            "SSH" => Rank::SSH,
+            "S" => Rank::S,
+            "SH" => Rank::SH,
+            "A" => Rank::A,
+            "B" => Rank::B,
+            "C" => Rank::C,
+            "D" => Rank::D,
+            "F" => Rank::F,
+            t => return Err(format!("Invalid value {}", t)),
+        })
+    }
+}
+
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Debug)]
 pub struct Score {
     pub id: u64,
     pub username: String,
@@ -203,7 +234,7 @@ pub struct Score {
     pub score: u64,
     pub pp: f64,
     pub rank: Rank,
-    pub mods: u64, // Later
+    pub mods: Mods, // Later
 
     pub count_300: u64,
     pub count_100: u64,

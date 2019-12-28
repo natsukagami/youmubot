@@ -47,4 +47,16 @@ impl Client {
         let res: Vec<_> = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
         Ok(res.into_iter().next())
     }
+
+    pub fn scores(
+        &self,
+        client: &HTTPClient,
+        beatmap_id: u64,
+        f: impl FnOnce(&mut ScoreRequestBuilder) -> &mut ScoreRequestBuilder,
+    ) -> Result<Vec<Score>, Error> {
+        let mut r = ScoreRequestBuilder::new(beatmap_id);
+        f(&mut r);
+        let res = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
+        Ok(res)
+    }
 }

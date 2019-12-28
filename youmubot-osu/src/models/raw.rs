@@ -75,3 +75,24 @@ pub(crate) struct UserEvent {
     pub date: String,
     pub epicfactor: String,
 }
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct Score {
+    pub score_id: String,
+    pub score: String,
+    pub username: String,
+    pub count300: String,
+    pub count100: String,
+    pub count50: String,
+    pub countmiss: String,
+    pub maxcombo: String,
+    pub countkatu: String,
+    pub countgeki: String,
+    pub perfect: String,
+    pub enabled_mods: String,
+    pub user_id: String,
+    pub date: String,
+    pub rank: String,
+    pub pp: String,
+    pub replay_available: String,
+}
