@@ -81,8 +81,9 @@ mod duration {
                 (minutes, "minute"),
                 (seconds, "second"),
             ];
+            let count = f.precision().unwrap_or(formats.len());
             let mut first = true;
-            for (val, counter) in formats.into_iter() {
+            for (val, counter) in formats.into_iter().skip_while(|(a, _)| *a == 0).take(count) {
                 if *val > 0 {
                     write!(
                         f,

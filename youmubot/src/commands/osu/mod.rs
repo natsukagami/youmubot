@@ -1,5 +1,6 @@
 use crate::commands::args::Duration;
 use crate::http;
+use chrono::Utc;
 use serenity::{
     builder::CreateEmbed,
     framework::standard::{
@@ -8,10 +9,11 @@ use serenity::{
     },
     model::channel::Message,
     prelude::*,
+    utils::MessageBuilder,
 };
 use youmubot_osu::{
-    models::{Mode, User},
-    request::UserID,
+    models::{Beatmap, Mode, Score, User},
+    request::{BeatmapRequestKind, UserID},
 };
 
 mod hook;
@@ -70,19 +72,34 @@ fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> Com
     let osu = data.get::<http::Osu>().unwrap();
     let user = osu.user(reqwest, UserID::Auto(username), |f| f.mode(mode))?;
     match user {
-        Some(u) => msg.channel_id.send_message(&ctx, |m| {
-            m.content(format!(
-                "{}: here is the user that you requested",
-                msg.author
-            ))
-            .embed(|m| user_embed(u, m))
-        }),
+        Some(u) => {
+            let best = osu
+                .user_best(reqwest, UserID::ID(u.id), |f| f.limit(1).mode(mode))?
+                .into_iter()
+                .next()
+                .map(|m| {
+                    osu.beatmaps(reqwest, BeatmapRequestKind::Beatmap(m.beatmap_id), |f| f)
+                        .map(|map| (m, map.into_iter().next().unwrap()))
+                })
+                .transpose()?;
+            msg.channel_id.send_message(&ctx, |m| {
+                m.content(format!(
+                    "{}: here is the user that you requested",
+                    msg.author
+                ))
+                .embed(|m| user_embed(u, best, m))
+            })
+        }
         None => msg.reply(&ctx, "🔍 user not found!"),
     }?;
     Ok(())
 }
 
-fn user_embed(u: User, m: &mut CreateEmbed) -> &mut CreateEmbed {
+fn user_embed<'a>(
+    u: User,
+    best: Option<(Score, Beatmap)>,
+    m: &'a mut CreateEmbed,
+) -> &'a mut CreateEmbed {
     m.title(u.username)
         .url(format!("https://osu.ppy.sh/users/{}", u.id))
         .color(0xffb6c1)
@@ -122,4 +139,24 @@ fn user_embed(u: User, m: &mut CreateEmbed) -> &mut CreateEmbed {
             ),
             false,
         )
+        .fields(best.map(|(v, map)| {
+            (
+                "Best Record",
+                MessageBuilder::new()
+                    .push_bold(format!("{:.2}pp", v.pp))
+                    .push(" - ")
+                    .push_line(format!("{:.1} ago", Duration(Utc::now() - v.date)))
+                    .push("on ")
+                    .push(format!(
+                        "[{} - {}]({})",
+                        MessageBuilder::new().push_bold_safe(&map.artist).build(),
+                        MessageBuilder::new().push_bold_safe(&map.title).build(),
+                        map.link()
+                    ))
+                    .push(format!(" [{}]", map.difficulty_name))
+                    .push(format!(" ({:.1}⭐)", map.difficulty.stars))
+                    .build(),
+                false,
+            )
+        }))
 }
