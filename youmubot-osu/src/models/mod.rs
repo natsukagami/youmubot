@@ -149,6 +149,18 @@ pub struct Beatmap {
     pub pass_count: u64,
 }
 
+const NEW_MODE_NAMES: [&'static str; 4] = ["osu", "taiko", "fruits", "mania"];
+
+impl Beatmap {
+    /// Gets a link pointing to the beatmap, in the new format.
+    pub fn link(&self) -> String {
+        format!(
+            "https://osu.ppy.sh/beatmapsets/{}#{}/{}",
+            self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize], self.beatmap_id
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct UserEvent {
     pub display_html: String,
@@ -203,8 +215,8 @@ impl std::str::FromStr for Rank {
     type Err = String;
     fn from_str(a: &str) -> Result<Self, Self::Err> {
         Ok(match &a.to_uppercase()[..] {
-            "SS" => Rank::SS,
-            "SSH" => Rank::SSH,
+            "SS" | "X" => Rank::SS,
+            "SSH" | "XH" => Rank::SSH,
             "S" => Rank::S,
             "SH" => Rank::SH,
             "A" => Rank::A,
@@ -225,11 +237,11 @@ impl fmt::Display for Rank {
 
 #[derive(Debug)]
 pub struct Score {
-    pub id: u64,
-    pub username: String,
+    pub id: Option<u64>, // No id if you fail
     pub user_id: u64,
     pub date: DateTime<Utc>,
     pub replay_available: bool,
+    pub beatmap_id: u64,
 
     pub score: u64,
     pub pp: f64,

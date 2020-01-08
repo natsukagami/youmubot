@@ -78,9 +78,9 @@ pub(crate) struct UserEvent {
 
 #[derive(Deserialize, Debug)]
 pub(crate) struct Score {
-    pub score_id: String,
+    pub score_id: Option<String>,
+    pub beatmap_id: Option<String>,
     pub score: String,
-    pub username: String,
     pub count300: String,
     pub count100: String,
     pub count50: String,

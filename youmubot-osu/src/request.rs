@@ -207,6 +207,50 @@ pub mod builders {
                 .query(&self.limit.map(|v| ("limit", v.to_string())).to_query())
         }
     }
+
+    pub(crate) enum UserScoreType {
+        Recent,
+        Best,
+    }
+
+    pub struct UserScoreRequestBuilder {
+        score_type: UserScoreType,
+        user: UserID,
+        mode: Option<Mode>,
+        limit: Option<u8>,
+    }
+
+    impl UserScoreRequestBuilder {
+        pub(crate) fn new(score_type: UserScoreType, user: UserID) -> Self {
+            UserScoreRequestBuilder {
+                score_type,
+                user,
+                mode: None,
+                limit: None,
+            }
+        }
+
+        pub fn mode(&mut self, m: Mode) -> &mut Self {
+            self.mode = Some(m);
+            self
+        }
+
+        pub fn limit(&mut self, limit: u8) -> &mut Self {
+            self.limit = Some(limit).filter(|&v| v <= 100).or(self.limit);
+            self
+        }
+
+        pub(crate) fn build(&self, client: &Client) -> RequestBuilder {
+            client
+                .get(match self.score_type {
+                    UserScoreType::Best => "https://osu.ppy.sh/api/get_user_best",
+                    UserScoreType::Recent => "https://osu.ppy.sh/api/get_user_recent"
+                })
+                .query(&self.user.to_query())
+                .query(&self.mode.to_query())
+                .query(&self.limit.map(|v| ("limit", v.to_string())).to_query())
+        }
+    }
 }
 
 pub struct UserBestRequest {

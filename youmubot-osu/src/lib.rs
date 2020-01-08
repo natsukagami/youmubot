@@ -24,6 +24,16 @@ impl Client {
         }
     }
 
+    fn build_request(
+        &self,
+        c: &HTTPClient,
+        r: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, Error> {
+        let v = r.query(&[("k", &self.key)]).build()?;
+        // println!("{}", v.url());
+        Ok(c.execute(v)?)
+    }
+
     pub fn beatmaps(
         &self,
         client: &HTTPClient,
@@ -32,7 +42,7 @@ impl Client {
     ) -> Result<Vec<Beatmap>, Error> {
         let mut r = BeatmapRequestBuilder::new(kind);
         f(&mut r);
-        let res = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
+        let res = self.build_request(client, r.build(client))?.json()?;
         Ok(res)
     }
 
@@ -44,7 +54,7 @@ impl Client {
     ) -> Result<Option<User>, Error> {
         let mut r = UserRequestBuilder::new(user);
         f(&mut r);
-        let res: Vec<_> = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
+        let res: Vec<_> = self.build_request(client, r.build(client))?.json()?;
         Ok(res.into_iter().next())
     }
 
@@ -56,7 +66,43 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
-        let res = r.build(client).query(&[("k", &self.key)]).send()?.json()?;
+        let mut res: Vec<Score> = self.build_request(client, r.build(client))?.json()?;
+
+        // with a scores request you need to fill the beatmap ids yourself
+        res.iter_mut().for_each(|v| {
+            v.beatmap_id = beatmap_id;
+        });
+        Ok(res)
+    }
+
+    pub fn user_best(
+        &self,
+        client: &HTTPClient,
+        user: UserID,
+        f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
+    ) -> Result<Vec<Score>, Error> {
+        self.user_scores(UserScoreType::Best, client, user, f)
+    }
+
+    pub fn user_recent(
+        &self,
+        client: &HTTPClient,
+        user: UserID,
+        f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
+    ) -> Result<Vec<Score>, Error> {
+        self.user_scores(UserScoreType::Recent, client, user, f)
+    }
+
+    fn user_scores(
+        &self,
+        u: UserScoreType,
+        client: &HTTPClient,
+        user: UserID,
+        f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
+    ) -> Result<Vec<Score>, Error> {
+        let mut r = UserScoreRequestBuilder::new(u, user);
+        f(&mut r);
+        let res = self.build_request(client, r.build(client))?.json()?;
         Ok(res)
     }
 }

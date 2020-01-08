@@ -13,15 +13,18 @@ impl<'de> Deserialize<'de> for Score {
     {
         let raw: raw::Score = raw::Score::deserialize(deserializer)?;
         Ok(Score {
-            id: parse_from_str(&raw.score_id)?,
-            username: raw.username,
+            id: raw.score_id.map(parse_from_str).transpose()?,
             user_id: parse_from_str(&raw.user_id)?,
             date: parse_date(&raw.date)?,
+            beatmap_id: raw.beatmap_id.map(parse_from_str).transpose()?.unwrap_or(0),
             replay_available: parse_bool(&raw.replay_available)?,
             score: parse_from_str(&raw.score)?,
             pp: parse_from_str(&raw.pp)?,
             rank: parse_from_str(&raw.rank)?,
-            mods: parse_from_str(&raw.enabled_mods)?,
+            mods: {
+                let v: u64 = parse_from_str(&raw.enabled_mods)?;
+                Mods::from_bits(v).unwrap_or(Mods::NOMOD)
+            },
             count_300: parse_from_str(&raw.count300)?,
             count_100: parse_from_str(&raw.count100)?,
             count_50: parse_from_str(&raw.count50)?,
