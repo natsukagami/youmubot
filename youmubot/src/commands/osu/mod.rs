@@ -1,11 +1,12 @@
 use crate::commands::args::Duration;
+use crate::db::{DBWriteGuard, OsuSavedUsers};
 use crate::http;
 use chrono::Utc;
 use serenity::{
     builder::CreateEmbed,
     framework::standard::{
         macros::{command, group},
-        Args, CommandResult,
+        Args, CommandError as Error, CommandResult,
     },
     model::channel::Message,
     prelude::*,
@@ -26,7 +27,7 @@ group!({
         prefix: "osu",
         description: "osu! related commands.",
     },
-    commands: [std, taiko, catch, mania],
+    commands: [std, taiko, catch, mania, save],
 });
 
 #[command]
@@ -65,9 +66,60 @@ pub fn mania(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     get_user(ctx, msg, args, Mode::Mania)
 }
 
-fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
-    let username = args.single::<String>()?;
-    let data = ctx.data.write();
+#[command]
+#[description = "Save the given username as your username."]
+#[usage = "[username or user_id]"]
+#[num_args(1)]
+pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+    let mut data = ctx.data.write();
+    let reqwest = data.get::<http::HTTP>().unwrap();
+    let osu = data.get::<http::Osu>().unwrap();
+
+    let user = args.single::<String>()?;
+    let user: Option<User> = osu.user(reqwest, UserID::Auto(user), |f| f)?;
+    match user {
+        Some(u) => {
+            let mut db: DBWriteGuard<_> = data
+                .get_mut::<OsuSavedUsers>()
+                .ok_or(Error::from("DB uninitialized"))?
+                .into();
+            let mut db = db.borrow_mut()?;
+
+            db.insert(msg.author.id, u.id);
+            msg.reply(
+                &ctx,
+                MessageBuilder::new()
+                    .push("user has been set to ")
+                    .push_mono_safe(u.username)
+                    .build(),
+            )?;
+        }
+        None => {
+            msg.reply(&ctx, "user not found...")?;
+        }
+    }
+    Ok(())
+}
+
+fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> CommandResult {
+    let mut data = ctx.data.write();
+    let username = match args.remains() {
+        Some(v) => v.to_owned(),
+        None => {
+            let db: DBWriteGuard<_> = data
+                .get_mut::<OsuSavedUsers>()
+                .ok_or(Error::from("DB uninitialized"))?
+                .into();
+            let db = db.borrow()?;
+            match db.get(&msg.author.id) {
+                Some(ref v) => v.to_string(),
+                None => {
+                    msg.reply(&ctx, "You have not saved any account.")?;
+                    return Ok(());
+                }
+            }
+        }
+    };
     let reqwest = data.get::<http::HTTP>().unwrap();
     let osu = data.get::<http::Osu>().unwrap();
     let user = osu.user(reqwest, UserID::Auto(username), |f| f.mode(mode))?;

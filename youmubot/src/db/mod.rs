@@ -35,6 +35,9 @@ where
 /// A list of SoftBans for all servers.
 pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
 
+/// Save the user IDs.
+pub type OsuSavedUsers = DB<HashMap<UserId, u64>>;
+
 /// Sets up all databases in the client.
 pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     let path: PathBuf = var("DBPATH").map(|v| PathBuf::from(v)).unwrap_or_else(|e| {
@@ -43,6 +46,7 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     });
     let mut data = client.data.write();
     SoftBans::insert_into(&mut *data, &path.join("soft_bans.ron"))?;
+    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.ron"))?;
 
     Ok(())
 }

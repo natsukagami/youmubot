@@ -30,7 +30,7 @@ impl Client {
         r: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, Error> {
         let v = r.query(&[("k", &self.key)]).build()?;
-        // println!("{}", v.url());
+        dbg!(v.url());
         Ok(c.execute(v)?)
     }
 
