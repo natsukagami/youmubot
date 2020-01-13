@@ -159,6 +159,14 @@ impl Beatmap {
             self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize], self.beatmap_id
         )
     }
+
+    /// Link to the cover image of the beatmap.
+    pub fn cover_url(&self) -> String {
+        format!(
+            "https://assets.ppy.sh/beatmaps/{}/covers/cover.jpg",
+            self.beatmapset_id
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -196,6 +204,16 @@ pub struct User {
     pub level: f64,
     pub pp: Option<f64>,
     pub accuracy: f64,
+}
+
+impl User {
+    pub fn link(&self) -> String {
+        format!("https://osu.ppy.sh/users/{}", self.id)
+    }
+
+    pub fn avatar_url(&self) -> String {
+        format!("https://a.ppy.sh/{}", self.id)
+    }
 }
 
 #[derive(Debug)]
@@ -244,7 +262,7 @@ pub struct Score {
     pub beatmap_id: u64,
 
     pub score: u64,
-    pub pp: f64,
+    pub pp: Option<f64>,
     pub rank: Rank,
     pub mods: Mods, // Later
 
@@ -256,4 +274,42 @@ pub struct Score {
     pub count_geki: u64,
     pub max_combo: u64,
     pub perfect: bool,
+}
+
+impl Score {
+    /// Given the play's mode, calculate the score's accuracy.
+    pub fn accuracy(&self, mode: Mode) -> f64 {
+        100.0
+            * match mode {
+                Mode::Std => {
+                    (6 * self.count_300 + 2 * self.count_100 + self.count_50) as f64
+                        / (6.0
+                            * (self.count_300 + self.count_100 + self.count_50 + self.count_miss)
+                                as f64)
+                }
+                Mode::Taiko => {
+                    (2 * self.count_300 + self.count_100) as f64
+                        / 2.0
+                        / (self.count_300 + self.count_100 + self.count_miss) as f64
+                }
+                Mode::Catch => {
+                    (self.count_300 + self.count_100) as f64
+                        / (self.count_300 + self.count_100 + self.count_miss + self.count_katu/* # of droplet misses */)
+                            as f64
+                }
+                Mode::Mania => {
+                    ((self.count_geki /* MAX */ + self.count_300) * 6
+                        + self.count_katu /* 200 */ * 4
+                        + self.count_100 * 2
+                        + self.count_50) as f64
+                        / 6.0
+                        / (self.count_geki
+                            + self.count_300
+                            + self.count_katu
+                            + self.count_100
+                            + self.count_50
+                            + self.count_miss) as f64
+                }
+            }
+    }
 }

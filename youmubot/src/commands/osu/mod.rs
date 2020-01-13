@@ -13,13 +13,15 @@ use serenity::{
     utils::MessageBuilder,
 };
 use youmubot_osu::{
-    models::{Beatmap, Mode, Score, User},
+    models::{Beatmap, Mode, Rank, Score, User},
     request::{BeatmapRequestKind, UserID},
+    Client as OsuClient,
 };
 
 mod hook;
 
 pub use hook::hook;
+use std::str::FromStr;
 
 group!({
     name: "osu",
@@ -27,7 +29,7 @@ group!({
         prefix: "osu",
         description: "osu! related commands.",
     },
-    commands: [std, taiko, catch, mania, save],
+    commands: [std, taiko, catch, mania, save, recent],
 });
 
 #[command]
@@ -101,6 +103,96 @@ pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
+struct ModeArg(Mode);
+
+impl FromStr for ModeArg {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(ModeArg(match s {
+            "std" => Mode::Std,
+            "taiko" => Mode::Taiko,
+            "catch" => Mode::Catch,
+            "mania" => Mode::Mania,
+            _ => return Err(Error::from(format!("Unknown mode {}", s))),
+        }))
+    }
+}
+
+#[command]
+#[description = "Gets an user's recent play"]
+#[usage = "#[the nth recent play = 1] / [mode (std, taiko, mania, catch) = std] / [username / user id = your saved id]"]
+#[example = "#1 / taiko / natsukagami"]
+#[max_args(3)]
+pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+    struct Nth(u8);
+
+    impl FromStr for Nth {
+        type Err = Error;
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            if !s.starts_with("#") {
+                Err(Error::from("Not an order"))
+            } else {
+                let v = s.split_at("#".len()).1.parse()?;
+                Ok(Nth(v))
+            }
+        }
+    }
+
+    let mut data = ctx.data.write();
+
+    let nth = args.single::<Nth>().unwrap_or(Nth(1)).0.min(50).max(1);
+    let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
+    let user = match args.single::<String>() {
+        Ok(v) => v,
+        Err(_) => {
+            let db: DBWriteGuard<_> = data
+                .get_mut::<OsuSavedUsers>()
+                .ok_or(Error::from("DB uninitialized"))?
+                .into();
+            let db = db.borrow()?;
+            match db.get(&msg.author.id) {
+                Some(ref v) => v.to_string(),
+                None => {
+                    msg.reply(&ctx, "You have not saved any account.")?;
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    dbg!((nth, &mode, &user, &args));
+
+    let reqwest = data.get::<http::HTTP>().unwrap();
+    let osu: &OsuClient = data.get::<http::Osu>().unwrap();
+    let user = osu
+        .user(reqwest, UserID::Auto(user), |f| f.mode(mode))?
+        .ok_or(Error::from("User not found"))?;
+    let recent_play = osu
+        .user_recent(reqwest, UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
+        .into_iter()
+        .last()
+        .ok_or(Error::from("No such play"))?;
+    let beatmap = osu
+        .beatmaps(
+            reqwest,
+            BeatmapRequestKind::Beatmap(recent_play.beatmap_id),
+            |f| f.mode(mode, true),
+        )?
+        .into_iter()
+        .next()
+        .unwrap();
+
+    msg.channel_id.send_message(&ctx, |m| {
+        m.content(format!(
+            "{}: here is the play that you requested",
+            msg.author
+        ))
+        .embed(|m| score_embed(&recent_play, &beatmap, &user, &mode, None, m))
+    })?;
+
+    Ok(())
+}
+
 fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> CommandResult {
     let mut data = ctx.data.write();
     let username = match args.remains() {
@@ -145,6 +237,78 @@ fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> Command
         None => msg.reply(&ctx, "🔍 user not found!"),
     }?;
     Ok(())
+}
+
+fn score_embed<'a>(
+    s: &Score,
+    b: &Beatmap,
+    u: &User,
+    mode: &Mode,
+    top_record: Option<u8>,
+    m: &'a mut CreateEmbed,
+) -> &'a mut CreateEmbed {
+    let accuracy = s.accuracy(*mode);
+    let score_line = match &s.rank {
+        Rank::SS | Rank::SSH => format!("SS"),
+        _ if s.perfect => format!("{:2}% FC", accuracy),
+        Rank::F => format!("{:.2}% {} combo [FAILED]", accuracy, s.max_combo),
+        v => format!("{:.2}% {} combo {} rank", accuracy, s.max_combo, v),
+    };
+    let score_line =
+        s.pp.map(|pp| format!("{} | {:2}pp", &score_line, pp))
+            .unwrap_or(score_line);
+    let top_record = top_record
+        .map(|v| format!("| #{} top record!", v))
+        .unwrap_or("".to_owned());
+    m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
+        .color(0xffb6c1)
+        .title(format!(
+            "{} | {} - {} [{}] {} ({:.2}\\*) by {} | {} {}",
+            u.username,
+            b.artist,
+            b.title,
+            b.difficulty_name,
+            s.mods,
+            b.difficulty.stars,
+            b.creator,
+            score_line,
+            top_record
+        ))
+        .description(format!("[[Beatmap]]({})", b.link()))
+        .image(b.cover_url())
+        .field(
+            "Beatmap",
+            format!("{} - {} [{}]", b.artist, b.title, b.difficulty_name),
+            false,
+        )
+        .field("Rank", &score_line, false)
+        .fields(s.pp.map(|pp| ("pp gained", format!("{:2}pp", pp), true)))
+        .field("Creator", &b.creator, true)
+        .field("Mode", mode.to_string(), true)
+        .field(
+            "Map stats",
+            MessageBuilder::new()
+                .push(format!("[[Link]]({})", b.link()))
+                .push(", ")
+                .push_bold(format!("{:.2}⭐", b.difficulty.stars))
+                .push(", ")
+                .push_bold_line(
+                    b.mode.to_string() + if b.mode == *mode { "" } else { " (Converted)" },
+                )
+                .push("CS")
+                .push_bold(format!("{:.1}", b.difficulty.cs))
+                .push(", AR")
+                .push_bold(format!("{:.1}", b.difficulty.ar))
+                .push(", OD")
+                .push_bold(format!("{:.1}", b.difficulty.od))
+                .push(", HP")
+                .push_bold(format!("{:.1}", b.difficulty.hp))
+                .push(", ⌛ ")
+                .push_bold(format!("{}", Duration(b.drain_length)))
+                .build(),
+            false,
+        )
+        .field("Played on", s.date.format("%F %T"), false)
 }
 
 fn user_embed<'a>(
@@ -195,7 +359,10 @@ fn user_embed<'a>(
             (
                 "Best Record",
                 MessageBuilder::new()
-                    .push_bold(format!("{:.2}pp", v.pp))
+                    .push_bold(format!(
+                        "{:.2}pp",
+                        v.pp.unwrap() /*Top record should have pp*/
+                    ))
                     .push(" - ")
                     .push_line(format!("{:.1} ago", Duration(Utc::now() - v.date)))
                     .push("on ")

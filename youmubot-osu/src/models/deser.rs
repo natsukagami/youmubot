@@ -17,9 +17,13 @@ impl<'de> Deserialize<'de> for Score {
             user_id: parse_from_str(&raw.user_id)?,
             date: parse_date(&raw.date)?,
             beatmap_id: raw.beatmap_id.map(parse_from_str).transpose()?.unwrap_or(0),
-            replay_available: parse_bool(&raw.replay_available)?,
+            replay_available: raw
+                .replay_available
+                .map(parse_bool)
+                .transpose()?
+                .unwrap_or(false),
             score: parse_from_str(&raw.score)?,
-            pp: parse_from_str(&raw.pp)?,
+            pp: raw.pp.map(parse_from_str).transpose()?,
             rank: parse_from_str(&raw.rank)?,
             mods: {
                 let v: u64 = parse_from_str(&raw.enabled_mods)?;

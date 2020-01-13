@@ -93,6 +93,6 @@ pub(crate) struct Score {
     pub user_id: String,
     pub date: String,
     pub rank: String,
-    pub pp: String,
-    pub replay_available: String,
+    pub pp: Option<String>,
+    pub replay_available: Option<String>,
 }
