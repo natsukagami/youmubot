@@ -320,9 +320,9 @@ fn score_embed<'a>(
                 .push_bold_line(
                     b.mode.to_string()
                         + if bm.is_converted() {
-                            ""
-                        } else {
                             " (Converted)"
+                        } else {
+                            ""
                         },
                 )
                 .push("CS")
