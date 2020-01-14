@@ -1,5 +1,4 @@
 use crate::commands::args::Duration as ParseDuration;
-use chrono::Duration;
 use serenity::framework::standard::CommandError as Error;
 use serenity::prelude::*;
 use serenity::{
@@ -12,6 +11,7 @@ use serenity::{
 };
 use std::collections::HashMap as Map;
 use std::thread;
+use std::time::Duration;
 
 #[command]
 #[description = "🎌 Cast a poll upon everyone and ask them for opinions!"]
@@ -25,7 +25,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let args = args.quoted();
     let _duration = args.single::<ParseDuration>()?;
     let duration = &_duration.0;
-    if *duration < Duration::minutes(2) || *duration > Duration::days(1) {
+    if *duration < Duration::from_secs(2 * 60) || *duration > Duration::from_secs(60 * 60 * 24) {
         msg.reply(ctx, format!("😒 Invalid duration ({}). The voting time should be between **2 minutes** and **1 day**.", _duration))?;
         return Ok(());
     }
@@ -95,7 +95,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .try_for_each(|(v, _)| panel.react(&ctx, *v))?;
 
     // Start sleeping
-    thread::sleep(duration.to_std()?);
+    thread::sleep(*duration);
 
     let result = collect_reactions(ctx, &panel, &choices)?;
     if result.len() == 0 {

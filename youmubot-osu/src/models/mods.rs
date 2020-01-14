@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 bitflags::bitflags! {
     /// The mods available to osu!
-    #[derive(std::default::Default)]
+    #[derive(std::default::Default, Serialize, Deserialize)]
     pub struct Mods: u64 {
         const NOMOD = 0;
         const NF = 1 << 0;

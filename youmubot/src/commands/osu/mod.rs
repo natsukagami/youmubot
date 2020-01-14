@@ -18,6 +18,7 @@ use youmubot_osu::{
     Client as OsuClient,
 };
 
+mod cache;
 mod hook;
 
 pub use hook::hook;
@@ -66,6 +67,25 @@ pub fn catch(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[max_args(1)]
 pub fn mania(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     get_user(ctx, msg, args, Mode::Mania)
+}
+
+pub(crate) struct BeatmapWithMode(pub Beatmap, pub Mode);
+
+impl BeatmapWithMode {
+    /// Whether this beatmap-with-mode is a converted beatmap.
+    fn is_converted(&self) -> bool {
+        self.0.mode != self.1
+    }
+
+    fn mode(&self) -> Mode {
+        self.1
+    }
+}
+
+impl AsRef<Beatmap> for BeatmapWithMode {
+    fn as_ref(&self) -> &Beatmap {
+        &self.0
+    }
 }
 
 #[command]
@@ -160,8 +180,6 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
         }
     };
 
-    dbg!((nth, &mode, &user, &args));
-
     let reqwest = data.get::<http::HTTP>().unwrap();
     let osu: &OsuClient = data.get::<http::Osu>().unwrap();
     let user = osu
@@ -180,6 +198,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
         )?
         .into_iter()
         .next()
+        .map(|v| BeatmapWithMode(v, mode))
         .unwrap();
 
     msg.channel_id.send_message(&ctx, |m| {
@@ -187,7 +206,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
             "{}: here is the play that you requested",
             msg.author
         ))
-        .embed(|m| score_embed(&recent_play, &beatmap, &user, &mode, None, m))
+        .embed(|m| score_embed(&recent_play, &beatmap, &user, None, m))
     })?;
 
     Ok(())
@@ -222,8 +241,10 @@ fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> Command
                 .into_iter()
                 .next()
                 .map(|m| {
-                    osu.beatmaps(reqwest, BeatmapRequestKind::Beatmap(m.beatmap_id), |f| f)
-                        .map(|map| (m, map.into_iter().next().unwrap()))
+                    osu.beatmaps(reqwest, BeatmapRequestKind::Beatmap(m.beatmap_id), |f| {
+                        f.mode(mode, true)
+                    })
+                    .map(|map| (m, BeatmapWithMode(map.into_iter().next().unwrap(), mode)))
                 })
                 .transpose()?;
             msg.channel_id.send_message(&ctx, |m| {
@@ -241,13 +262,14 @@ fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> Command
 
 fn score_embed<'a>(
     s: &Score,
-    b: &Beatmap,
+    bm: &BeatmapWithMode,
     u: &User,
-    mode: &Mode,
     top_record: Option<u8>,
     m: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
-    let accuracy = s.accuracy(*mode);
+    let mode = bm.mode();
+    let b = &bm.0;
+    let accuracy = s.accuracy(mode);
     let score_line = match &s.rank {
         Rank::SS | Rank::SSH => format!("SS"),
         _ if s.perfect => format!("{:2}% FC", accuracy),
@@ -293,7 +315,12 @@ fn score_embed<'a>(
                 .push_bold(format!("{:.2}⭐", b.difficulty.stars))
                 .push(", ")
                 .push_bold_line(
-                    b.mode.to_string() + if b.mode == *mode { "" } else { " (Converted)" },
+                    b.mode.to_string()
+                        + if bm.is_converted() {
+                            ""
+                        } else {
+                            " (Converted)"
+                        },
                 )
                 .push("CS")
                 .push_bold(format!("{:.1}", b.difficulty.cs))
@@ -313,7 +340,7 @@ fn score_embed<'a>(
 
 fn user_embed<'a>(
     u: User,
-    best: Option<(Score, Beatmap)>,
+    best: Option<(Score, BeatmapWithMode)>,
     m: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
     m.title(u.username)
@@ -356,6 +383,7 @@ fn user_embed<'a>(
             false,
         )
         .fields(best.map(|(v, map)| {
+            let map = map.0;
             (
                 "Best Record",
                 MessageBuilder::new()
@@ -364,7 +392,14 @@ fn user_embed<'a>(
                         v.pp.unwrap() /*Top record should have pp*/
                     ))
                     .push(" - ")
-                    .push_line(format!("{:.1} ago", Duration(Utc::now() - v.date)))
+                    .push_line(format!(
+                        "{:.1} ago",
+                        Duration(
+                            (Utc::now() - v.date)
+                                .to_std()
+                                .unwrap_or(std::time::Duration::from_secs(1))
+                        )
+                    ))
                     .push("on ")
                     .push(format!(
                         "[{} - {}]({})",

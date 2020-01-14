@@ -1,8 +1,8 @@
 pub use duration::Duration;
 
 mod duration {
-    use chrono::Duration as StdDuration;
     use std::fmt;
+    use std::time::Duration as StdDuration;
     use String as Error;
     // Parse a single duration unit
     fn parse_duration_string(s: &str) -> Result<StdDuration, Error> {
@@ -18,7 +18,7 @@ mod duration {
             .try_fold(
                 ParseStep {
                     current_value: None,
-                    current_duration: StdDuration::zero(),
+                    current_duration: StdDuration::from_secs(0),
                 },
                 |s, item| match (item, s.current_value) {
                     ('0'..='9', v) => Ok(ParseStep {
@@ -30,13 +30,13 @@ mod duration {
                         current_value: None,
                         current_duration: s.current_duration
                             + match item.to_ascii_lowercase() {
-                                's' => StdDuration::seconds,
-                                'm' => StdDuration::minutes,
-                                'h' => StdDuration::hours,
-                                'd' => StdDuration::days,
-                                'w' => StdDuration::weeks,
+                                's' => StdDuration::from_secs(1),
+                                'm' => StdDuration::from_secs(60),
+                                'h' => StdDuration::from_secs(60 * 60),
+                                'd' => StdDuration::from_secs(60 * 60 * 24),
+                                'w' => StdDuration::from_secs(60 * 60 * 24 * 7),
                                 _ => return Err(Error::from("Not a valid duration")),
-                            }(v as i64),
+                            } * (v as u32),
                     }),
                 },
             )
@@ -65,9 +65,27 @@ mod duration {
         }
     }
 
+    impl Duration {
+        fn num_weeks(&self) -> u64 {
+            self.0.as_secs() / (60 * 60 * 24 * 7)
+        }
+        fn num_days(&self) -> u64 {
+            self.0.as_secs() / (60 * 60 * 24)
+        }
+        fn num_hours(&self) -> u64 {
+            self.0.as_secs() / (60 * 60)
+        }
+        fn num_minutes(&self) -> u64 {
+            self.0.as_secs() / 60
+        }
+        fn num_seconds(&self) -> u64 {
+            self.0.as_secs()
+        }
+    }
+
     impl fmt::Display for Duration {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            let d = &self.0;
+            let d = self;
             // weeks
             let weeks = d.num_weeks();
             let days = d.num_days() - d.num_weeks() * 7;
@@ -103,17 +121,17 @@ mod duration {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use chrono::Duration as StdDuration;
+        use std::time::Duration as StdDuration;
         #[test]
         fn test_parse_success() {
             let tests = [
                 (
                     "2D2h1m",
-                    StdDuration::seconds(2 * 60 * 60 * 24 + 2 * 60 * 60 + 1 * 60),
+                    StdDuration::from_secs(2 * 60 * 60 * 24 + 2 * 60 * 60 + 1 * 60),
                 ),
                 (
                     "1W2D3h4m5s",
-                    StdDuration::seconds(
+                    StdDuration::from_secs(
                         1 * 7 * 24 * 60 * 60 + // 1W
                         2 * 24 * 60 * 60 + // 2D
                         3 * 60 * 60 + // 3h
@@ -123,7 +141,7 @@ mod duration {
                 ),
                 (
                     "1W2D3h4m5s6W",
-                    StdDuration::seconds(
+                    StdDuration::from_secs(
                         1 * 7 * 24 * 60 * 60 + // 1W
                         2 * 24 * 60 * 60 + // 2D
                         3 * 60 * 60  + // 3h

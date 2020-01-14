@@ -61,7 +61,7 @@ pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResu
                     msg.reply(&ctx, format!("⛓ Soft-banning user {}.", user.tag()))?;
                 }
                 Some(v) => {
-                    let until = Utc::now() + v.0;
+                    let until = Utc::now() + chrono::Duration::from_std(v.0)?;
                     let until = server_ban
                         .periodical_bans
                         .entry(user.id)

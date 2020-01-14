@@ -1,13 +1,15 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::time::Duration;
 
-pub mod deser;
 pub mod mods;
+pub mod parse;
 pub(crate) mod raw;
 
 pub use mods::Mods;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ApprovalStatus {
     Loved,
     Qualified,
@@ -28,7 +30,7 @@ impl fmt::Display for ApprovalStatus {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Difficulty {
     pub stars: f64,
     pub aim: Option<f64>,
@@ -45,7 +47,7 @@ pub struct Difficulty {
     pub max_combo: Option<u64>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize)]
 pub enum Genre {
     Any,
     Unspecified,
@@ -70,7 +72,7 @@ impl fmt::Display for Genre {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Language {
     Any,
     Other,
@@ -92,7 +94,7 @@ impl fmt::Display for Language {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mode {
     Std,
     Taiko,
@@ -116,7 +118,7 @@ impl fmt::Display for Mode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Beatmap {
     // Beatmapset info
     pub approval: ApprovalStatus,
@@ -169,7 +171,7 @@ impl Beatmap {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserEvent {
     pub display_html: String,
     pub beatmap_id: u64,
@@ -178,7 +180,7 @@ pub struct UserEvent {
     pub epic_factor: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct User {
     pub id: u64,
     pub username: String,
@@ -216,7 +218,7 @@ impl User {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub enum Rank {
     SS,
     SSH,
@@ -253,7 +255,7 @@ impl fmt::Display for Rank {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Score {
     pub id: Option<u64>, // No id if you fail
     pub user_id: u64,

@@ -1,17 +1,43 @@
 use super::*;
 use chrono::{
     format::{parse, Item, Numeric, Pad, Parsed},
-    DateTime, Duration, Utc,
+    DateTime, ParseError as ChronoParseError, Utc,
 };
-use serde::{de, Deserialize, Deserializer};
-use std::str::FromStr;
+use std::convert::TryFrom;
+use std::time::Duration;
+use std::{error::Error, fmt, str::FromStr};
 
-impl<'de> Deserialize<'de> for Score {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw: raw::Score = raw::Score::deserialize(deserializer)?;
+/// Errors that can be identified from parsing.
+#[derive(Debug)]
+pub enum ParseError {
+    InvalidValue { field: &'static str, value: String },
+    FromStr(String),
+    NoApprovalDate,
+    DateParseError(ChronoParseError),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use ParseError::*;
+        match self {
+            InvalidValue {
+                ref field,
+                ref value,
+            } => write!(f, "Invalid value `{}` for {}", value, field),
+            FromStr(ref s) => write!(f, "Invalid value `{}` parsing from string", s),
+            NoApprovalDate => write!(f, "Approval date expected but not found"),
+            DateParseError(ref r) => write!(f, "Error parsing date: {}", r),
+        }
+    }
+}
+
+impl Error for ParseError {}
+
+type ParseResult<T> = Result<T, ParseError>;
+
+impl TryFrom<raw::Score> for Score {
+    type Error = ParseError;
+    fn try_from(raw: raw::Score) -> Result<Self, Self::Error> {
         Ok(Score {
             id: raw.score_id.map(parse_from_str).transpose()?,
             user_id: parse_from_str(&raw.user_id)?,
@@ -41,12 +67,9 @@ impl<'de> Deserialize<'de> for Score {
     }
 }
 
-impl<'de> Deserialize<'de> for User {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw: raw::User = raw::User::deserialize(deserializer)?;
+impl TryFrom<raw::User> for User {
+    type Error = ParseError;
+    fn try_from(raw: raw::User) -> Result<Self, Self::Error> {
         Ok(User {
             id: parse_from_str(&raw.user_id)?,
             username: raw.username,
@@ -80,12 +103,9 @@ impl<'de> Deserialize<'de> for User {
     }
 }
 
-impl<'de> Deserialize<'de> for Beatmap {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw: raw::Beatmap = raw::Beatmap::deserialize(deserializer)?;
+impl TryFrom<raw::Beatmap> for Beatmap {
+    type Error = ParseError;
+    fn try_from(raw: raw::Beatmap) -> Result<Self, Self::Error> {
         Ok(Beatmap {
             approval: parse_approval_status(&raw)?,
             submit_date: parse_date(&raw.submit_date)?,
@@ -129,7 +149,7 @@ impl<'de> Deserialize<'de> for Beatmap {
     }
 }
 
-fn parse_user_event<E: de::Error>(s: raw::UserEvent) -> Result<UserEvent, E> {
+fn parse_user_event(s: raw::UserEvent) -> ParseResult<UserEvent> {
     Ok(UserEvent {
         display_html: s.display_html,
         beatmap_id: parse_from_str(&s.beatmap_id)?,
@@ -139,7 +159,7 @@ fn parse_user_event<E: de::Error>(s: raw::UserEvent) -> Result<UserEvent, E> {
     })
 }
 
-fn parse_mode<E: de::Error>(s: impl AsRef<str>) -> Result<Mode, E> {
+fn parse_mode(s: impl AsRef<str>) -> ParseResult<Mode> {
     let t: u8 = parse_from_str(s)?;
     use Mode::*;
     Ok(match t {
@@ -147,11 +167,16 @@ fn parse_mode<E: de::Error>(s: impl AsRef<str>) -> Result<Mode, E> {
         1 => Taiko,
         2 => Catch,
         3 => Mania,
-        _ => return Err(E::custom(format!("invalid value {} for mode", t))),
+        _ => {
+            return Err(ParseError::InvalidValue {
+                field: "mode",
+                value: t.to_string(),
+            })
+        }
     })
 }
 
-fn parse_language<E: de::Error>(s: impl AsRef<str>) -> Result<Language, E> {
+fn parse_language(s: impl AsRef<str>) -> ParseResult<Language> {
     let t: u8 = parse_from_str(s)?;
     use Language::*;
     Ok(match t {
@@ -167,11 +192,16 @@ fn parse_language<E: de::Error>(s: impl AsRef<str>) -> Result<Language, E> {
         9 => Swedish,
         10 => Spanish,
         11 => Italian,
-        _ => return Err(E::custom(format!("invalid value {} for language", t))),
+        _ => {
+            return Err(ParseError::InvalidValue {
+                field: "langugae",
+                value: t.to_string(),
+            })
+        }
     })
 }
 
-fn parse_genre<E: de::Error>(s: impl AsRef<str>) -> Result<Genre, E> {
+fn parse_genre(s: impl AsRef<str>) -> ParseResult<Genre> {
     let t: u8 = parse_from_str(s)?;
     use Genre::*;
     Ok(match t {
@@ -185,45 +215,57 @@ fn parse_genre<E: de::Error>(s: impl AsRef<str>) -> Result<Genre, E> {
         7 => Novelty,
         9 => HipHop,
         10 => Electronic,
-        _ => return Err(E::custom(format!("invalid value {} for genre", t))),
+        _ => {
+            return Err(ParseError::InvalidValue {
+                field: "genre",
+                value: t.to_string(),
+            })
+        }
     })
 }
 
-fn parse_duration<E: de::Error>(s: impl AsRef<str>) -> Result<Duration, E> {
-    Ok(Duration::seconds(parse_from_str(s)?))
+fn parse_duration(s: impl AsRef<str>) -> ParseResult<Duration> {
+    Ok(Duration::from_secs(parse_from_str(s)?))
 }
 
-fn parse_from_str<T: FromStr, E: de::Error>(s: impl AsRef<str>) -> Result<T, E> {
-    T::from_str(s.as_ref()).map_err(|_| E::custom(format!("invalid value {}", s.as_ref())))
+fn parse_from_str<T: FromStr>(s: impl AsRef<str>) -> ParseResult<T> {
+    let v = s.as_ref();
+    T::from_str(v).map_err(|_| ParseError::FromStr(v.to_owned()))
 }
 
-fn parse_bool<E: de::Error>(b: impl AsRef<str>) -> Result<bool, E> {
+fn parse_bool(b: impl AsRef<str>) -> ParseResult<bool> {
     match b.as_ref() {
         "1" => Ok(true),
         "0" => Ok(false),
-        _ => Err(E::custom("invalid value for bool")),
+        t => Err(ParseError::InvalidValue {
+            field: "bool",
+            value: t.to_owned(),
+        }),
     }
 }
 
-fn parse_approval_status<E: de::Error>(b: &raw::Beatmap) -> Result<ApprovalStatus, E> {
+fn parse_approval_status(b: &raw::Beatmap) -> ParseResult<ApprovalStatus> {
     use ApprovalStatus::*;
     Ok(match &b.approved[..] {
         "4" => Loved,
         "3" => Qualified,
         "2" => Approved,
         "1" => Ranked(parse_date(
-            b.approved_date
-                .as_ref()
-                .ok_or(E::custom("expected approved date got none"))?,
+            b.approved_date.as_ref().ok_or(ParseError::NoApprovalDate)?,
         )?),
         "0" => Pending,
         "-1" => WIP,
         "-2" => Graveyarded,
-        _ => return Err(E::custom("invalid value for approval status")),
+        t => {
+            return Err(ParseError::InvalidValue {
+                field: "approval status",
+                value: t.to_owned(),
+            })
+        }
     })
 }
 
-fn parse_date<E: de::Error>(date: impl AsRef<str>) -> Result<DateTime<Utc>, E> {
+fn parse_date(date: impl AsRef<str>) -> ParseResult<DateTime<Utc>> {
     let mut parsed = Parsed::new();
     parse(
         &mut parsed,
@@ -243,6 +285,8 @@ fn parse_date<E: de::Error>(date: impl AsRef<str>) -> Result<DateTime<Utc>, E> {
         ])
             .iter(),
     )
-    .map_err(E::custom)?;
-    parsed.to_datetime_with_timezone(&Utc {}).map_err(E::custom)
+    .map_err(ParseError::DateParseError)?;
+    parsed
+        .to_datetime_with_timezone(&Utc {})
+        .map_err(ParseError::DateParseError)
 }
