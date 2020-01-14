@@ -244,7 +244,7 @@ pub mod builders {
             client
                 .get(match self.score_type {
                     UserScoreType::Best => "https://osu.ppy.sh/api/get_user_best",
-                    UserScoreType::Recent => "https://osu.ppy.sh/api/get_user_recent"
+                    UserScoreType::Recent => "https://osu.ppy.sh/api/get_user_recent",
                 })
                 .query(&self.user.to_query())
                 .query(&self.mode.to_query())

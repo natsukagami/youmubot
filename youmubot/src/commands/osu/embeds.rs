@@ -204,12 +204,12 @@ pub(crate) fn score_embed<'a>(
     let accuracy = s.accuracy(mode);
     let score_line = match &s.rank {
         Rank::SS | Rank::SSH => format!("SS"),
-        _ if s.perfect => format!("{:2}% FC", accuracy),
+        _ if s.perfect => format!("{:.2}% FC", accuracy),
         Rank::F => format!("{:.2}% {} combo [FAILED]", accuracy, s.max_combo),
         v => format!("{:.2}% {} combo {} rank", accuracy, s.max_combo, v),
     };
     let score_line =
-        s.pp.map(|pp| format!("{} | {:2}pp", &score_line, pp))
+        s.pp.map(|pp| format!("{} | {:.2}pp", &score_line, pp))
             .unwrap_or(score_line);
     let top_record = top_record
         .map(|v| format!("| #{} top record!", v))
@@ -236,7 +236,7 @@ pub(crate) fn score_embed<'a>(
             false,
         )
         .field("Rank", &score_line, false)
-        .fields(s.pp.map(|pp| ("pp gained", format!("{:2}pp", pp), true)))
+        .fields(s.pp.map(|pp| ("pp gained", format!("{:.2}pp", pp), true)))
         .field("Creator", &b.creator, true)
         .field("Mode", mode.to_string(), true)
         .field(

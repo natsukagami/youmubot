@@ -5,7 +5,6 @@ use serenity::{
     model::id::ChannelId,
     prelude::*,
 };
-use youmubot_osu::models::Mode;
 
 /// Save the beatmap into the server data storage.
 pub(crate) fn save_beatmap(

@@ -5,13 +5,13 @@ use serenity::{
         macros::{command, group},
         Args, CommandError as Error, CommandResult,
     },
-    model::channel::Message,
+    model::{channel::Message, id::UserId},
     prelude::*,
     utils::MessageBuilder,
 };
 use std::str::FromStr;
 use youmubot_osu::{
-    models::{Beatmap, Mode, Rank, Score, User},
+    models::{Beatmap, Mode, User},
     request::{BeatmapRequestKind, UserID},
     Client as OsuClient,
 };
@@ -29,7 +29,7 @@ group!({
         prefix: "osu",
         description: "osu! related commands.",
     },
-    commands: [std, taiko, catch, mania, save, recent, last],
+    commands: [std, taiko, catch, mania, save, recent, last, check, top],
 });
 
 #[command]
@@ -125,15 +125,68 @@ pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 struct ModeArg(Mode);
 
 impl FromStr for ModeArg {
-    type Err = Error;
+    type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(ModeArg(match s {
             "std" => Mode::Std,
             "taiko" => Mode::Taiko,
             "catch" => Mode::Catch,
             "mania" => Mode::Mania,
-            _ => return Err(Error::from(format!("Unknown mode {}", s))),
+            _ => return Err(format!("Unknown mode {}", s)),
         }))
+    }
+}
+
+enum UsernameArg {
+    Tagged(UserId),
+    Raw(String),
+}
+
+impl UsernameArg {
+    fn to_user_id_query(
+        s: Option<Self>,
+        data: &mut ShareMap,
+        msg: &Message,
+    ) -> Result<UserID, Error> {
+        let id = match s {
+            Some(UsernameArg::Raw(s)) => return Ok(UserID::Auto(s)),
+            Some(UsernameArg::Tagged(r)) => r,
+            None => msg.author.id,
+        };
+        let db: DBWriteGuard<_> = data
+            .get_mut::<OsuSavedUsers>()
+            .ok_or(Error::from("DB uninitialized"))?
+            .into();
+        let db = db.borrow()?;
+        db.get(&id)
+            .cloned()
+            .map(UserID::ID)
+            .ok_or(Error::from("No saved account found"))
+    }
+}
+
+impl FromStr for UsernameArg {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.parse::<UserId>() {
+            Ok(v) => Ok(UsernameArg::Tagged(v)),
+            Err(_) if !s.is_empty() => Ok(UsernameArg::Raw(s.to_owned())),
+            Err(_) => Err("username arg cannot be empty".to_owned()),
+        }
+    }
+}
+
+struct Nth(u8);
+
+impl FromStr for Nth {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.starts_with("#") {
+            Err(Error::from("Not an order"))
+        } else {
+            let v = s.split_at("#".len()).1.parse()?;
+            Ok(Nth(v))
+        }
     }
 }
 
@@ -143,46 +196,16 @@ impl FromStr for ModeArg {
 #[example = "#1 / taiko / natsukagami"]
 #[max_args(3)]
 pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    struct Nth(u8);
-
-    impl FromStr for Nth {
-        type Err = Error;
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            if !s.starts_with("#") {
-                Err(Error::from("Not an order"))
-            } else {
-                let v = s.split_at("#".len()).1.parse()?;
-                Ok(Nth(v))
-            }
-        }
-    }
-
     let mut data = ctx.data.write();
 
     let nth = args.single::<Nth>().unwrap_or(Nth(1)).0.min(50).max(1);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = match args.single::<String>() {
-        Ok(v) => v,
-        Err(_) => {
-            let db: DBWriteGuard<_> = data
-                .get_mut::<OsuSavedUsers>()
-                .ok_or(Error::from("DB uninitialized"))?
-                .into();
-            let db = db.borrow()?;
-            match db.get(&msg.author.id) {
-                Some(ref v) => v.to_string(),
-                None => {
-                    msg.reply(&ctx, "You have not saved any account.")?;
-                    return Ok(());
-                }
-            }
-        }
-    };
+    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
 
     let reqwest = data.get::<http::HTTP>().unwrap();
     let osu: &OsuClient = data.get::<http::Osu>().unwrap();
     let user = osu
-        .user(reqwest, UserID::Auto(user), |f| f.mode(mode))?
+        .user(reqwest, user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
     let recent_play = osu
         .user_recent(reqwest, UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
@@ -240,28 +263,109 @@ pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
     Ok(())
 }
 
-fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> CommandResult {
+#[command]
+#[aliases("c", "chk")]
+#[description = "Check your own or someone else's best record on the last beatmap."]
+#[max_args(1)]
+pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let mut data = ctx.data.write();
-    let username = match args.remains() {
-        Some(v) => v.to_owned(),
+
+    let bm = cache::get_beatmap(&mut *data, msg.channel_id)?;
+
+    match bm {
         None => {
-            let db: DBWriteGuard<_> = data
-                .get_mut::<OsuSavedUsers>()
-                .ok_or(Error::from("DB uninitialized"))?
-                .into();
-            let db = db.borrow()?;
-            match db.get(&msg.author.id) {
-                Some(ref v) => v.to_string(),
-                None => {
-                    msg.reply(&ctx, "You have not saved any account.")?;
-                    return Ok(());
-                }
+            msg.reply(&ctx, "No beatmap queried on this channel.")?;
+        }
+        Some(bm) => {
+            let b = &bm.0;
+            let m = bm.1;
+            let user =
+                UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+
+            let reqwest = data.get::<http::HTTP>().unwrap();
+            let osu = data.get::<http::Osu>().unwrap();
+
+            let user = osu
+                .user(reqwest, user, |f| f)?
+                .ok_or(Error::from("User not found"))?;
+            let scores = osu.scores(reqwest, b.beatmap_id, |f| {
+                f.user(UserID::ID(user.id)).mode(m)
+            })?;
+
+            if scores.is_empty() {
+                msg.reply(&ctx, "No scores found")?;
+            }
+
+            for score in scores.into_iter() {
+                msg.channel_id.send_message(&ctx, |c| {
+                    c.embed(|m| score_embed(&score, &bm, &user, None, m))
+                })?;
             }
         }
-    };
+    }
+
+    Ok(())
+}
+
+#[command]
+#[description = "Get the n-th top record of an user."]
+#[usage = "#[n-th = 1] / [mode (std, taiko, catch, mania) = std / [username or user_id = your saved user id]"]
+#[example = "#2 / taiko / natsukagami"]
+#[max_args(3)]
+pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+    let nth = args.single::<Nth>().unwrap_or(Nth(1)).0;
+    let mode = args
+        .single::<ModeArg>()
+        .map(|ModeArg(t)| t)
+        .unwrap_or(Mode::Std);
+
+    let mut data = ctx.data.write();
+    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+
+    let reqwest = data.get::<http::HTTP>().unwrap();
+    let osu: &OsuClient = data.get::<http::Osu>().unwrap();
+    let user = osu
+        .user(reqwest, user, |f| f.mode(mode))?
+        .ok_or(Error::from("User not found"))?;
+    let top_play = osu.user_best(reqwest, UserID::ID(user.id), |f| f.mode(mode).limit(nth))?;
+
+    let rank = top_play.len() as u8;
+
+    let top_play = top_play
+        .into_iter()
+        .last()
+        .ok_or(Error::from("No such play"))?;
+    let beatmap = osu
+        .beatmaps(
+            reqwest,
+            BeatmapRequestKind::Beatmap(top_play.beatmap_id),
+            |f| f.mode(mode, true),
+        )?
+        .into_iter()
+        .next()
+        .map(|v| BeatmapWithMode(v, mode))
+        .unwrap();
+
+    msg.channel_id.send_message(&ctx, |m| {
+        m.content(format!(
+            "{}: here is the play that you requested",
+            msg.author
+        ))
+        .embed(|m| score_embed(&top_play, &beatmap, &user, Some(rank), m))
+    })?;
+
+    // Save the beatmap...
+    cache::save_beatmap(&mut *data, msg.channel_id, &beatmap)?;
+
+    Ok(())
+}
+
+fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
+    let mut data = ctx.data.write();
+    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
     let reqwest = data.get::<http::HTTP>().unwrap();
     let osu = data.get::<http::Osu>().unwrap();
-    let user = osu.user(reqwest, UserID::Auto(username), |f| f.mode(mode))?;
+    let user = osu.user(reqwest, user, |f| f.mode(mode))?;
     match user {
         Some(u) => {
             let best = osu
