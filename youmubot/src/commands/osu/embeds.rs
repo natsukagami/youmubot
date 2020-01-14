@@ -206,7 +206,10 @@ pub(crate) fn score_embed<'a>(
         Rank::SS | Rank::SSH => format!("SS"),
         _ if s.perfect => format!("{:.2}% FC", accuracy),
         Rank::F => format!("{:.2}% {} combo [FAILED]", accuracy, s.max_combo),
-        v => format!("{:.2}% {} combo {} rank", accuracy, s.max_combo, v),
+        v => format!(
+            "{:.2}% {}x {} miss {} rank",
+            accuracy, s.max_combo, s.count_miss, v
+        ),
     };
     let score_line =
         s.pp.map(|pp| format!("{} | {:.2}pp", &score_line, pp))
