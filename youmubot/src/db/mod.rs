@@ -5,11 +5,12 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serenity::{
     client::Client,
     framework::standard::CommandError as Error,
-    model::id::{GuildId, RoleId, UserId},
+    model::id::{ChannelId, GuildId, RoleId, UserId},
     prelude::*,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use youmubot_osu::models::Mode;
 
 /// GuildMap defines the guild-map type.
 /// It is basically a HashMap from a GuildId to a data structure.
@@ -38,6 +39,9 @@ pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
 /// Save the user IDs.
 pub type OsuSavedUsers = DB<HashMap<UserId, u64>>;
 
+/// Save each channel's last requested beatmap.
+pub type OsuLastBeatmap = DB<HashMap<ChannelId, (u64, Mode)>>;
+
 /// Sets up all databases in the client.
 pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     let path: PathBuf = var("DBPATH").map(|v| PathBuf::from(v)).unwrap_or_else(|e| {
@@ -47,6 +51,7 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     let mut data = client.data.write();
     SoftBans::insert_into(&mut *data, &path.join("soft_bans.ron"))?;
     OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.ron"))?;
+    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.ron"))?;
 
     Ok(())
 }

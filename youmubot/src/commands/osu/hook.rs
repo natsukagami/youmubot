@@ -30,12 +30,24 @@ pub fn hook(ctx: &mut Context, msg: &Message) -> () {
     let mut v = move || -> CommandResult {
         let old_links = handle_old_links(ctx, &msg.content)?;
         let new_links = handle_new_links(ctx, &msg.content)?;
+        let mut last_beatmap = None;
         for l in old_links.into_iter().chain(new_links.into_iter()) {
             if let Err(v) = msg.channel_id.send_message(&ctx, |m| match l.embed {
-                EmbedType::Beatmap(b) => handle_beatmap(b, l.link, l.mode, l.mods, m),
+                EmbedType::Beatmap(b) => {
+                    let t = handle_beatmap(&b, l.link, l.mode, l.mods, m);
+                    let mode = l.mode.unwrap_or(b.mode);
+                    last_beatmap = Some(super::BeatmapWithMode(b, mode));
+                    t
+                }
                 EmbedType::Beatmapset(b) => handle_beatmapset(b, l.link, l.mode, l.mods, m),
             }) {
                 println!("Error in osu! hook: {:?}", v)
+            }
+        }
+        // Save the beatmap for query later.
+        if let Some(t) = last_beatmap {
+            if let Err(v) = super::cache::save_beatmap(&mut *ctx.data.write(), msg.channel_id, &t) {
+                dbg!(v);
             }
         }
         Ok(())
@@ -159,7 +171,7 @@ fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
 }
 
 fn handle_beatmap<'a, 'b>(
-    beatmap: Beatmap,
+    beatmap: &Beatmap,
     link: &'_ str,
     mode: Option<Mode>,
     mods: Option<&'_ str>,
@@ -171,7 +183,7 @@ fn handle_beatmap<'a, 'b>(
             .push_mono_safe(link)
             .build(),
     )
-    .embed(|b| beatmap_embed(&beatmap, mode.unwrap_or(beatmap.mode), b))
+    .embed(|b| beatmap_embed(beatmap, mode.unwrap_or(beatmap.mode), b))
 }
 
 fn handle_beatmapset<'a, 'b>(

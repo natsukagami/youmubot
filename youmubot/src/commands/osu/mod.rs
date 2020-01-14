@@ -209,6 +209,9 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
         .embed(|m| score_embed(&recent_play, &beatmap, &user, None, m))
     })?;
 
+    // Save the beatmap...
+    cache::save_beatmap(&mut *data, msg.channel_id, &beatmap)?;
+
     Ok(())
 }
 
