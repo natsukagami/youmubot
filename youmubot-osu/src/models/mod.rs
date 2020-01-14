@@ -30,7 +30,7 @@ impl fmt::Display for ApprovalStatus {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Difficulty {
     pub stars: f64,
     pub aim: Option<f64>,
@@ -118,7 +118,7 @@ impl fmt::Display for Mode {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Beatmap {
     // Beatmapset info
     pub approval: ApprovalStatus,
@@ -154,6 +154,13 @@ pub struct Beatmap {
 const NEW_MODE_NAMES: [&'static str; 4] = ["osu", "taiko", "fruits", "mania"];
 
 impl Beatmap {
+    pub fn beatmapset_link(&self) -> String {
+        format!(
+            "https://osu.ppy.sh/beatmapsets/{}#{}",
+            self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize]
+        )
+    }
+
     /// Gets a link pointing to the beatmap, in the new format.
     pub fn link(&self) -> String {
         format!(
@@ -171,7 +178,7 @@ impl Beatmap {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserEvent {
     pub display_html: String,
     pub beatmap_id: u64,
@@ -180,7 +187,7 @@ pub struct UserEvent {
     pub epic_factor: u8,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct User {
     pub id: u64,
     pub username: String,
@@ -255,7 +262,7 @@ impl fmt::Display for Rank {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Score {
     pub id: Option<u64>, // No id if you fail
     pub user_id: u64,

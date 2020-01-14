@@ -10,7 +10,7 @@ use serenity::{
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use youmubot_osu::models::Mode;
+use youmubot_osu::models::{Beatmap, Mode};
 
 /// GuildMap defines the guild-map type.
 /// It is basically a HashMap from a GuildId to a data structure.
@@ -40,7 +40,7 @@ pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
 pub type OsuSavedUsers = DB<HashMap<UserId, u64>>;
 
 /// Save each channel's last requested beatmap.
-pub type OsuLastBeatmap = DB<HashMap<ChannelId, (u64, Mode)>>;
+pub type OsuLastBeatmap = DB<HashMap<ChannelId, (Beatmap, Mode)>>;
 
 /// Sets up all databases in the client.
 pub fn setup_db(client: &mut Client) -> Result<(), Error> {

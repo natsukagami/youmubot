@@ -1,9 +1,6 @@
-use crate::commands::args::Duration;
 use crate::db::{DBWriteGuard, OsuSavedUsers};
 use crate::http;
-use chrono::Utc;
 use serenity::{
-    builder::CreateEmbed,
     framework::standard::{
         macros::{command, group},
         Args, CommandError as Error, CommandResult,
@@ -12,6 +9,7 @@ use serenity::{
     prelude::*,
     utils::MessageBuilder,
 };
+use std::str::FromStr;
 use youmubot_osu::{
     models::{Beatmap, Mode, Rank, Score, User},
     request::{BeatmapRequestKind, UserID},
@@ -19,10 +17,11 @@ use youmubot_osu::{
 };
 
 mod cache;
+pub(crate) mod embeds;
 mod hook;
 
+use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
-use std::str::FromStr;
 
 group!({
     name: "osu",
@@ -30,7 +29,7 @@ group!({
         prefix: "osu",
         description: "osu! related commands.",
     },
-    commands: [std, taiko, catch, mania, save, recent],
+    commands: [std, taiko, catch, mania, save, recent, last],
 });
 
 #[command]
@@ -215,6 +214,32 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     Ok(())
 }
 
+#[command]
+#[description = "Show information from the last queried beatmap."]
+#[num_args(0)]
+pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
+    let mut data = ctx.data.write();
+
+    let b = cache::get_beatmap(&mut *data, msg.channel_id)?;
+
+    match b {
+        Some(BeatmapWithMode(b, m)) => {
+            msg.channel_id.send_message(&ctx, |f| {
+                f.content(format!(
+                    "{}: here is the beatmap you requested!",
+                    msg.author
+                ))
+                .embed(|c| beatmap_embed(&b, m, c))
+            })?;
+        }
+        None => {
+            msg.reply(&ctx, "No beatmap was queried on this channel.")?;
+        }
+    }
+
+    Ok(())
+}
+
 fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> CommandResult {
     let mut data = ctx.data.write();
     let username = match args.remains() {
@@ -261,159 +286,4 @@ fn get_user(ctx: &mut Context, msg: &Message, args: Args, mode: Mode) -> Command
         None => msg.reply(&ctx, "🔍 user not found!"),
     }?;
     Ok(())
-}
-
-fn score_embed<'a>(
-    s: &Score,
-    bm: &BeatmapWithMode,
-    u: &User,
-    top_record: Option<u8>,
-    m: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
-    let mode = bm.mode();
-    let b = &bm.0;
-    let accuracy = s.accuracy(mode);
-    let score_line = match &s.rank {
-        Rank::SS | Rank::SSH => format!("SS"),
-        _ if s.perfect => format!("{:2}% FC", accuracy),
-        Rank::F => format!("{:.2}% {} combo [FAILED]", accuracy, s.max_combo),
-        v => format!("{:.2}% {} combo {} rank", accuracy, s.max_combo, v),
-    };
-    let score_line =
-        s.pp.map(|pp| format!("{} | {:2}pp", &score_line, pp))
-            .unwrap_or(score_line);
-    let top_record = top_record
-        .map(|v| format!("| #{} top record!", v))
-        .unwrap_or("".to_owned());
-    m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
-        .color(0xffb6c1)
-        .title(format!(
-            "{} | {} - {} [{}] {} ({:.2}\\*) by {} | {} {}",
-            u.username,
-            b.artist,
-            b.title,
-            b.difficulty_name,
-            s.mods,
-            b.difficulty.stars,
-            b.creator,
-            score_line,
-            top_record
-        ))
-        .description(format!("[[Beatmap]]({})", b.link()))
-        .image(b.cover_url())
-        .field(
-            "Beatmap",
-            format!("{} - {} [{}]", b.artist, b.title, b.difficulty_name),
-            false,
-        )
-        .field("Rank", &score_line, false)
-        .fields(s.pp.map(|pp| ("pp gained", format!("{:2}pp", pp), true)))
-        .field("Creator", &b.creator, true)
-        .field("Mode", mode.to_string(), true)
-        .field(
-            "Map stats",
-            MessageBuilder::new()
-                .push(format!("[[Link]]({})", b.link()))
-                .push(", ")
-                .push_bold(format!("{:.2}⭐", b.difficulty.stars))
-                .push(", ")
-                .push_bold_line(
-                    b.mode.to_string()
-                        + if bm.is_converted() {
-                            " (Converted)"
-                        } else {
-                            ""
-                        },
-                )
-                .push("CS")
-                .push_bold(format!("{:.1}", b.difficulty.cs))
-                .push(", AR")
-                .push_bold(format!("{:.1}", b.difficulty.ar))
-                .push(", OD")
-                .push_bold(format!("{:.1}", b.difficulty.od))
-                .push(", HP")
-                .push_bold(format!("{:.1}", b.difficulty.hp))
-                .push(", ⌛ ")
-                .push_bold(format!("{}", Duration(b.drain_length)))
-                .build(),
-            false,
-        )
-        .field("Played on", s.date.format("%F %T"), false)
-}
-
-fn user_embed<'a>(
-    u: User,
-    best: Option<(Score, BeatmapWithMode)>,
-    m: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
-    m.title(u.username)
-        .url(format!("https://osu.ppy.sh/users/{}", u.id))
-        .color(0xffb6c1)
-        .thumbnail(format!("https://a.ppy.sh/{}", u.id))
-        .description(format!("Member since **{}**", u.joined.format("%F %T")))
-        .field(
-            "Performance Points",
-            u.pp.map(|v| format!("{:.2}pp", v))
-                .unwrap_or("Inactive".to_owned()),
-            false,
-        )
-        .field("World Rank", format!("#{}", u.rank), true)
-        .field(
-            "Country Rank",
-            format!(":flag_{}: #{}", u.country.to_lowercase(), u.country_rank),
-            true,
-        )
-        .field("Accuracy", format!("{:.2}%", u.accuracy), true)
-        .field(
-            "Play count",
-            format!("{} (play time: {})", u.play_count, Duration(u.played_time)),
-            false,
-        )
-        .field(
-            "Ranks",
-            format!(
-                "{} SSH | {} SS | {} SH | {} S | {} A",
-                u.count_ssh, u.count_ss, u.count_sh, u.count_s, u.count_a
-            ),
-            false,
-        )
-        .field(
-            "Level",
-            format!(
-                "Level **{:.0}**: {} total score, {} ranked score",
-                u.level, u.total_score, u.ranked_score
-            ),
-            false,
-        )
-        .fields(best.map(|(v, map)| {
-            let map = map.0;
-            (
-                "Best Record",
-                MessageBuilder::new()
-                    .push_bold(format!(
-                        "{:.2}pp",
-                        v.pp.unwrap() /*Top record should have pp*/
-                    ))
-                    .push(" - ")
-                    .push_line(format!(
-                        "{:.1} ago",
-                        Duration(
-                            (Utc::now() - v.date)
-                                .to_std()
-                                .unwrap_or(std::time::Duration::from_secs(1))
-                        )
-                    ))
-                    .push("on ")
-                    .push(format!(
-                        "[{} - {}]({})",
-                        MessageBuilder::new().push_bold_safe(&map.artist).build(),
-                        MessageBuilder::new().push_bold_safe(&map.title).build(),
-                        map.link()
-                    ))
-                    .push(format!(" [{}]", map.difficulty_name))
-                    .push(format!(" ({:.1}⭐)", map.difficulty.stars))
-                    .build(),
-                false,
-            )
-        }))
 }
