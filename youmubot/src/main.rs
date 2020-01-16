@@ -38,7 +38,7 @@ fn main() {
     // Setup shared instances of things
     {
         let mut data = client.data.write();
-        data.insert::<http::HTTP>(reqwest::Client::new());
+        data.insert::<http::HTTP>(reqwest::blocking::Client::new());
     }
 
     // Create handler threads

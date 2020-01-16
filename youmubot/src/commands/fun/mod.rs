@@ -17,13 +17,10 @@ mod names;
 
 use images::*;
 
-group!({
-    name: "fun",
-    options: {
-        description: "Random commands",
-    },
-    commands: [roll, pick, name, image, nsfw],
-});
+#[group]
+#[description = "Random commands"]
+#[commands(roll, pick, name, image, nsfw)]
+struct Fun;
 
 #[command]
 #[description = "🎲 Rolls a dice that gives you a random number."]

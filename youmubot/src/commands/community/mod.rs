@@ -19,14 +19,11 @@ mod votes;
 
 use votes::VOTE_COMMAND;
 
-group!({
-    name: "community",
-    options: {
-        only_in: "guilds",
-        description: "Community related commands. Usually comes with some sort of delays, since it involves pinging",
-    },
-    commands: [choose, vote],
-});
+#[group]
+#[description = "Community related commands. Usually comes with some sort of delays, since it involves pinging"]
+#[only_in("guilds")]
+#[commands(choose, vote)]
+struct Community;
 
 #[command]
 #[description = r"👑 Randomly choose an active member and mention them!
