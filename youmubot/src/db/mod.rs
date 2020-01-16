@@ -37,7 +37,7 @@ where
 pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
 
 /// Save the user IDs.
-pub type OsuSavedUsers = DB<HashMap<UserId, u64>>;
+pub type OsuSavedUsers = DB<HashMap<UserId, OsuUser>>;
 
 /// Save each channel's last requested beatmap.
 pub type OsuLastBeatmap = DB<HashMap<ChannelId, (Beatmap, Mode)>>;
@@ -117,4 +117,11 @@ pub struct ImplementedSoftBans {
     pub role: RoleId,
     /// List of all to-unban people.
     pub periodical_bans: HashMap<UserId, DateTime<Utc>>,
+}
+
+/// An osu! saved user.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OsuUser {
+    pub id: u64,
+    pub last_update: DateTime<Utc>,
 }

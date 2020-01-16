@@ -1,4 +1,4 @@
-use crate::db::{DBWriteGuard, OsuSavedUsers};
+use crate::db::{DBWriteGuard, OsuSavedUsers, OsuUser};
 use crate::http;
 use serenity::{
     framework::standard::{
@@ -103,7 +103,13 @@ pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                 .into();
             let mut db = db.borrow_mut()?;
 
-            db.insert(msg.author.id, u.id);
+            db.insert(
+                msg.author.id,
+                OsuUser {
+                    id: u.id,
+                    last_update: chrono::Utc::now(),
+                },
+            );
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -157,7 +163,7 @@ impl UsernameArg {
         let db = db.borrow()?;
         db.get(&id)
             .cloned()
-            .map(UserID::ID)
+            .map(|u| UserID::ID(u.id))
             .ok_or(Error::from("No saved account found"))
     }
 }
