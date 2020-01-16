@@ -15,13 +15,10 @@ use std::{thread::sleep, time::Duration};
 mod soft_ban;
 pub use soft_ban::watch_soft_bans;
 
-group!({
-    name: "admin",
-    options: {
-        description: "Administrative commands for the server.",
-    },
-    commands: [clean, ban, kick, soft_ban, soft_ban_init],
-});
+#[group]
+#[description = "Administrative commands for the server."]
+#[commands(clean, ban, kick, soft_ban, soft_ban_init)]
+struct Admin;
 
 #[command]
 #[aliases("cleanall")]

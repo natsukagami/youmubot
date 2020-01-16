@@ -1,5 +1,5 @@
 use crate::http::HTTP;
-use reqwest::Client as HTTPClient;
+use reqwest::blocking::Client as HTTPClient;
 use serde::Deserialize;
 use serenity::framework::standard::CommandError as Error;
 use serenity::prelude::*;

@@ -8,7 +8,7 @@ mod test;
 use models::*;
 use request::builders::*;
 use request::*;
-use reqwest::Client as HTTPClient;
+use reqwest::blocking::{Client as HTTPClient, RequestBuilder, Response};
 use serenity::framework::standard::CommandError as Error;
 use std::convert::TryInto;
 
@@ -35,11 +35,7 @@ impl Client {
         }
     }
 
-    fn build_request(
-        &self,
-        c: &HTTPClient,
-        r: reqwest::RequestBuilder,
-    ) -> Result<reqwest::Response, Error> {
+    fn build_request(&self, c: &HTTPClient, r: RequestBuilder) -> Result<Response, Error> {
         let v = r.query(&[("k", &self.key)]).build()?;
         dbg!(v.url());
         Ok(c.execute(v)?)

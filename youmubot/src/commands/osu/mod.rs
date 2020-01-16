@@ -23,14 +23,11 @@ mod hook;
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
 
-group!({
-    name: "osu",
-    options: {
-        prefix: "osu",
-        description: "osu! related commands.",
-    },
-    commands: [std, taiko, catch, mania, save, recent, last, check, top],
-});
+#[group]
+#[prefix = "osu"]
+#[description = "osu! related commands."]
+#[commands(std, taiko, catch, mania, save, recent, last, check, top)]
+struct Osu;
 
 #[command]
 #[aliases("osu", "osu!")]
