@@ -7,6 +7,7 @@ use serenity::{
 };
 use std::collections::HashSet;
 
+mod announcer;
 mod args;
 
 pub mod admin;
