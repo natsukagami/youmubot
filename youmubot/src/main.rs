@@ -58,7 +58,7 @@ fn main() {
     std::thread::spawn(commands::admin::watch_soft_bans(&mut client));
 
     // Announcers
-    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(60));
+    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(300));
 
     println!("Starting...");
     if let Err(v) = client.start() {

@@ -89,7 +89,7 @@ impl OsuAnnouncer {
             .into_iter()
             .filter(|s: &Score| s.date >= u.last_update)
             .enumerate()
-            .map(|(i, v)| (i as u8, v))
+            .map(|(i, v)| ((i + 1) as u8, v))
             .collect();
         Ok(scores)
     }
