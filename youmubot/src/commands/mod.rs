@@ -20,6 +20,8 @@ pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
 pub use osu::OSU_GROUP;
 
+pub use announcer::Announcer;
+
 // A help command
 #[help]
 pub fn help(

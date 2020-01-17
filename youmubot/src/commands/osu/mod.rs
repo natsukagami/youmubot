@@ -21,6 +21,7 @@ mod cache;
 pub(crate) mod embeds;
 mod hook;
 
+pub use announcer::OsuAnnouncer;
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
 

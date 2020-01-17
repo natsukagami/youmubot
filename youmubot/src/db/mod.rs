@@ -33,6 +33,9 @@ where
     }
 }
 
+/// A map from announcer keys to guild IDs and to channels.
+pub type AnnouncerChannels = DB<HashMap<String, GuildMap<ChannelId>>>;
+
 /// A list of SoftBans for all servers.
 pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
 
@@ -49,9 +52,10 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
         PathBuf::from("data")
     });
     let mut data = client.data.write();
-    SoftBans::insert_into(&mut *data, &path.join("soft_bans.ron"))?;
-    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.ron"))?;
-    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.ron"))?;
+    SoftBans::insert_into(&mut *data, &path.join("soft_bans.toml"))?;
+    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.toml"))?;
+    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.toml"))?;
+    AnnouncerChannels::insert_into(&mut *data, &path.join("announcers.toml"))?;
 
     Ok(())
 }

@@ -12,6 +12,9 @@ mod commands;
 mod db;
 mod http;
 
+use commands::osu::OsuAnnouncer;
+use commands::Announcer;
+
 const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [commands::osu::hook];
 
 struct Handler;
@@ -53,6 +56,9 @@ fn main() {
 
     // Create handler threads
     std::thread::spawn(commands::admin::watch_soft_bans(&mut client));
+
+    // Announcers
+    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(60));
 
     println!("Starting...");
     if let Err(v) = client.start() {
