@@ -1,4 +1,4 @@
 target
 .env
-*.toml
+*.yaml
 cargo-remote

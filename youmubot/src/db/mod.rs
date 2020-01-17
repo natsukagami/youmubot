@@ -27,7 +27,10 @@ where
 {
     fn insert_into(data: &mut ShareMap, path: impl AsRef<Path>) -> Result<(), Error> {
         let db = FileDatabase::<T, Ron>::from_path(path, T::default())?;
-        db.load().or_else(|_| db.save())?;
+        db.load().or_else(|e| {
+            dbg!(e);
+            db.save()
+        })?;
         data.insert::<DB<T>>(db);
         Ok(())
     }
@@ -52,10 +55,10 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
         PathBuf::from("data")
     });
     let mut data = client.data.write();
-    SoftBans::insert_into(&mut *data, &path.join("soft_bans.toml"))?;
-    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.toml"))?;
-    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.toml"))?;
-    AnnouncerChannels::insert_into(&mut *data, &path.join("announcers.toml"))?;
+    SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
+    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
+    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
+    AnnouncerChannels::insert_into(&mut *data, &path.join("announcers.yaml"))?;
 
     Ok(())
 }
