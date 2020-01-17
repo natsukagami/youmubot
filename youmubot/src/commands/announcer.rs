@@ -1,8 +1,9 @@
+use crate::db::{AnnouncerChannels, DBWriteGuard};
 use serenity::{
-    builder::CreateMessage,
     framework::standard::{CommandError as Error, CommandResult},
     http::{CacheHttp, Http},
     model::id::{ChannelId, GuildId, UserId},
+    prelude::ShareMap,
 };
 use std::{
     collections::HashSet,
@@ -10,13 +11,39 @@ use std::{
 };
 
 pub trait Announcer {
-    type MessageSender: for<'a, 'r> Fn(&'r mut CreateMessage<'a>) -> &'r mut CreateMessage<'a>;
+    fn announcer_key() -> &'static str;
+    fn send_messages(
+        c: &Http,
+        d: &mut ShareMap,
+        channels: impl Fn(UserId) -> Vec<ChannelId>,
+    ) -> CommandResult;
 
-    fn get_guilds(c: impl AsRef<Http>) -> Result<Vec<(GuildId, ChannelId)>, Error>;
-    fn fetch_messages(c: impl AsRef<Http>) -> Result<Vec<(UserId, Self::MessageSender)>, Error>;
+    fn set_channel(d: &mut ShareMap, guild: GuildId, channel: ChannelId) -> CommandResult {
+        let mut data: DBWriteGuard<_> = d
+            .get_mut::<AnnouncerChannels>()
+            .expect("DB initialized")
+            .into();
+        let mut data = data.borrow_mut()?;
+        data.entry(Self::announcer_key().to_owned())
+            .or_default()
+            .insert(guild, channel);
+        Ok(())
+    }
 
-    fn announce(c: impl AsRef<Http>) -> CommandResult {
-        let guilds: Vec<_> = Self::get_guilds(c.as_ref())?;
+    fn get_guilds(d: &mut ShareMap) -> Result<Vec<(GuildId, ChannelId)>, Error> {
+        let data = d
+            .get::<AnnouncerChannels>()
+            .expect("DB initialized")
+            .read(|v| {
+                v.get(Self::announcer_key())
+                    .map(|m| m.iter().map(|(a, b)| (*a, *b)).collect())
+                    .unwrap_or_else(|| vec![])
+            })?;
+        Ok(data)
+    }
+
+    fn announce(c: &Http, d: &mut ShareMap) -> CommandResult {
+        let guilds: Vec<_> = Self::get_guilds(d)?;
         let member_sets = {
             let mut v = Vec::with_capacity(guilds.len());
             for (guild, channel) in guilds.into_iter() {
@@ -28,21 +55,23 @@ pub trait Announcer {
             }
             v
         };
-        for (user_id, f) in Self::fetch_messages(c.as_ref())?.into_iter() {
+        Self::send_messages(c.as_ref(), d, |user_id| {
+            let mut v = Vec::new();
             for (members, channel) in member_sets.iter() {
                 if members.contains(&user_id) {
-                    if let Err(e) = channel.send_message(c.as_ref(), &f) {
-                        dbg!((user_id, channel, e));
-                    }
+                    v.push(*channel);
                 }
             }
-        }
+            v
+        })?;
         Ok(())
     }
 
-    fn scan(c: impl CacheHttp + 'static + Send, cooldown: std::time::Duration) -> JoinHandle<()> {
+    fn scan(client: &serenity::Client, cooldown: std::time::Duration) -> JoinHandle<()> {
+        let c = client.cache_and_http.clone();
+        let data = client.data.clone();
         spawn(move || loop {
-            if let Err(e) = Self::announce(c.http()) {
+            if let Err(e) = Self::announce(c.http(), &mut *data.write()) {
                 dbg!(e);
             }
             std::thread::sleep(cooldown);

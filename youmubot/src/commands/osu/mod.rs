@@ -16,6 +16,7 @@ use youmubot_osu::{
     Client as OsuClient,
 };
 
+mod announcer;
 mod cache;
 pub(crate) mod embeds;
 mod hook;
