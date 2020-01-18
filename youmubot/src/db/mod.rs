@@ -5,7 +5,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serenity::{
     client::Client,
     framework::standard::CommandError as Error,
-    model::id::{GuildId, RoleId, UserId},
+    model::id::{ChannelId, GuildId, RoleId, UserId},
     prelude::*,
 };
 use std::collections::HashMap;
@@ -32,6 +32,9 @@ where
     }
 }
 
+/// A map from announcer keys to guild IDs and to channels.
+pub type AnnouncerChannels = DB<HashMap<String, GuildMap<ChannelId>>>;
+
 /// A list of SoftBans for all servers.
 pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
 
@@ -43,6 +46,7 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     });
     let mut data = client.data.write();
     SoftBans::insert_into(&mut *data, &path.join("soft_bans.ron"))?;
+    AnnouncerChannels::insert_into(&mut *data, &path.join("announcers.yaml"))?;
 
     Ok(())
 }

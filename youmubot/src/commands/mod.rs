@@ -7,6 +7,7 @@ use serenity::{
 };
 use std::collections::HashSet;
 
+mod announcer;
 mod args;
 
 pub mod admin;
@@ -16,6 +17,8 @@ pub mod fun;
 pub use admin::ADMIN_GROUP;
 pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
+
+pub use announcer::Announcer;
 
 // A help command
 #[help]
