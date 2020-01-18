@@ -15,7 +15,7 @@ pub trait Announcer {
     fn send_messages(
         c: &Http,
         d: &mut ShareMap,
-        channels: impl Fn(UserId) -> Vec<ChannelId>,
+        channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult;
 
     fn set_channel(d: &mut ShareMap, guild: GuildId, channel: ChannelId) -> CommandResult {
@@ -48,8 +48,12 @@ pub trait Announcer {
             let mut v = Vec::with_capacity(guilds.len());
             for (guild, channel) in guilds.into_iter() {
                 let mut s = HashSet::new();
-                for user in guild.members_iter(c.as_ref()) {
-                    s.insert(user?.user_id());
+                for user in guild
+                    .members_iter(c.as_ref())
+                    .take_while(|u| u.is_ok())
+                    .filter_map(|u| u.ok())
+                {
+                    s.insert(user.user_id());
                 }
                 v.push((s, channel))
             }

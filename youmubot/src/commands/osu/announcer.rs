@@ -4,6 +4,7 @@ use crate::{
     db::{OsuSavedUsers, OsuUser},
     http::{Osu, HTTP},
 };
+use rayon::prelude::*;
 use reqwest::blocking::Client as HTTPClient;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
@@ -30,7 +31,7 @@ impl Announcer for OsuAnnouncer {
     fn send_messages(
         c: &Http,
         d: &mut ShareMap,
-        channels: impl Fn(UserId) -> Vec<ChannelId>,
+        channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult {
         let http = d.get::<HTTP>().expect("HTTP");
         let osu = d.get::<Osu>().expect("osu!client");
@@ -51,21 +52,31 @@ impl Announcer for OsuAnnouncer {
                         .unwrap()
                         .unwrap()
                 });
-                for (rank, score) in scores {
-                    let beatmap = BeatmapWithMode(
-                        osu.beatmaps(http, BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)?
-                            .into_iter()
-                            .next()
-                            .unwrap(),
-                        *mode,
-                    );
-                    for channel in channels(*user_id) {
-                        channel.send_message(c, |c| {
-                            c.content(format!("New top record from {}!", user_id.mention()))
-                                .embed(|e| score_embed(&score, &beatmap, &user, Some(rank), e))
-                        })?;
-                    }
-                }
+                scores
+                    .into_par_iter()
+                    .filter_map(|(rank, score)| {
+                        let beatmap = osu
+                            .beatmaps(http, BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
+                            .map(|v| BeatmapWithMode(v.into_iter().next().unwrap(), *mode));
+                        let channels = channels(*user_id);
+                        match beatmap {
+                            Ok(v) => Some((rank, score, v, channels)),
+                            Err(e) => {
+                                dbg!(e);
+                                None
+                            }
+                        }
+                    })
+                    .for_each(|(rank, score, beatmap, channels)| {
+                        for channel in channels {
+                            if let Err(e) = channel.send_message(c, |c| {
+                                c.content(format!("New top record from {}!", user_id.mention()))
+                                    .embed(|e| score_embed(&score, &beatmap, &user, Some(rank), e))
+                            }) {
+                                dbg!(e);
+                            }
+                        }
+                    });
             }
             osu_user.last_update = chrono::Utc::now();
         }
