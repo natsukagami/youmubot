@@ -4,6 +4,7 @@ members = [
 	"youmubot-prelude",
 	"youmubot-db",
 	"youmubot-core",
+	"youmubot-cf",
 	"youmubot-osu",
 	"youmubot",
 ]
