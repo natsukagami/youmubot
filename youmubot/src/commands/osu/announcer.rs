@@ -33,8 +33,7 @@ impl Announcer for OsuAnnouncer {
         d: &mut ShareMap,
         channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult {
-        let http = d.get::<HTTP>().expect("HTTP");
-        let osu = d.get::<Osu>().expect("osu!client");
+        let osu = d.get::<Osu>().expect("osu!client").clone();
         // For each user...
         let mut data = d
             .get::<OsuSavedUsers>()
@@ -43,20 +42,27 @@ impl Announcer for OsuAnnouncer {
         for (user_id, osu_user) in data.iter_mut() {
             let mut user = None;
             for mode in &[Mode::Std, Mode::Taiko, Mode::Mania, Mode::Catch] {
-                let scores = OsuAnnouncer::scan_user(http, osu, osu_user, *mode)?;
+                let scores = OsuAnnouncer::scan_user(&osu, osu_user, *mode)?;
                 if scores.is_empty() {
                     continue;
                 }
-                let user = user.get_or_insert_with(|| {
-                    osu.user(http, UserID::ID(osu_user.id), |f| f)
-                        .unwrap()
-                        .unwrap()
-                });
+                let user = {
+                    let user = &mut user;
+                    if let None = user {
+                        match osu.user(UserID::ID(osu_user.id), |f| f.mode(*mode)) {
+                            Ok(u) => {
+                                *user = u;
+                            }
+                            Err(_) => continue,
+                        }
+                    };
+                    user.as_ref().unwrap()
+                };
                 scores
                     .into_par_iter()
                     .filter_map(|(rank, score)| {
                         let beatmap = osu
-                            .beatmaps(http, BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
+                            .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
                             .map(|v| BeatmapWithMode(v.into_iter().next().unwrap(), *mode));
                         let channels = channels(*user_id);
                         match beatmap {
@@ -89,13 +95,8 @@ impl Announcer for OsuAnnouncer {
 }
 
 impl OsuAnnouncer {
-    fn scan_user(
-        http: &HTTPClient,
-        osu: &OsuClient,
-        u: &OsuUser,
-        mode: Mode,
-    ) -> Result<Vec<(u8, Score)>, Error> {
-        let scores = osu.user_best(http, UserID::ID(u.id), |f| f.mode(mode).limit(25))?;
+    fn scan_user(osu: &OsuClient, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
+        let scores = osu.user_best(UserID::ID(u.id), |f| f.mode(mode).limit(25))?;
         let scores = scores
             .into_iter()
             .filter(|s: &Score| s.date >= u.last_update)

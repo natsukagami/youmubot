@@ -91,15 +91,14 @@ impl AsRef<Beatmap> for BeatmapWithMode {
 #[usage = "[username or user_id]"]
 #[num_args(1)]
 pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu = data.get::<http::Osu>().unwrap();
+    let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
 
     let user = args.single::<String>()?;
-    let user: Option<User> = osu.user(reqwest, UserID::Auto(user), |f| f)?;
+    let user: Option<User> = osu.user(UserID::Auto(user), |f| f)?;
     match user {
         Some(u) => {
-            let mut db: DBWriteGuard<_> = data
+            let mut db = ctx.data.write();
+            let mut db: DBWriteGuard<_> = db
                 .get_mut::<OsuSavedUsers>()
                 .ok_or(Error::from("DB uninitialized"))?
                 .into();
@@ -201,28 +200,27 @@ impl FromStr for Nth {
 #[example = "#1 / taiko / natsukagami"]
 #[max_args(3)]
 pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-
     let nth = args.single::<Nth>().unwrap_or(Nth(1)).0.min(50).max(1);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+    let user = UsernameArg::to_user_id_query(
+        args.single::<UsernameArg>().ok(),
+        &mut *ctx.data.write(),
+        msg,
+    )?;
 
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu: &OsuClient = data.get::<http::Osu>().unwrap();
+    let osu: OsuClient = ctx.data.read().get::<http::Osu>().unwrap().clone();
     let user = osu
-        .user(reqwest, user, |f| f.mode(mode))?
+        .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
     let recent_play = osu
-        .user_recent(reqwest, UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
+        .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
         .into_iter()
         .last()
         .ok_or(Error::from("No such play"))?;
     let beatmap = osu
-        .beatmaps(
-            reqwest,
-            BeatmapRequestKind::Beatmap(recent_play.beatmap_id),
-            |f| f.mode(mode, true),
-        )?
+        .beatmaps(BeatmapRequestKind::Beatmap(recent_play.beatmap_id), |f| {
+            f.mode(mode, true)
+        })?
         .into_iter()
         .next()
         .map(|v| BeatmapWithMode(v, mode))
@@ -237,7 +235,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     })?;
 
     // Save the beatmap...
-    cache::save_beatmap(&mut *data, msg.channel_id, &beatmap)?;
+    cache::save_beatmap(&mut *ctx.data.write(), msg.channel_id, &beatmap)?;
 
     Ok(())
 }
@@ -287,15 +285,12 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
             let user =
                 UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
 
-            let reqwest = data.get::<http::HTTP>().unwrap();
-            let osu = data.get::<http::Osu>().unwrap();
+            let osu = data.get::<http::Osu>().unwrap().clone();
 
             let user = osu
-                .user(reqwest, user, |f| f)?
+                .user(user, |f| f)?
                 .ok_or(Error::from("User not found"))?;
-            let scores = osu.scores(reqwest, b.beatmap_id, |f| {
-                f.user(UserID::ID(user.id)).mode(m)
-            })?;
+            let scores = osu.scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))?;
 
             if scores.is_empty() {
                 msg.reply(&ctx, "No scores found")?;
@@ -327,12 +322,11 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let mut data = ctx.data.write();
     let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
 
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu: &OsuClient = data.get::<http::Osu>().unwrap();
+    let osu: OsuClient = data.get::<http::Osu>().unwrap().clone();
     let user = osu
-        .user(reqwest, user, |f| f.mode(mode))?
+        .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
-    let top_play = osu.user_best(reqwest, UserID::ID(user.id), |f| f.mode(mode).limit(nth))?;
+    let top_play = osu.user_best(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?;
 
     let rank = top_play.len() as u8;
 
@@ -341,11 +335,9 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .last()
         .ok_or(Error::from("No such play"))?;
     let beatmap = osu
-        .beatmaps(
-            reqwest,
-            BeatmapRequestKind::Beatmap(top_play.beatmap_id),
-            |f| f.mode(mode, true),
-        )?
+        .beatmaps(BeatmapRequestKind::Beatmap(top_play.beatmap_id), |f| {
+            f.mode(mode, true)
+        })?
         .into_iter()
         .next()
         .map(|v| BeatmapWithMode(v, mode))
@@ -368,17 +360,16 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
     let mut data = ctx.data.write();
     let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu = data.get::<http::Osu>().unwrap();
-    let user = osu.user(reqwest, user, |f| f.mode(mode))?;
+    let osu = data.get::<http::Osu>().unwrap().clone();
+    let user = osu.user(user, |f| f.mode(mode))?;
     match user {
         Some(u) => {
             let best = osu
-                .user_best(reqwest, UserID::ID(u.id), |f| f.limit(1).mode(mode))?
+                .user_best(UserID::ID(u.id), |f| f.limit(1).mode(mode))?
                 .into_iter()
                 .next()
                 .map(|m| {
-                    osu.beatmaps(reqwest, BeatmapRequestKind::Beatmap(m.beatmap_id), |f| {
+                    osu.beatmaps(BeatmapRequestKind::Beatmap(m.beatmap_id), |f| {
                         f.mode(mode, true)
                     })
                     .map(|map| (m, BeatmapWithMode(map.into_iter().next().unwrap(), mode)))

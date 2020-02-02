@@ -48,8 +48,10 @@ fn main() {
     // Setup shared instances of things
     {
         let mut data = client.data.write();
-        data.insert::<http::HTTP>(reqwest::blocking::Client::new());
+        let http_client = reqwest::blocking::Client::new();
+        data.insert::<http::HTTP>(http_client.clone());
         data.insert::<http::Osu>(OsuClient::new(
+            http_client.clone(),
             var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
         ));
     }
