@@ -1,19 +1,17 @@
-use crate::db::{DBWriteGuard, OsuSavedUsers, OsuUser};
-use crate::http;
+use crate::db::{OsuSavedUsers, OsuUser};
+use crate::prelude::*;
 use serenity::{
     framework::standard::{
         macros::{command, group},
         Args, CommandError as Error, CommandResult,
     },
     model::{channel::Message, id::UserId},
-    prelude::*,
     utils::MessageBuilder,
 };
 use std::str::FromStr;
 use youmubot_osu::{
     models::{Beatmap, Mode, User},
     request::{BeatmapRequestKind, UserID},
-    Client as OsuClient,
 };
 
 mod announcer;
@@ -91,17 +89,14 @@ impl AsRef<Beatmap> for BeatmapWithMode {
 #[usage = "[username or user_id]"]
 #[num_args(1)]
 pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
+    let osu = ctx.data.get_cloned::<OsuClient>();
 
     let user = args.single::<String>()?;
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f)?;
     match user {
         Some(u) => {
             let db = ctx.data.read();
-            let db: DBWriteGuard<_> = db
-                .get::<OsuSavedUsers>()
-                .ok_or(Error::from("DB uninitialized"))?
-                .into();
+            let db = OsuSavedUsers::open(&db);
             let mut db = db.borrow_mut()?;
 
             db.insert(
@@ -153,10 +148,8 @@ impl UsernameArg {
             Some(UsernameArg::Tagged(r)) => r,
             None => msg.author.id,
         };
-        let db: DBWriteGuard<_> = data
-            .get::<OsuSavedUsers>()
-            .ok_or(Error::from("DB uninitialized"))?
-            .into();
+
+        let db = OsuSavedUsers::open(data);
         let db = db.borrow()?;
         db.get(&id)
             .cloned()
@@ -201,7 +194,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     let user =
         UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
-    let osu: OsuClient = ctx.data.read().get::<http::Osu>().unwrap().clone();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -277,7 +270,7 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
                 msg,
             )?;
 
-            let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
+            let osu = ctx.data.get_cloned::<OsuClient>();
 
             let user = osu
                 .user(user, |f| f)?
@@ -314,7 +307,7 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user =
         UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
-    let osu: OsuClient = ctx.data.read().get::<http::Osu>().unwrap().clone();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -352,7 +345,7 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
     let user =
         UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
-    let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu.user(user, |f| f.mode(mode))?;
     match user {
         Some(u) => {

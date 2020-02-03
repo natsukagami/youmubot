@@ -1,40 +1,16 @@
 use chrono::{DateTime, Utc};
 use dotenv::var;
-use rustbreak::{deser::Yaml as Ron, FileDatabase};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use serde::{Deserialize, Serialize};
 use serenity::{
     client::Client,
     framework::standard::CommandError as Error,
-    model::id::{ChannelId, GuildId, RoleId, UserId},
-    prelude::*,
+    model::id::{ChannelId, RoleId, UserId},
 };
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use youmubot_db::{GuildMap, DB};
 use youmubot_osu::models::{Beatmap, Mode};
-
-/// GuildMap defines the guild-map type.
-/// It is basically a HashMap from a GuildId to a data structure.
-pub type GuildMap<V> = HashMap<GuildId, V>;
-/// The generic DB type we will be using.
-pub struct DB<T>(std::marker::PhantomData<T>);
-impl<T: std::any::Any> serenity::prelude::TypeMapKey for DB<T> {
-    type Value = FileDatabase<T, Ron>;
-}
-
-impl<T: std::any::Any + Default + Send + Sync + Clone + Serialize + std::fmt::Debug> DB<T>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    fn insert_into(data: &mut ShareMap, path: impl AsRef<Path>) -> Result<(), Error> {
-        let db = FileDatabase::<T, Ron>::from_path(path, T::default())?;
-        db.load().or_else(|e| {
-            dbg!(e);
-            db.save()
-        })?;
-        data.insert::<DB<T>>(db);
-        Ok(())
-    }
-}
 
 /// A map from announcer keys to guild IDs and to channels.
 pub type AnnouncerChannels = DB<HashMap<String, GuildMap<ChannelId>>>;
@@ -61,40 +37,6 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     AnnouncerChannels::insert_into(&mut *data, &path.join("announcers.yaml"))?;
 
     Ok(())
-}
-
-pub struct DBWriteGuard<'a, T>(&'a FileDatabase<T, Ron>)
-where
-    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned;
-
-impl<'a, T> From<&'a FileDatabase<T, Ron>> for DBWriteGuard<'a, T>
-where
-    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
-{
-    fn from(v: &'a FileDatabase<T, Ron>) -> Self {
-        DBWriteGuard(v)
-    }
-}
-
-impl<'a, T> DBWriteGuard<'a, T>
-where
-    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
-{
-    pub fn borrow(&self) -> Result<std::sync::RwLockReadGuard<T>, rustbreak::RustbreakError> {
-        (*self).0.borrow_data()
-    }
-    pub fn borrow_mut(&self) -> Result<std::sync::RwLockWriteGuard<T>, rustbreak::RustbreakError> {
-        (*self).0.borrow_data_mut()
-    }
-}
-
-impl<'a, T> Drop for DBWriteGuard<'a, T>
-where
-    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
-{
-    fn drop(&mut self) {
-        self.0.save().expect("Save succeed")
-    }
 }
 
 /// For the admin commands:

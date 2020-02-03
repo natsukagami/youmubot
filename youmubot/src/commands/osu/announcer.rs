@@ -2,22 +2,18 @@ use super::{embeds::score_embed, BeatmapWithMode};
 use crate::{
     commands::announcer::Announcer,
     db::{OsuSavedUsers, OsuUser},
-    http::Osu,
+    prelude::*,
 };
 use rayon::prelude::*;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     http::Http,
-    model::{
-        id::{ChannelId, UserId},
-        misc::Mentionable,
-    },
-    prelude::ShareMap,
+    model::id::{ChannelId, UserId},
 };
 use youmubot_osu::{
     models::{Mode, Score},
     request::{BeatmapRequestKind, UserID},
-    Client as OsuClient,
+    Client as Osu,
 };
 
 /// Announce osu! top scores.
@@ -29,15 +25,12 @@ impl Announcer for OsuAnnouncer {
     }
     fn send_messages(
         c: &Http,
-        d: &ShareMap,
+        d: AppData,
         channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult {
-        let osu = d.get::<Osu>().expect("osu!client").clone();
+        let osu = d.get_cloned::<OsuClient>();
         // For each user...
-        let mut data = d
-            .get::<OsuSavedUsers>()
-            .expect("DB initialized")
-            .read(|f| f.clone())?;
+        let mut data = OsuSavedUsers::open(&*d.read()).borrow()?.clone();
         for (user_id, osu_user) in data.iter_mut() {
             let mut user = None;
             for mode in &[Mode::Std, Mode::Taiko, Mode::Mania, Mode::Catch] {
@@ -86,15 +79,13 @@ impl Announcer for OsuAnnouncer {
             osu_user.last_update = chrono::Utc::now();
         }
         // Update users
-        let f = d.get::<OsuSavedUsers>().expect("DB initialized");
-        f.write(|f| *f = data)?;
-        f.save()?;
+        *OsuSavedUsers::open(&*d.read()).borrow_mut()? = data;
         Ok(())
     }
 }
 
 impl OsuAnnouncer {
-    fn scan_user(osu: &OsuClient, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
+    fn scan_user(osu: &Osu, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
         let scores = osu.user_best(UserID::ID(u.id), |f| f.mode(mode).limit(25))?;
         let scores = scores
             .into_iter()

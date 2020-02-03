@@ -1,6 +1,6 @@
 use crate::{
     commands::args,
-    db::{DBWriteGuard, ServerSoftBans, SoftBans},
+    db::{ServerSoftBans, SoftBans},
 };
 use chrono::offset::Utc;
 use serenity::prelude::*;
@@ -33,13 +33,10 @@ pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResu
     };
     let guild = msg.guild_id.ok_or(Error::from("Command is guild only"))?;
 
-    let data = ctx.data.read();
-    let data = data
-        .get::<SoftBans>()
-        .ok_or(Error::from("DB initialized"))
-        .map(|v| DBWriteGuard::from(v))?;
-    let mut data = data.borrow_mut()?;
-    let mut server_ban = data.get_mut(&guild).and_then(|v| match v {
+    let db = ctx.data.read();
+    let db = SoftBans::open(&*db);
+    let mut db = db.borrow_mut()?;
+    let mut server_ban = db.get_mut(&guild).and_then(|v| match v {
         ServerSoftBans::Unimplemented => None,
         ServerSoftBans::Implemented(ref mut v) => Some(v),
     });
@@ -98,11 +95,8 @@ pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> Comman
         )));
     }
     // Check if we already set up
-    let data = ctx.data.read();
-    let db: DBWriteGuard<_> = data
-        .get::<SoftBans>()
-        .ok_or(Error::from("DB uninitialized"))?
-        .into();
+    let db = ctx.data.read();
+    let db = SoftBans::open(&*db);
     let mut db = db.borrow_mut()?;
     let server = db
         .get(&guild.id)
@@ -135,12 +129,9 @@ pub fn watch_soft_bans(client: &mut serenity::Client) -> impl FnOnce() -> () + '
             // Scope so that locks are released
             {
                 // Poll the data for any changes.
-                let data = data.read();
-                let db: DBWriteGuard<_> = data
-                    .get::<SoftBans>()
-                    .expect("DB wrongly initialized")
-                    .into();
-                let mut db = db.borrow_mut().expect("cannot unpack DB");
+                let db = data.read();
+                let db = SoftBans::open(&*db);
+                let mut db = db.borrow_mut().expect("Borrowable");
                 let now = Utc::now();
                 for (server_id, soft_bans) in db.iter_mut() {
                     let server_name: String = match server_id.to_partial_guild(cache_http) {

@@ -1,5 +1,5 @@
 use super::BeatmapWithMode;
-use crate::db::{DBWriteGuard, OsuLastBeatmap};
+use crate::db::OsuLastBeatmap;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     model::id::ChannelId,
@@ -12,10 +12,7 @@ pub(crate) fn save_beatmap(
     channel_id: ChannelId,
     bm: &BeatmapWithMode,
 ) -> CommandResult {
-    let db: DBWriteGuard<_> = data
-        .get::<OsuLastBeatmap>()
-        .expect("DB is implemented")
-        .into();
+    let db = OsuLastBeatmap::open(data);
     let mut db = db.borrow_mut()?;
 
     db.insert(channel_id, (bm.0.clone(), bm.mode()));
@@ -28,8 +25,8 @@ pub(crate) fn get_beatmap(
     data: &ShareMap,
     channel_id: ChannelId,
 ) -> Result<Option<BeatmapWithMode>, Error> {
-    let db = data.get::<OsuLastBeatmap>().expect("DB is implemented");
-    let db = db.borrow_data()?;
+    let db = OsuLastBeatmap::open(data);
+    let db = db.borrow()?;
 
     Ok(db
         .get(&channel_id)

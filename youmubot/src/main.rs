@@ -4,16 +4,16 @@ use reqwest;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
     model::{channel::Message, gateway},
-    prelude::*,
 };
-use youmubot_osu::Client as OsuClient;
+use youmubot_osu::Client as OsuApiClient;
 
 mod commands;
 mod db;
-mod http;
+mod prelude;
 
 use commands::osu::OsuAnnouncer;
 use commands::Announcer;
+use prelude::*;
 
 const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [commands::osu::hook];
 
@@ -49,8 +49,8 @@ fn main() {
     {
         let mut data = client.data.write();
         let http_client = reqwest::blocking::Client::new();
-        data.insert::<http::HTTP>(http_client.clone());
-        data.insert::<http::Osu>(OsuClient::new(
+        data.insert::<HTTPClient>(http_client.clone());
+        data.insert::<OsuClient>(OsuApiClient::new(
             http_client.clone(),
             var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
         ));

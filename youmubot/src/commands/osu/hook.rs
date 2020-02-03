@@ -1,11 +1,10 @@
-use crate::http;
+use crate::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serenity::{
     builder::CreateMessage,
     framework::standard::{CommandError as Error, CommandResult},
     model::channel::Message,
-    prelude::*,
     utils::MessageBuilder,
 };
 use youmubot_osu::{
@@ -71,7 +70,7 @@ struct ToPrint<'a> {
 }
 
 fn handle_old_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPrint<'a>>, Error> {
-    let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
     for capture in OLD_LINK_REGEX.captures_iter(content) {
         let req_type = capture.name("link_type").unwrap().as_str();
@@ -121,7 +120,7 @@ fn handle_old_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
 }
 
 fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPrint<'a>>, Error> {
-    let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
     for capture in NEW_LINK_REGEX.captures_iter(content) {
         let mode = capture.name("mode").and_then(|v| {
