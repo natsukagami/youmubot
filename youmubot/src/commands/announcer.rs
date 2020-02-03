@@ -14,15 +14,12 @@ pub trait Announcer {
     fn announcer_key() -> &'static str;
     fn send_messages(
         c: &Http,
-        d: &mut ShareMap,
+        d: &ShareMap,
         channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult;
 
-    fn set_channel(d: &mut ShareMap, guild: GuildId, channel: ChannelId) -> CommandResult {
-        let mut data: DBWriteGuard<_> = d
-            .get_mut::<AnnouncerChannels>()
-            .expect("DB initialized")
-            .into();
+    fn set_channel(d: &ShareMap, guild: GuildId, channel: ChannelId) -> CommandResult {
+        let data: DBWriteGuard<_> = d.get::<AnnouncerChannels>().expect("DB initialized").into();
         let mut data = data.borrow_mut()?;
         data.entry(Self::announcer_key().to_owned())
             .or_default()
@@ -30,7 +27,7 @@ pub trait Announcer {
         Ok(())
     }
 
-    fn get_guilds(d: &mut ShareMap) -> Result<Vec<(GuildId, ChannelId)>, Error> {
+    fn get_guilds(d: &ShareMap) -> Result<Vec<(GuildId, ChannelId)>, Error> {
         let data = d
             .get::<AnnouncerChannels>()
             .expect("DB initialized")
@@ -42,7 +39,7 @@ pub trait Announcer {
         Ok(data)
     }
 
-    fn announce(c: &Http, d: &mut ShareMap) -> CommandResult {
+    fn announce(c: &Http, d: &ShareMap) -> CommandResult {
         let guilds: Vec<_> = Self::get_guilds(d)?;
         let member_sets = {
             let mut v = Vec::with_capacity(guilds.len());
@@ -75,7 +72,7 @@ pub trait Announcer {
         let c = client.cache_and_http.clone();
         let data = client.data.clone();
         spawn(move || loop {
-            if let Err(e) = Self::announce(c.http(), &mut *data.write()) {
+            if let Err(e) = Self::announce(c.http(), &*data.read()) {
                 dbg!(e);
             }
             std::thread::sleep(cooldown);

@@ -97,9 +97,9 @@ pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f)?;
     match user {
         Some(u) => {
-            let mut db = ctx.data.write();
-            let mut db: DBWriteGuard<_> = db
-                .get_mut::<OsuSavedUsers>()
+            let db = ctx.data.read();
+            let db: DBWriteGuard<_> = db
+                .get::<OsuSavedUsers>()
                 .ok_or(Error::from("DB uninitialized"))?
                 .into();
             let mut db = db.borrow_mut()?;
@@ -147,18 +147,14 @@ enum UsernameArg {
 }
 
 impl UsernameArg {
-    fn to_user_id_query(
-        s: Option<Self>,
-        data: &mut ShareMap,
-        msg: &Message,
-    ) -> Result<UserID, Error> {
+    fn to_user_id_query(s: Option<Self>, data: &ShareMap, msg: &Message) -> Result<UserID, Error> {
         let id = match s {
             Some(UsernameArg::Raw(s)) => return Ok(UserID::Auto(s)),
             Some(UsernameArg::Tagged(r)) => r,
             None => msg.author.id,
         };
         let db: DBWriteGuard<_> = data
-            .get_mut::<OsuSavedUsers>()
+            .get::<OsuSavedUsers>()
             .ok_or(Error::from("DB uninitialized"))?
             .into();
         let db = db.borrow()?;
@@ -202,11 +198,8 @@ impl FromStr for Nth {
 pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let nth = args.single::<Nth>().unwrap_or(Nth(1)).0.min(50).max(1);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = UsernameArg::to_user_id_query(
-        args.single::<UsernameArg>().ok(),
-        &mut *ctx.data.write(),
-        msg,
-    )?;
+    let user =
+        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
     let osu: OsuClient = ctx.data.read().get::<http::Osu>().unwrap().clone();
     let user = osu
@@ -235,7 +228,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     })?;
 
     // Save the beatmap...
-    cache::save_beatmap(&mut *ctx.data.write(), msg.channel_id, &beatmap)?;
+    cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
 
     Ok(())
 }
@@ -244,9 +237,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
 #[description = "Show information from the last queried beatmap."]
 #[num_args(0)]
 pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-
-    let b = cache::get_beatmap(&mut *data, msg.channel_id)?;
+    let b = cache::get_beatmap(&*ctx.data.read(), msg.channel_id)?;
 
     match b {
         Some(BeatmapWithMode(b, m)) => {
@@ -271,9 +262,7 @@ pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
 #[description = "Check your own or someone else's best record on the last beatmap."]
 #[max_args(1)]
 pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-
-    let bm = cache::get_beatmap(&mut *data, msg.channel_id)?;
+    let bm = cache::get_beatmap(&*ctx.data.read(), msg.channel_id)?;
 
     match bm {
         None => {
@@ -282,10 +271,13 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
         Some(bm) => {
             let b = &bm.0;
             let m = bm.1;
-            let user =
-                UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+            let user = UsernameArg::to_user_id_query(
+                args.single::<UsernameArg>().ok(),
+                &*ctx.data.read(),
+                msg,
+            )?;
 
-            let osu = data.get::<http::Osu>().unwrap().clone();
+            let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
 
             let user = osu
                 .user(user, |f| f)?
@@ -319,10 +311,10 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .map(|ModeArg(t)| t)
         .unwrap_or(Mode::Std);
 
-    let mut data = ctx.data.write();
-    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+    let user =
+        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
-    let osu: OsuClient = data.get::<http::Osu>().unwrap().clone();
+    let osu: OsuClient = ctx.data.read().get::<http::Osu>().unwrap().clone();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -352,15 +344,15 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     })?;
 
     // Save the beatmap...
-    cache::save_beatmap(&mut *data, msg.channel_id, &beatmap)?;
+    cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
 
     Ok(())
 }
 
 fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
-    let mut data = ctx.data.write();
-    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
-    let osu = data.get::<http::Osu>().unwrap().clone();
+    let user =
+        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
+    let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
     let user = osu.user(user, |f| f.mode(mode))?;
     match user {
         Some(u) => {

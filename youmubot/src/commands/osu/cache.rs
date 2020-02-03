@@ -8,12 +8,12 @@ use serenity::{
 
 /// Save the beatmap into the server data storage.
 pub(crate) fn save_beatmap(
-    data: &mut ShareMap,
+    data: &ShareMap,
     channel_id: ChannelId,
     bm: &BeatmapWithMode,
 ) -> CommandResult {
-    let mut db: DBWriteGuard<_> = data
-        .get_mut::<OsuLastBeatmap>()
+    let db: DBWriteGuard<_> = data
+        .get::<OsuLastBeatmap>()
         .expect("DB is implemented")
         .into();
     let mut db = db.borrow_mut()?;

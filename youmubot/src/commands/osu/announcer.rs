@@ -2,10 +2,9 @@ use super::{embeds::score_embed, BeatmapWithMode};
 use crate::{
     commands::announcer::Announcer,
     db::{OsuSavedUsers, OsuUser},
-    http::{Osu, HTTP},
+    http::Osu,
 };
 use rayon::prelude::*;
-use reqwest::blocking::Client as HTTPClient;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     http::Http,
@@ -30,7 +29,7 @@ impl Announcer for OsuAnnouncer {
     }
     fn send_messages(
         c: &Http,
-        d: &mut ShareMap,
+        d: &ShareMap,
         channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult {
         let osu = d.get::<Osu>().expect("osu!client").clone();
@@ -87,7 +86,7 @@ impl Announcer for OsuAnnouncer {
             osu_user.last_update = chrono::Utc::now();
         }
         // Update users
-        let f = d.get_mut::<OsuSavedUsers>().expect("DB initialized");
+        let f = d.get::<OsuSavedUsers>().expect("DB initialized");
         f.write(|f| *f = data)?;
         f.save()?;
         Ok(())

@@ -47,7 +47,7 @@ pub fn hook(ctx: &mut Context, msg: &Message) -> () {
         }
         // Save the beatmap for query later.
         if let Some(t) = last_beatmap {
-            if let Err(v) = super::cache::save_beatmap(&mut *ctx.data.write(), msg.channel_id, &t) {
+            if let Err(v) = super::cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &t) {
                 dbg!(v);
             }
         }
@@ -121,8 +121,7 @@ fn handle_old_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
 }
 
 fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPrint<'a>>, Error> {
-    let data = ctx.data.write();
-    let osu = data.get::<http::Osu>().unwrap().clone();
+    let osu = ctx.data.read().get::<http::Osu>().unwrap().clone();
     let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
     for capture in NEW_LINK_REGEX.captures_iter(content) {
         let mode = capture.name("mode").and_then(|v| {

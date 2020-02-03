@@ -63,15 +63,15 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     Ok(())
 }
 
-pub struct DBWriteGuard<'a, T>(&'a mut FileDatabase<T, Ron>)
+pub struct DBWriteGuard<'a, T>(&'a FileDatabase<T, Ron>)
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned;
 
-impl<'a, T> From<&'a mut FileDatabase<T, Ron>> for DBWriteGuard<'a, T>
+impl<'a, T> From<&'a FileDatabase<T, Ron>> for DBWriteGuard<'a, T>
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
-    fn from(v: &'a mut FileDatabase<T, Ron>) -> Self {
+    fn from(v: &'a FileDatabase<T, Ron>) -> Self {
         DBWriteGuard(v)
     }
 }
@@ -83,9 +83,7 @@ where
     pub fn borrow(&self) -> Result<std::sync::RwLockReadGuard<T>, rustbreak::RustbreakError> {
         (*self).0.borrow_data()
     }
-    pub fn borrow_mut(
-        &mut self,
-    ) -> Result<std::sync::RwLockWriteGuard<T>, rustbreak::RustbreakError> {
+    pub fn borrow_mut(&self) -> Result<std::sync::RwLockWriteGuard<T>, rustbreak::RustbreakError> {
         (*self).0.borrow_data_mut()
     }
 }
@@ -112,7 +110,7 @@ impl ServerSoftBans {
     // Create a new, implemented role.
     pub fn new_implemented(role: RoleId) -> ServerSoftBans {
         ServerSoftBans::Implemented(ImplementedSoftBans {
-            role: role,
+            role,
             periodical_bans: HashMap::new(),
         })
     }

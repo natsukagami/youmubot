@@ -33,9 +33,9 @@ pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResu
     };
     let guild = msg.guild_id.ok_or(Error::from("Command is guild only"))?;
 
-    let mut data = ctx.data.write();
-    let mut data = data
-        .get_mut::<SoftBans>()
+    let data = ctx.data.read();
+    let data = data
+        .get::<SoftBans>()
         .ok_or(Error::from("DB initialized"))
         .map(|v| DBWriteGuard::from(v))?;
     let mut data = data.borrow_mut()?;
@@ -98,14 +98,14 @@ pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> Comman
         )));
     }
     // Check if we already set up
-    let mut data = ctx.data.write();
-    let mut db: DBWriteGuard<_> = data
-        .get_mut::<SoftBans>()
+    let data = ctx.data.read();
+    let db: DBWriteGuard<_> = data
+        .get::<SoftBans>()
         .ok_or(Error::from("DB uninitialized"))?
         .into();
     let mut db = db.borrow_mut()?;
     let server = db
-        .get_mut(&guild.id)
+        .get(&guild.id)
         .map(|v| match v {
             ServerSoftBans::Unimplemented => false,
             _ => true,
@@ -135,9 +135,9 @@ pub fn watch_soft_bans(client: &mut serenity::Client) -> impl FnOnce() -> () + '
             // Scope so that locks are released
             {
                 // Poll the data for any changes.
-                let mut data = data.write();
-                let mut db: DBWriteGuard<_> = data
-                    .get_mut::<SoftBans>()
+                let data = data.read();
+                let db: DBWriteGuard<_> = data
+                    .get::<SoftBans>()
                     .expect("DB wrongly initialized")
                     .into();
                 let mut db = db.borrow_mut().expect("cannot unpack DB");
