@@ -95,7 +95,7 @@ fn setup_framework(client: &Client) -> StandardFramework {
     let fw =    StandardFramework::new()
             .configure(|c| {
                 c.with_whitespace(false)
-                    .prefix("y!")
+                    .prefix(&var("PREFIX").unwrap_or("y!".to_owned()))
                     .delimiters(vec![" / ", "/ ", " /", "/"])
                     .owners([owner.id].iter().cloned().collect())
             })
