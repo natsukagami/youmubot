@@ -4,12 +4,17 @@ use serenity::{
     framework::standard::{DispatchError, StandardFramework},
     model::{channel::Message, gateway},
 };
-use youmubot_osu::discord::{setup as setup_osu, OSU_GROUP};
 use youmubot_prelude::*;
 
-const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [youmubot_osu::discord::hook];
+struct Handler {
+    hooks: Vec<fn(&mut Context, &Message) -> ()>,
+}
 
-struct Handler;
+impl Handler {
+    fn new() -> Handler {
+        Handler { hooks: vec![] }
+    }
+}
 
 impl EventHandler for Handler {
     fn ready(&self, _: Context, ready: gateway::Ready) {
@@ -17,7 +22,8 @@ impl EventHandler for Handler {
     }
 
     fn message(&self, mut ctx: Context, message: Message) {
-        MESSAGE_HOOKS.iter().for_each(|f| f(&mut ctx, &message));
+        println!("{:?}", message);
+        self.hooks.iter().for_each(|f| f(&mut ctx, &message));
     }
 }
 
@@ -27,12 +33,17 @@ fn main() {
         println!("Loaded dotenv from {:?}", path);
     }
 
+    let mut handler = Handler::new();
+    // Set up hooks
+    #[cfg(feature = "osu")]
+    handler.hooks.push(youmubot_osu::discord::hook);
+
     // Sets up a client
     let mut client = {
         // Collect the token
         let token = var("TOKEN").expect("Please set TOKEN as the Discord Bot's token to be used.");
         // Attempt to connect and set up a framework
-        Client::new(token, Handler).expect("Cannot connect")
+        Client::new(token, handler).expect("Cannot connect")
     };
 
     // Set up base framework
@@ -49,10 +60,19 @@ fn main() {
             });
         youmubot_prelude::setup::setup_prelude(&db_path, &mut data, &mut fw);
         // Setup core
+        #[cfg(feature = "core")]
         youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");
         // osu!
-        setup_osu(&db_path, &client, &mut data).expect("osu! is initialized");
+        #[cfg(feature = "osu")]
+        youmubot_osu::discord::setup(&db_path, &client, &mut data).expect("osu! is initialized");
     }
+
+    #[cfg(feature = "core")]
+    println!("Core enabled.");
+    #[cfg(feature = "osu")]
+    println!("osu! enabled.");
+
+    client.with_framework(fw);
 
     println!("Starting...");
     if let Err(v) = client.start() {
@@ -72,7 +92,7 @@ fn setup_framework(client: &Client) -> StandardFramework {
         .expect("Should be able to get app info")
         .owner;
 
-    StandardFramework::new()
+    let fw =    StandardFramework::new()
             .configure(|c| {
                 c.with_whitespace(false)
                     .prefix("y!")
@@ -126,10 +146,14 @@ fn setup_framework(client: &Client) -> StandardFramework {
             .bucket("images", |c| c.time_span(60).limit(2))
             .bucket("community", |c| {
                 c.delay(30).time_span(30).limit(1)
-            })
-            // groups here
-            .group(&youmubot_core::ADMIN_GROUP)
-            .group(&youmubot_core::FUN_GROUP)
-            .group(&youmubot_core::COMMUNITY_GROUP)
-            .group(&OSU_GROUP)
+            });
+    // groups here
+    #[cfg(feature = "core")]
+    let fw = fw
+        .group(&youmubot_core::ADMIN_GROUP)
+        .group(&youmubot_core::FUN_GROUP)
+        .group(&youmubot_core::COMMUNITY_GROUP);
+    #[cfg(feature = "osu")]
+    let fw = fw.group(&youmubot_osu::discord::OSU_GROUP);
+    fw
 }

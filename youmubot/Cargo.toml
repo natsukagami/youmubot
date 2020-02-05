@@ -5,12 +5,16 @@ authors = ["Natsu Kagami <natsukagami@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["core", "osu"]
+core = []
+osu = ["youmubot-osu"]
 
 [dependencies]
 serenity = "0.8"
 dotenv = "0.15"
-youmubot-osu = { path = "../youmubot-osu" }
 youmubot-db = { path = "../youmubot-db" }
 youmubot-prelude = { path = "../youmubot-prelude" }
 youmubot-core = { path = "../youmubot-core" }
+youmubot-osu = { path = "../youmubot-osu", optional = true }
 
