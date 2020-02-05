@@ -3,7 +3,6 @@ use crate::{
     db::{ServerSoftBans, SoftBans},
 };
 use chrono::offset::Utc;
-use serenity::prelude::*;
 use serenity::{
     framework::standard::{macros::command, Args, CommandError as Error, CommandResult},
     model::{
@@ -12,6 +11,7 @@ use serenity::{
     },
 };
 use std::cmp::max;
+use youmubot_prelude::*;
 
 #[command]
 #[required_permissions(ADMINISTRATOR)]

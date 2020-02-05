@@ -1,4 +1,3 @@
-use crate::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serenity::{
@@ -11,6 +10,7 @@ use youmubot_osu::{
     models::{Beatmap, Mode},
     request::BeatmapRequestKind,
 };
+use youmubot_prelude::*;
 
 use super::embeds::{beatmap_embed, beatmapset_embed};
 

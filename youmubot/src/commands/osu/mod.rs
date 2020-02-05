@@ -1,5 +1,4 @@
 use crate::db::{OsuSavedUsers, OsuUser};
-use crate::prelude::*;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -13,6 +12,7 @@ use youmubot_osu::{
     models::{Beatmap, Mode, User},
     request::{BeatmapRequestKind, UserID},
 };
+use youmubot_prelude::*;
 
 mod announcer;
 mod cache;

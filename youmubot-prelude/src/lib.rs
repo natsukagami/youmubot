@@ -1,24 +1,29 @@
-use std::sync::Arc;
-use youmubot_osu::Client as OsuHttpClient;
-
 pub use serenity::prelude::*;
+use std::sync::Arc;
+
+pub mod announcer;
+pub mod args;
+pub mod setup;
+
+pub use announcer::Announcer;
+pub use args::Duration;
 
 /// The global app data.
 pub type AppData = Arc<RwLock<ShareMap>>;
 
 /// The HTTP client.
-pub(crate) struct HTTPClient;
+pub struct HTTPClient;
 
 impl TypeMapKey for HTTPClient {
     type Value = reqwest::blocking::Client;
 }
 
 /// The osu! client.
-pub(crate) struct OsuClient;
+// pub(crate) struct OsuClient;
 
-impl TypeMapKey for OsuClient {
-    type Value = OsuHttpClient;
-}
+// impl TypeMapKey for OsuClient {
+//     type Value = OsuHttpClient;
+// }
 
 /// The TypeMap trait that allows TypeMaps to quickly get a clonable item.
 pub trait GetCloned {

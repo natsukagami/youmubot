@@ -1,19 +1,16 @@
 use dotenv;
 use dotenv::var;
-use reqwest;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
     model::{channel::Message, gateway},
 };
 use youmubot_osu::Client as OsuApiClient;
+use youmubot_prelude::*;
 
 mod commands;
 mod db;
-mod prelude;
 
 use commands::osu::OsuAnnouncer;
-use commands::Announcer;
-use prelude::*;
 
 const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [commands::osu::hook];
 
@@ -40,16 +37,30 @@ fn main() {
         // Collect the token
         let token = var("TOKEN").expect("Please set TOKEN as the Discord Bot's token to be used.");
         // Attempt to connect and set up a framework
-        setup_framework(Client::new(token, Handler).expect("Cannot connect..."))
+        Client::new(token, Handler).expect("Cannot connect")
     };
+
+    // Set up base framework
+    let mut fw = setup_framework(&client);
+
+    // Setup each package starting from the prelude.
+    {
+        let mut data = client.data.write();
+        let db_path = var("DBPATH")
+            .map(|v| std::path::PathBuf::from(v))
+            .unwrap_or_else(|e| {
+                println!("No DBPATH set up ({:?}), using `/data`", e);
+                std::path::PathBuf::from("data")
+            });
+        youmubot_prelude::setup::setup_prelude(&db_path, &mut data, &mut fw);
+    }
 
     // Setup initial data
     db::setup_db(&mut client).expect("Setup db should succeed");
     // Setup shared instances of things
     {
         let mut data = client.data.write();
-        let http_client = reqwest::blocking::Client::new();
-        data.insert::<HTTPClient>(http_client.clone());
+        let http_client = data.get_cloned::<HTTPClient>();
         data.insert::<OsuClient>(OsuApiClient::new(
             http_client.clone(),
             var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
@@ -71,7 +82,7 @@ fn main() {
 }
 
 // Sets up a framework for a client
-fn setup_framework(mut client: Client) -> Client {
+fn setup_framework(client: &Client) -> StandardFramework {
     // Collect owners
     let owner = client
         .cache_and_http
@@ -80,8 +91,7 @@ fn setup_framework(mut client: Client) -> Client {
         .expect("Should be able to get app info")
         .owner;
 
-    client.with_framework(
-        StandardFramework::new()
+    StandardFramework::new()
             .configure(|c| {
                 c.with_whitespace(false)
                     .prefix("y!")
@@ -141,6 +151,4 @@ fn setup_framework(mut client: Client) -> Client {
             .group(&commands::FUN_GROUP)
             .group(&commands::COMMUNITY_GROUP)
             .group(&commands::OSU_GROUP)
-    );
-    client
 }

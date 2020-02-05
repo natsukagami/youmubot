@@ -1,4 +1,3 @@
-use serenity::prelude::*;
 use serenity::{
     framework::standard::{
         help_commands, macros::help, Args, CommandGroup, CommandResult, HelpOptions,
@@ -6,9 +5,7 @@ use serenity::{
     model::{channel::Message, id::UserId},
 };
 use std::collections::HashSet;
-
-mod announcer;
-mod args;
+use youmubot_prelude::*;
 
 pub mod admin;
 pub mod community;

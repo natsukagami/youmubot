@@ -1,14 +1,16 @@
-use crate::db::AnnouncerChannels;
-use crate::prelude::*;
+use crate::AppData;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     http::{CacheHttp, Http},
     model::id::{ChannelId, GuildId, UserId},
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     thread::{spawn, JoinHandle},
 };
+use youmubot_db::DB;
+
+pub(crate) type AnnouncerChannels = DB<HashMap<String, HashMap<GuildId, ChannelId>>>;
 
 pub trait Announcer {
     fn announcer_key() -> &'static str;

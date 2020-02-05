@@ -19,4 +19,5 @@ lazy_static = "1"
 youmubot-osu = { path = "../youmubot-osu" }
 rayon = "1.1"
 youmubot-db = { path = "../youmubot-db" }
+youmubot-prelude = { path = "../youmubot-prelude" }
 

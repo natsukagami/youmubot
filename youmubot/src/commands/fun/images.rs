@@ -1,4 +1,3 @@
-use crate::prelude::*;
 use serde::Deserialize;
 use serenity::framework::standard::CommandError as Error;
 use serenity::{
@@ -9,6 +8,7 @@ use serenity::{
     model::channel::{Channel, Message},
 };
 use std::string::ToString;
+use youmubot_prelude::*;
 
 #[command]
 #[checks(nsfw)]

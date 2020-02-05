@@ -12,9 +12,6 @@ use std::path::PathBuf;
 use youmubot_db::{GuildMap, DB};
 use youmubot_osu::models::{Beatmap, Mode};
 
-/// A map from announcer keys to guild IDs and to channels.
-pub type AnnouncerChannels = DB<HashMap<String, GuildMap<ChannelId>>>;
-
 /// A list of SoftBans for all servers.
 pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
 
@@ -34,7 +31,7 @@ pub fn setup_db(client: &mut Client) -> Result<(), Error> {
     SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
     OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
     OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
-    AnnouncerChannels::insert_into(&mut *data, &path.join("announcers.yaml"))?;
+    // AnnouncerChannels::insert_into(&mut *data, &path.join("announcers.yaml"))?;
 
     Ok(())
 }

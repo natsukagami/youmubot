@@ -1,9 +1,5 @@
 use super::{embeds::score_embed, BeatmapWithMode};
-use crate::{
-    commands::announcer::Announcer,
-    db::{OsuSavedUsers, OsuUser},
-    prelude::*,
-};
+use crate::db::{OsuSavedUsers, OsuUser};
 use rayon::prelude::*;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
@@ -15,6 +11,7 @@ use youmubot_osu::{
     request::{BeatmapRequestKind, UserID},
     Client as Osu,
 };
+use youmubot_prelude::*;
 
 /// Announce osu! top scores.
 pub struct OsuAnnouncer;
