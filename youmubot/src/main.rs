@@ -7,9 +7,6 @@ use serenity::{
 use youmubot_osu::discord::{setup as setup_osu, OSU_GROUP};
 use youmubot_prelude::*;
 
-mod commands;
-mod db;
-
 const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [youmubot_osu::discord::hook];
 
 struct Handler;
@@ -51,14 +48,11 @@ fn main() {
                 std::path::PathBuf::from("data")
             });
         youmubot_prelude::setup::setup_prelude(&db_path, &mut data, &mut fw);
-        // Setup initial data
-        db::setup_db(&db_path, &mut data).expect("Setup db should succeed");
+        // Setup core
+        youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");
         // osu!
         setup_osu(&db_path, &client, &mut data).expect("osu! is initialized");
     }
-
-    // Create handler threads
-    std::thread::spawn(commands::admin::watch_soft_bans(&mut client));
 
     println!("Starting...");
     if let Err(v) = client.start() {
@@ -85,7 +79,7 @@ fn setup_framework(client: &Client) -> StandardFramework {
                     .delimiters(vec![" / ", "/ ", " /", "/"])
                     .owners([owner.id].iter().cloned().collect())
             })
-            .help(&commands::HELP)
+            .help(&youmubot_core::HELP)
             .before(|_, msg, command_name| {
                 println!(
                     "Got command '{}' by user '{}'",
@@ -134,8 +128,8 @@ fn setup_framework(client: &Client) -> StandardFramework {
                 c.delay(30).time_span(30).limit(1)
             })
             // groups here
-            .group(&commands::ADMIN_GROUP)
-            .group(&commands::FUN_GROUP)
-            .group(&commands::COMMUNITY_GROUP)
+            .group(&youmubot_core::ADMIN_GROUP)
+            .group(&youmubot_core::FUN_GROUP)
+            .group(&youmubot_core::COMMUNITY_GROUP)
             .group(&OSU_GROUP)
 }

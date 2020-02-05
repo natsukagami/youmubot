@@ -1,5 +1,5 @@
 [package]
-name = "youmubot"
+name = "youmubot-core"
 version = "0.1.0"
 authors = ["Natsu Kagami <natsukagami@gmail.com>"]
 edition = "2018"
@@ -8,9 +8,10 @@ edition = "2018"
 
 [dependencies]
 serenity = "0.8"
-dotenv = "0.15"
-youmubot-osu = { path = "../youmubot-osu" }
+rand = "0.7"
+serde = { version = "1", features = ["derive"] }
+chrono = "0.4"
+static_assertions = "1.1"
+
 youmubot-db = { path = "../youmubot-db" }
 youmubot-prelude = { path = "../youmubot-prelude" }
-youmubot-core = { path = "../youmubot-core" }
-

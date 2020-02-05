@@ -9,11 +9,26 @@ use youmubot_prelude::*;
 
 pub mod admin;
 pub mod community;
+mod db;
 pub mod fun;
 
 pub use admin::ADMIN_GROUP;
 pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
+
+/// Sets up all databases in the client.
+pub fn setup(
+    path: &std::path::Path,
+    client: &serenity::client::Client,
+    data: &mut youmubot_prelude::ShareMap,
+) -> serenity::framework::standard::CommandResult {
+    db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
+
+    // Create handler threads
+    std::thread::spawn(admin::watch_soft_bans(client));
+
+    Ok(())
+}
 
 // A help command
 #[help]

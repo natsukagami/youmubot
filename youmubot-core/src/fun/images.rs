@@ -57,7 +57,7 @@ fn message_command(ctx: &mut Context, msg: &Message, args: Args, rating: Rating)
 
 // Gets an image URL.
 fn get_image(
-    client: &reqwest::blocking::Client,
+    client: &<HTTPClient as TypeMapKey>::Value,
     rating: Rating,
     tags: &str,
 ) -> Result<Option<String>, Error> {

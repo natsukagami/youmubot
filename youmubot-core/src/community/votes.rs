@@ -1,4 +1,3 @@
-use crate::commands::args::Duration as ParseDuration;
 use serenity::framework::standard::CommandError as Error;
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
@@ -11,7 +10,7 @@ use serenity::{
 use std::collections::HashMap as Map;
 use std::thread;
 use std::time::Duration;
-use youmubot_prelude::*;
+use youmubot_prelude::{Duration as ParseDuration, *};
 
 #[command]
 #[description = "🎌 Cast a poll upon everyone and ask them for opinions!"]

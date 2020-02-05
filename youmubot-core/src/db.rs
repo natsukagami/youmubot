@@ -2,23 +2,13 @@ use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Serialize};
 use serenity::{
-    framework::standard::CommandError as Error,
     model::id::{RoleId, UserId},
 };
 use std::collections::HashMap;
-use std::path::Path;
 use youmubot_db::{GuildMap, DB};
-use youmubot_prelude::*;
 
 /// A list of SoftBans for all servers.
 pub type SoftBans = DB<GuildMap<ServerSoftBans>>;
-
-/// Sets up all databases in the client.
-pub fn setup_db(path: &Path, data: &mut ShareMap) -> Result<(), Error> {
-    SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
-
-    Ok(())
-}
 
 /// For the admin commands:
 ///  - Each server might have a `soft ban` role implemented.

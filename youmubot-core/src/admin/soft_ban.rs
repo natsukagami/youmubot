@@ -1,7 +1,4 @@
-use crate::{
-    commands::args,
-    db::{ServerSoftBans, SoftBans},
-};
+use crate::db::{ServerSoftBans, SoftBans};
 use chrono::offset::Utc;
 use serenity::{
     framework::standard::{macros::command, Args, CommandError as Error, CommandResult},
@@ -114,7 +111,7 @@ pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> Comman
 }
 
 // Watch the soft bans.
-pub fn watch_soft_bans(client: &mut serenity::Client) -> impl FnOnce() -> () + 'static {
+pub fn watch_soft_bans(client: &serenity::Client) -> impl FnOnce() -> () + 'static {
     let cache_http = {
         let cache_http = client.cache_and_http.clone();
         let cache: serenity::cache::CacheRwLock = cache_http.cache.clone().into();
