@@ -33,8 +33,7 @@ pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResu
     };
     let guild = msg.guild_id.ok_or(Error::from("Command is guild only"))?;
 
-    let db = ctx.data.read();
-    let db = SoftBans::open(&*db);
+    let db = SoftBans::open(&*ctx.data.read());
     let mut db = db.borrow_mut()?;
     let mut server_ban = db.get_mut(&guild).and_then(|v| match v {
         ServerSoftBans::Unimplemented => None,
@@ -95,8 +94,7 @@ pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> Comman
         )));
     }
     // Check if we already set up
-    let db = ctx.data.read();
-    let db = SoftBans::open(&*db);
+    let db = SoftBans::open(&*ctx.data.read());
     let mut db = db.borrow_mut()?;
     let server = db
         .get(&guild.id)

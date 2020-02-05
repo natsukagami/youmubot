@@ -3,6 +3,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serenity::{framework::standard::CommandError as Error, model::id::GuildId, prelude::*};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 /// GuildMap defines the guild-map type.
 /// It is basically a HashMap from a GuildId to a data structure.
@@ -10,7 +11,7 @@ pub type GuildMap<V> = HashMap<GuildId, V>;
 /// The generic DB type we will be using.
 pub struct DB<T>(std::marker::PhantomData<T>);
 impl<T: std::any::Any> serenity::prelude::TypeMapKey for DB<T> {
-    type Value = FileDatabase<T, Ron>;
+    type Value = Arc<FileDatabase<T, Ron>>;
 }
 
 impl<T: std::any::Any + Default + Send + Sync + Clone + Serialize + std::fmt::Debug> DB<T>
@@ -24,32 +25,33 @@ where
             dbg!(e);
             db.save()
         })?;
-        data.insert::<DB<T>>(db);
+        data.insert::<DB<T>>(Arc::new(db));
         Ok(())
     }
 
     /// Open a previously inserted DB.
-    pub fn open(data: &ShareMap) -> DBWriteGuard<'_, T> {
-        data.get::<Self>().expect("DB initialized").into()
+    pub fn open(data: &ShareMap) -> DBWriteGuard<T> {
+        data.get::<Self>().expect("DB initialized").clone().into()
     }
 }
 
 /// The write guard for our FileDatabase.
 /// It wraps the FileDatabase in a write-on-drop lock.
-pub struct DBWriteGuard<'a, T>(&'a FileDatabase<T, Ron>)
+#[derive(Debug)]
+pub struct DBWriteGuard<T>(Arc<FileDatabase<T, Ron>>)
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned;
 
-impl<'a, T> From<&'a FileDatabase<T, Ron>> for DBWriteGuard<'a, T>
+impl<T> From<Arc<FileDatabase<T, Ron>>> for DBWriteGuard<T>
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
-    fn from(v: &'a FileDatabase<T, Ron>) -> Self {
+    fn from(v: Arc<FileDatabase<T, Ron>>) -> Self {
         DBWriteGuard(v)
     }
 }
 
-impl<'a, T> DBWriteGuard<'a, T>
+impl<T> DBWriteGuard<T>
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
@@ -60,14 +62,5 @@ where
     /// Borrows the FileDatabase for writing.
     pub fn borrow_mut(&self) -> Result<std::sync::RwLockWriteGuard<T>, rustbreak::RustbreakError> {
         (*self).0.borrow_data_mut()
-    }
-}
-
-impl<'a, T> Drop for DBWriteGuard<'a, T>
-where
-    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
-{
-    fn drop(&mut self) {
-        self.0.save().expect("Save succeed")
     }
 }

@@ -95,8 +95,7 @@ pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f)?;
     match user {
         Some(u) => {
-            let db = ctx.data.read();
-            let db = OsuSavedUsers::open(&db);
+            let db = OsuSavedUsers::open(&*ctx.data.read());
             let mut db = db.borrow_mut()?;
 
             db.insert(
