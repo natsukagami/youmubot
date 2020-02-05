@@ -1,4 +1,3 @@
-use serenity::prelude::*;
 use serenity::{
     framework::standard::{
         help_commands, macros::help, Args, CommandGroup, CommandResult, HelpOptions,
@@ -6,21 +5,30 @@ use serenity::{
     model::{channel::Message, id::UserId},
 };
 use std::collections::HashSet;
-
-mod announcer;
-mod args;
+use youmubot_prelude::*;
 
 pub mod admin;
 pub mod community;
+mod db;
 pub mod fun;
-pub mod osu;
 
 pub use admin::ADMIN_GROUP;
 pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
-pub use osu::OSU_GROUP;
 
-pub use announcer::Announcer;
+/// Sets up all databases in the client.
+pub fn setup(
+    path: &std::path::Path,
+    client: &serenity::client::Client,
+    data: &mut youmubot_prelude::ShareMap,
+) -> serenity::framework::standard::CommandResult {
+    db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
+
+    // Create handler threads
+    std::thread::spawn(admin::watch_soft_bans(client));
+
+    Ok(())
+}
 
 // A help command
 #[help]

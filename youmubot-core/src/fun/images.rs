@@ -1,8 +1,5 @@
-use crate::http::HTTP;
-use reqwest::blocking::Client as HTTPClient;
 use serde::Deserialize;
 use serenity::framework::standard::CommandError as Error;
-use serenity::prelude::*;
 use serenity::{
     framework::standard::{
         macros::{check, command},
@@ -11,6 +8,7 @@ use serenity::{
     model::channel::{Channel, Message},
 };
 use std::string::ToString;
+use youmubot_prelude::*;
 
 #[command]
 #[checks(nsfw)]
@@ -45,9 +43,8 @@ fn nsfw_check(ctx: &mut Context, msg: &Message, _: &mut Args, _: &CommandOptions
 
 fn message_command(ctx: &mut Context, msg: &Message, args: Args, rating: Rating) -> CommandResult {
     let tags = args.remains().unwrap_or("touhou");
-    let http = ctx.data.read();
-    let http = http.get::<HTTP>().unwrap();
-    let image = get_image(http, rating, tags)?;
+    let http = ctx.data.get_cloned::<HTTPClient>();
+    let image = get_image(&http, rating, tags)?;
     match image {
         None => msg.reply(&ctx, "🖼️ No image found...\n💡 Tip: In danbooru, character names follow Japanese standards (last name before first name), so **Hakurei Reimu** might give you an image while **Reimu Hakurei** won't."),
         Some(url) => msg.reply(
@@ -59,7 +56,11 @@ fn message_command(ctx: &mut Context, msg: &Message, args: Args, rating: Rating)
 }
 
 // Gets an image URL.
-fn get_image(client: &HTTPClient, rating: Rating, tags: &str) -> Result<Option<String>, Error> {
+fn get_image(
+    client: &<HTTPClient as TypeMapKey>::Value,
+    rating: Rating,
+    tags: &str,
+) -> Result<Option<String>, Error> {
     // Fix the tags: change whitespaces to +
     let tags = tags.split_whitespace().collect::<Vec<_>>().join("_");
     let req = client

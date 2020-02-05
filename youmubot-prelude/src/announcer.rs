@@ -1,49 +1,45 @@
-use crate::db::{AnnouncerChannels, DBWriteGuard};
+use crate::AppData;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     http::{CacheHttp, Http},
     model::id::{ChannelId, GuildId, UserId},
-    prelude::ShareMap,
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     thread::{spawn, JoinHandle},
 };
+use youmubot_db::DB;
+
+pub(crate) type AnnouncerChannels = DB<HashMap<String, HashMap<GuildId, ChannelId>>>;
 
 pub trait Announcer {
     fn announcer_key() -> &'static str;
     fn send_messages(
         c: &Http,
-        d: &mut ShareMap,
+        d: AppData,
         channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult;
 
-    fn set_channel(d: &mut ShareMap, guild: GuildId, channel: ChannelId) -> CommandResult {
-        let mut data: DBWriteGuard<_> = d
-            .get_mut::<AnnouncerChannels>()
-            .expect("DB initialized")
-            .into();
-        let mut data = data.borrow_mut()?;
-        data.entry(Self::announcer_key().to_owned())
+    fn set_channel(d: AppData, guild: GuildId, channel: ChannelId) -> CommandResult {
+        AnnouncerChannels::open(&*d.read())
+            .borrow_mut()?
+            .entry(Self::announcer_key().to_owned())
             .or_default()
             .insert(guild, channel);
         Ok(())
     }
 
-    fn get_guilds(d: &mut ShareMap) -> Result<Vec<(GuildId, ChannelId)>, Error> {
-        let data = d
-            .get::<AnnouncerChannels>()
-            .expect("DB initialized")
-            .read(|v| {
-                v.get(Self::announcer_key())
-                    .map(|m| m.iter().map(|(a, b)| (*a, *b)).collect())
-                    .unwrap_or_else(|| vec![])
-            })?;
+    fn get_guilds(d: AppData) -> Result<Vec<(GuildId, ChannelId)>, Error> {
+        let data = AnnouncerChannels::open(&*d.read())
+            .borrow()?
+            .get(Self::announcer_key())
+            .map(|m| m.iter().map(|(a, b)| (*a, *b)).collect())
+            .unwrap_or_else(|| vec![]);
         Ok(data)
     }
 
-    fn announce(c: &Http, d: &mut ShareMap) -> CommandResult {
-        let guilds: Vec<_> = Self::get_guilds(d)?;
+    fn announce(c: impl AsRef<Http>, d: AppData) -> CommandResult {
+        let guilds: Vec<_> = Self::get_guilds(d.clone())?;
         let member_sets = {
             let mut v = Vec::with_capacity(guilds.len());
             for (guild, channel) in guilds.into_iter() {
@@ -75,7 +71,7 @@ pub trait Announcer {
         let c = client.cache_and_http.clone();
         let data = client.data.clone();
         spawn(move || loop {
-            if let Err(e) = Self::announce(c.http(), &mut *data.write()) {
+            if let Err(e) = Self::announce(c.http(), data.clone()) {
                 dbg!(e);
             }
             std::thread::sleep(cooldown);

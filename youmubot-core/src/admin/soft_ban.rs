@@ -1,9 +1,5 @@
-use crate::{
-    commands::args,
-    db::{DBWriteGuard, ServerSoftBans, SoftBans},
-};
+use crate::db::{ServerSoftBans, SoftBans};
 use chrono::offset::Utc;
-use serenity::prelude::*;
 use serenity::{
     framework::standard::{macros::command, Args, CommandError as Error, CommandResult},
     model::{
@@ -12,6 +8,7 @@ use serenity::{
     },
 };
 use std::cmp::max;
+use youmubot_prelude::*;
 
 #[command]
 #[required_permissions(ADMINISTRATOR)]
@@ -33,13 +30,9 @@ pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResu
     };
     let guild = msg.guild_id.ok_or(Error::from("Command is guild only"))?;
 
-    let mut data = ctx.data.write();
-    let mut data = data
-        .get_mut::<SoftBans>()
-        .ok_or(Error::from("DB initialized"))
-        .map(|v| DBWriteGuard::from(v))?;
-    let mut data = data.borrow_mut()?;
-    let mut server_ban = data.get_mut(&guild).and_then(|v| match v {
+    let db = SoftBans::open(&*ctx.data.read());
+    let mut db = db.borrow_mut()?;
+    let mut server_ban = db.get_mut(&guild).and_then(|v| match v {
         ServerSoftBans::Unimplemented => None,
         ServerSoftBans::Implemented(ref mut v) => Some(v),
     });
@@ -98,14 +91,10 @@ pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> Comman
         )));
     }
     // Check if we already set up
-    let mut data = ctx.data.write();
-    let mut db: DBWriteGuard<_> = data
-        .get_mut::<SoftBans>()
-        .ok_or(Error::from("DB uninitialized"))?
-        .into();
+    let db = SoftBans::open(&*ctx.data.read());
     let mut db = db.borrow_mut()?;
     let server = db
-        .get_mut(&guild.id)
+        .get(&guild.id)
         .map(|v| match v {
             ServerSoftBans::Unimplemented => false,
             _ => true,
@@ -122,7 +111,7 @@ pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> Comman
 }
 
 // Watch the soft bans.
-pub fn watch_soft_bans(client: &mut serenity::Client) -> impl FnOnce() -> () + 'static {
+pub fn watch_soft_bans(client: &serenity::Client) -> impl FnOnce() -> () + 'static {
     let cache_http = {
         let cache_http = client.cache_and_http.clone();
         let cache: serenity::cache::CacheRwLock = cache_http.cache.clone().into();
@@ -135,12 +124,9 @@ pub fn watch_soft_bans(client: &mut serenity::Client) -> impl FnOnce() -> () + '
             // Scope so that locks are released
             {
                 // Poll the data for any changes.
-                let mut data = data.write();
-                let mut db: DBWriteGuard<_> = data
-                    .get_mut::<SoftBans>()
-                    .expect("DB wrongly initialized")
-                    .into();
-                let mut db = db.borrow_mut().expect("cannot unpack DB");
+                let db = data.read();
+                let db = SoftBans::open(&*db);
+                let mut db = db.borrow_mut().expect("Borrowable");
                 let now = Utc::now();
                 for (server_id, soft_bans) in db.iter_mut() {
                     let server_name: String = match server_id.to_partial_guild(cache_http) {

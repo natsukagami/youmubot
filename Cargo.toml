@@ -1,6 +1,9 @@
 [workspace]
 
 members = [
+	"youmubot-prelude",
+	"youmubot-db",
+	"youmubot-core",
 	"youmubot-osu",
 	"youmubot",
 ]

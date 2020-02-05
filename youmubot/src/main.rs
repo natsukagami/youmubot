@@ -1,21 +1,13 @@
 use dotenv;
 use dotenv::var;
-use reqwest;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
     model::{channel::Message, gateway},
-    prelude::*,
 };
-use youmubot_osu::Client as OsuClient;
+use youmubot_osu::discord::{setup as setup_osu, OSU_GROUP};
+use youmubot_prelude::*;
 
-mod commands;
-mod db;
-mod http;
-
-use commands::osu::OsuAnnouncer;
-use commands::Announcer;
-
-const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [commands::osu::hook];
+const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [youmubot_osu::discord::hook];
 
 struct Handler;
 
@@ -40,25 +32,27 @@ fn main() {
         // Collect the token
         let token = var("TOKEN").expect("Please set TOKEN as the Discord Bot's token to be used.");
         // Attempt to connect and set up a framework
-        setup_framework(Client::new(token, Handler).expect("Cannot connect..."))
+        Client::new(token, Handler).expect("Cannot connect")
     };
 
-    // Setup initial data
-    db::setup_db(&mut client).expect("Setup db should succeed");
-    // Setup shared instances of things
+    // Set up base framework
+    let mut fw = setup_framework(&client);
+
+    // Setup each package starting from the prelude.
     {
         let mut data = client.data.write();
-        data.insert::<http::HTTP>(reqwest::blocking::Client::new());
-        data.insert::<http::Osu>(OsuClient::new(
-            var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
-        ));
+        let db_path = var("DBPATH")
+            .map(|v| std::path::PathBuf::from(v))
+            .unwrap_or_else(|e| {
+                println!("No DBPATH set up ({:?}), using `/data`", e);
+                std::path::PathBuf::from("data")
+            });
+        youmubot_prelude::setup::setup_prelude(&db_path, &mut data, &mut fw);
+        // Setup core
+        youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");
+        // osu!
+        setup_osu(&db_path, &client, &mut data).expect("osu! is initialized");
     }
-
-    // Create handler threads
-    std::thread::spawn(commands::admin::watch_soft_bans(&mut client));
-
-    // Announcers
-    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(300));
 
     println!("Starting...");
     if let Err(v) = client.start() {
@@ -69,7 +63,7 @@ fn main() {
 }
 
 // Sets up a framework for a client
-fn setup_framework(mut client: Client) -> Client {
+fn setup_framework(client: &Client) -> StandardFramework {
     // Collect owners
     let owner = client
         .cache_and_http
@@ -78,15 +72,14 @@ fn setup_framework(mut client: Client) -> Client {
         .expect("Should be able to get app info")
         .owner;
 
-    client.with_framework(
-        StandardFramework::new()
+    StandardFramework::new()
             .configure(|c| {
                 c.with_whitespace(false)
                     .prefix("y!")
                     .delimiters(vec![" / ", "/ ", " /", "/"])
                     .owners([owner.id].iter().cloned().collect())
             })
-            .help(&commands::HELP)
+            .help(&youmubot_core::HELP)
             .before(|_, msg, command_name| {
                 println!(
                     "Got command '{}' by user '{}'",
@@ -135,10 +128,8 @@ fn setup_framework(mut client: Client) -> Client {
                 c.delay(30).time_span(30).limit(1)
             })
             // groups here
-            .group(&commands::ADMIN_GROUP)
-            .group(&commands::FUN_GROUP)
-            .group(&commands::COMMUNITY_GROUP)
-            .group(&commands::OSU_GROUP)
-    );
-    client
+            .group(&youmubot_core::ADMIN_GROUP)
+            .group(&youmubot_core::FUN_GROUP)
+            .group(&youmubot_core::COMMUNITY_GROUP)
+            .group(&OSU_GROUP)
 }

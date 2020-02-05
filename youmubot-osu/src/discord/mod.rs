@@ -1,29 +1,69 @@
-use crate::db::{DBWriteGuard, OsuSavedUsers, OsuUser};
-use crate::http;
+use crate::{
+    models::{Beatmap, Mode, User},
+    request::{BeatmapRequestKind, UserID},
+    Client as OsuHttpClient,
+};
 use serenity::{
     framework::standard::{
         macros::{command, group},
         Args, CommandError as Error, CommandResult,
     },
     model::{channel::Message, id::UserId},
-    prelude::*,
     utils::MessageBuilder,
 };
 use std::str::FromStr;
-use youmubot_osu::{
-    models::{Beatmap, Mode, User},
-    request::{BeatmapRequestKind, UserID},
-    Client as OsuClient,
-};
+use youmubot_prelude::*;
 
 mod announcer;
 mod cache;
+mod db;
 pub(crate) mod embeds;
 mod hook;
 
 pub use announcer::OsuAnnouncer;
+use db::OsuUser;
+use db::{OsuLastBeatmap, OsuSavedUsers};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
+
+/// The osu! client.
+pub(crate) struct OsuClient;
+
+impl TypeMapKey for OsuClient {
+    type Value = OsuHttpClient;
+}
+
+/// Sets up the osu! command handling section.
+///
+/// This automatically enables:
+///  - Related databases
+///  - An announcer system (that will eventually be revamped)
+///  - The osu! API client.
+///
+///  This does NOT automatically enable:
+///  - Commands on the "osu" prefix
+///  - Hooks. Hooks are completely opt-in.
+///  
+pub fn setup(
+    path: &std::path::Path,
+    client: &serenity::client::Client,
+    data: &mut ShareMap,
+) -> CommandResult {
+    // Databases
+    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
+    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
+
+    // API client
+    let http_client = data.get_cloned::<HTTPClient>();
+    data.insert::<OsuClient>(OsuHttpClient::new(
+        http_client,
+        std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
+    ));
+
+    // Announcer
+    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(300));
+    Ok(())
+}
 
 #[group]
 #[prefix = "osu"]
@@ -91,18 +131,13 @@ impl AsRef<Beatmap> for BeatmapWithMode {
 #[usage = "[username or user_id]"]
 #[num_args(1)]
 pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu = data.get::<http::Osu>().unwrap();
+    let osu = ctx.data.get_cloned::<OsuClient>();
 
     let user = args.single::<String>()?;
-    let user: Option<User> = osu.user(reqwest, UserID::Auto(user), |f| f)?;
+    let user: Option<User> = osu.user(UserID::Auto(user), |f| f)?;
     match user {
         Some(u) => {
-            let mut db: DBWriteGuard<_> = data
-                .get_mut::<OsuSavedUsers>()
-                .ok_or(Error::from("DB uninitialized"))?
-                .into();
+            let db = OsuSavedUsers::open(&*ctx.data.read());
             let mut db = db.borrow_mut()?;
 
             db.insert(
@@ -148,20 +183,14 @@ enum UsernameArg {
 }
 
 impl UsernameArg {
-    fn to_user_id_query(
-        s: Option<Self>,
-        data: &mut ShareMap,
-        msg: &Message,
-    ) -> Result<UserID, Error> {
+    fn to_user_id_query(s: Option<Self>, data: &ShareMap, msg: &Message) -> Result<UserID, Error> {
         let id = match s {
             Some(UsernameArg::Raw(s)) => return Ok(UserID::Auto(s)),
             Some(UsernameArg::Tagged(r)) => r,
             None => msg.author.id,
         };
-        let db: DBWriteGuard<_> = data
-            .get_mut::<OsuSavedUsers>()
-            .ok_or(Error::from("DB uninitialized"))?
-            .into();
+
+        let db = OsuSavedUsers::open(data);
         let db = db.borrow()?;
         db.get(&id)
             .cloned()
@@ -201,28 +230,24 @@ impl FromStr for Nth {
 #[example = "#1 / taiko / natsukagami"]
 #[max_args(3)]
 pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-
     let nth = args.single::<Nth>().unwrap_or(Nth(1)).0.min(50).max(1);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+    let user =
+        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu: &OsuClient = data.get::<http::Osu>().unwrap();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu
-        .user(reqwest, user, |f| f.mode(mode))?
+        .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
     let recent_play = osu
-        .user_recent(reqwest, UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
+        .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
         .into_iter()
         .last()
         .ok_or(Error::from("No such play"))?;
     let beatmap = osu
-        .beatmaps(
-            reqwest,
-            BeatmapRequestKind::Beatmap(recent_play.beatmap_id),
-            |f| f.mode(mode, true),
-        )?
+        .beatmaps(BeatmapRequestKind::Beatmap(recent_play.beatmap_id), |f| {
+            f.mode(mode, true)
+        })?
         .into_iter()
         .next()
         .map(|v| BeatmapWithMode(v, mode))
@@ -237,7 +262,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     })?;
 
     // Save the beatmap...
-    cache::save_beatmap(&mut *data, msg.channel_id, &beatmap)?;
+    cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
 
     Ok(())
 }
@@ -246,9 +271,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
 #[description = "Show information from the last queried beatmap."]
 #[num_args(0)]
 pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-
-    let b = cache::get_beatmap(&mut *data, msg.channel_id)?;
+    let b = cache::get_beatmap(&*ctx.data.read(), msg.channel_id)?;
 
     match b {
         Some(BeatmapWithMode(b, m)) => {
@@ -273,9 +296,7 @@ pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
 #[description = "Check your own or someone else's best record on the last beatmap."]
 #[max_args(1)]
 pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut data = ctx.data.write();
-
-    let bm = cache::get_beatmap(&mut *data, msg.channel_id)?;
+    let bm = cache::get_beatmap(&*ctx.data.read(), msg.channel_id)?;
 
     match bm {
         None => {
@@ -284,18 +305,18 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
         Some(bm) => {
             let b = &bm.0;
             let m = bm.1;
-            let user =
-                UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+            let user = UsernameArg::to_user_id_query(
+                args.single::<UsernameArg>().ok(),
+                &*ctx.data.read(),
+                msg,
+            )?;
 
-            let reqwest = data.get::<http::HTTP>().unwrap();
-            let osu = data.get::<http::Osu>().unwrap();
+            let osu = ctx.data.get_cloned::<OsuClient>();
 
             let user = osu
-                .user(reqwest, user, |f| f)?
+                .user(user, |f| f)?
                 .ok_or(Error::from("User not found"))?;
-            let scores = osu.scores(reqwest, b.beatmap_id, |f| {
-                f.user(UserID::ID(user.id)).mode(m)
-            })?;
+            let scores = osu.scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))?;
 
             if scores.is_empty() {
                 msg.reply(&ctx, "No scores found")?;
@@ -324,15 +345,14 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .map(|ModeArg(t)| t)
         .unwrap_or(Mode::Std);
 
-    let mut data = ctx.data.write();
-    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
+    let user =
+        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu: &OsuClient = data.get::<http::Osu>().unwrap();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu
-        .user(reqwest, user, |f| f.mode(mode))?
+        .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
-    let top_play = osu.user_best(reqwest, UserID::ID(user.id), |f| f.mode(mode).limit(nth))?;
+    let top_play = osu.user_best(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?;
 
     let rank = top_play.len() as u8;
 
@@ -341,11 +361,9 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .last()
         .ok_or(Error::from("No such play"))?;
     let beatmap = osu
-        .beatmaps(
-            reqwest,
-            BeatmapRequestKind::Beatmap(top_play.beatmap_id),
-            |f| f.mode(mode, true),
-        )?
+        .beatmaps(BeatmapRequestKind::Beatmap(top_play.beatmap_id), |f| {
+            f.mode(mode, true)
+        })?
         .into_iter()
         .next()
         .map(|v| BeatmapWithMode(v, mode))
@@ -360,25 +378,24 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     })?;
 
     // Save the beatmap...
-    cache::save_beatmap(&mut *data, msg.channel_id, &beatmap)?;
+    cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
 
     Ok(())
 }
 
 fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
-    let mut data = ctx.data.write();
-    let user = UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &mut *data, msg)?;
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu = data.get::<http::Osu>().unwrap();
-    let user = osu.user(reqwest, user, |f| f.mode(mode))?;
+    let user =
+        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
+    let osu = ctx.data.get_cloned::<OsuClient>();
+    let user = osu.user(user, |f| f.mode(mode))?;
     match user {
         Some(u) => {
             let best = osu
-                .user_best(reqwest, UserID::ID(u.id), |f| f.limit(1).mode(mode))?
+                .user_best(UserID::ID(u.id), |f| f.limit(1).mode(mode))?
                 .into_iter()
                 .next()
                 .map(|m| {
-                    osu.beatmaps(reqwest, BeatmapRequestKind::Beatmap(m.beatmap_id), |f| {
+                    osu.beatmaps(BeatmapRequestKind::Beatmap(m.beatmap_id), |f| {
                         f.mode(mode, true)
                     })
                     .map(|map| (m, BeatmapWithMode(map.into_iter().next().unwrap(), mode)))

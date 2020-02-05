@@ -1,25 +1,17 @@
-use super::{embeds::score_embed, BeatmapWithMode};
+use super::db::{OsuSavedUsers, OsuUser};
+use super::{embeds::score_embed, BeatmapWithMode, OsuClient};
 use crate::{
-    commands::announcer::Announcer,
-    db::{OsuSavedUsers, OsuUser},
-    http::{Osu, HTTP},
+    models::{Mode, Score},
+    request::{BeatmapRequestKind, UserID},
+    Client as Osu,
 };
 use rayon::prelude::*;
-use reqwest::blocking::Client as HTTPClient;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     http::Http,
-    model::{
-        id::{ChannelId, UserId},
-        misc::Mentionable,
-    },
-    prelude::ShareMap,
+    model::id::{ChannelId, UserId},
 };
-use youmubot_osu::{
-    models::{Mode, Score},
-    request::{BeatmapRequestKind, UserID},
-    Client as OsuClient,
-};
+use youmubot_prelude::*;
 
 /// Announce osu! top scores.
 pub struct OsuAnnouncer;
@@ -30,33 +22,36 @@ impl Announcer for OsuAnnouncer {
     }
     fn send_messages(
         c: &Http,
-        d: &mut ShareMap,
+        d: AppData,
         channels: impl Fn(UserId) -> Vec<ChannelId> + Sync,
     ) -> CommandResult {
-        let http = d.get::<HTTP>().expect("HTTP");
-        let osu = d.get::<Osu>().expect("osu!client");
+        let osu = d.get_cloned::<OsuClient>();
         // For each user...
-        let mut data = d
-            .get::<OsuSavedUsers>()
-            .expect("DB initialized")
-            .read(|f| f.clone())?;
+        let mut data = OsuSavedUsers::open(&*d.read()).borrow()?.clone();
         for (user_id, osu_user) in data.iter_mut() {
             let mut user = None;
             for mode in &[Mode::Std, Mode::Taiko, Mode::Mania, Mode::Catch] {
-                let scores = OsuAnnouncer::scan_user(http, osu, osu_user, *mode)?;
+                let scores = OsuAnnouncer::scan_user(&osu, osu_user, *mode)?;
                 if scores.is_empty() {
                     continue;
                 }
-                let user = user.get_or_insert_with(|| {
-                    osu.user(http, UserID::ID(osu_user.id), |f| f)
-                        .unwrap()
-                        .unwrap()
-                });
+                let user = {
+                    let user = &mut user;
+                    if let None = user {
+                        match osu.user(UserID::ID(osu_user.id), |f| f.mode(*mode)) {
+                            Ok(u) => {
+                                *user = u;
+                            }
+                            Err(_) => continue,
+                        }
+                    };
+                    user.as_ref().unwrap()
+                };
                 scores
                     .into_par_iter()
                     .filter_map(|(rank, score)| {
                         let beatmap = osu
-                            .beatmaps(http, BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
+                            .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
                             .map(|v| BeatmapWithMode(v.into_iter().next().unwrap(), *mode));
                         let channels = channels(*user_id);
                         match beatmap {
@@ -81,21 +76,14 @@ impl Announcer for OsuAnnouncer {
             osu_user.last_update = chrono::Utc::now();
         }
         // Update users
-        let f = d.get_mut::<OsuSavedUsers>().expect("DB initialized");
-        f.write(|f| *f = data)?;
-        f.save()?;
+        *OsuSavedUsers::open(&*d.read()).borrow_mut()? = data;
         Ok(())
     }
 }
 
 impl OsuAnnouncer {
-    fn scan_user(
-        http: &HTTPClient,
-        osu: &OsuClient,
-        u: &OsuUser,
-        mode: Mode,
-    ) -> Result<Vec<(u8, Score)>, Error> {
-        let scores = osu.user_best(http, UserID::ID(u.id), |f| f.mode(mode).limit(25))?;
+    fn scan_user(osu: &Osu, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
+        let scores = osu.user_best(UserID::ID(u.id), |f| f.mode(mode).limit(25))?;
         let scores = scores
             .into_iter()
             .filter(|s: &Score| s.date >= u.last_update)

@@ -1,4 +1,3 @@
-use serenity::prelude::*;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -11,6 +10,7 @@ use serenity::{
 };
 use soft_ban::{SOFT_BAN_COMMAND, SOFT_BAN_INIT_COMMAND};
 use std::{thread::sleep, time::Duration};
+use youmubot_prelude::*;
 
 mod soft_ban;
 pub use soft_ban::watch_soft_bans;

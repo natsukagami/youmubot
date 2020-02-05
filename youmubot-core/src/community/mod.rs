@@ -2,7 +2,6 @@ use rand::{
     distributions::{Distribution, Uniform},
     thread_rng,
 };
-use serenity::prelude::*;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -14,6 +13,7 @@ use serenity::{
     },
     utils::MessageBuilder,
 };
+use youmubot_prelude::*;
 
 mod votes;
 

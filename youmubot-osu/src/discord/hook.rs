@@ -1,17 +1,17 @@
-use crate::http;
+use super::OsuClient;
+use crate::{
+    models::{Beatmap, Mode},
+    request::BeatmapRequestKind,
+};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serenity::{
     builder::CreateMessage,
     framework::standard::{CommandError as Error, CommandResult},
     model::channel::Message,
-    prelude::*,
     utils::MessageBuilder,
 };
-use youmubot_osu::{
-    models::{Beatmap, Mode},
-    request::BeatmapRequestKind,
-};
+use youmubot_prelude::*;
 
 use super::embeds::{beatmap_embed, beatmapset_embed};
 
@@ -47,7 +47,7 @@ pub fn hook(ctx: &mut Context, msg: &Message) -> () {
         }
         // Save the beatmap for query later.
         if let Some(t) = last_beatmap {
-            if let Err(v) = super::cache::save_beatmap(&mut *ctx.data.write(), msg.channel_id, &t) {
+            if let Err(v) = super::cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &t) {
                 dbg!(v);
             }
         }
@@ -71,9 +71,7 @@ struct ToPrint<'a> {
 }
 
 fn handle_old_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPrint<'a>>, Error> {
-    let data = ctx.data.write();
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu = data.get::<http::Osu>().unwrap();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
     for capture in OLD_LINK_REGEX.captures_iter(content) {
         let req_type = capture.name("link_type").unwrap().as_str();
@@ -95,7 +93,7 @@ fn handle_old_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
                     _ => return None,
                 })
             });
-        let beatmaps = osu.beatmaps(reqwest, req, |v| match mode {
+        let beatmaps = osu.beatmaps(req, |v| match mode {
             Some(m) => v.mode(m, true),
             None => v,
         })?;
@@ -123,9 +121,7 @@ fn handle_old_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
 }
 
 fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPrint<'a>>, Error> {
-    let data = ctx.data.write();
-    let reqwest = data.get::<http::HTTP>().unwrap();
-    let osu = data.get::<http::Osu>().unwrap();
+    let osu = ctx.data.get_cloned::<OsuClient>();
     let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
     for capture in NEW_LINK_REGEX.captures_iter(content) {
         let mode = capture.name("mode").and_then(|v| {
@@ -145,7 +141,7 @@ fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
                 BeatmapRequestKind::Beatmapset(capture.name("set_id").unwrap().as_str().parse()?)
             }
         };
-        let beatmaps = osu.beatmaps(reqwest, req, |v| match mode {
+        let beatmaps = osu.beatmaps(req, |v| match mode {
             Some(m) => v.mode(m, true),
             None => v,
         })?;

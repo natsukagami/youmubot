@@ -1,8 +1,8 @@
 use super::BeatmapWithMode;
-use crate::commands::args::Duration;
+use crate::models::{Beatmap, Mode, Rank, Score, User};
 use chrono::Utc;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
-use youmubot_osu::models::{Beatmap, Mode, Rank, Score, User};
+use youmubot_prelude::*;
 
 fn format_mode(actual: Mode, original: Mode) -> String {
     if actual == original {
