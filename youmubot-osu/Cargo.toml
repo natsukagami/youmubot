@@ -12,6 +12,12 @@ chrono = "0.4.10"
 reqwest = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 bitflags = "1"
+rayon = "1.1"
+lazy_static = "1"
+regex = "1"
+
+youmubot-db = { path = "../youmubot-db" }
+youmubot-prelude = { path = "../youmubot-prelude" }
 
 [dev-dependencies]
 serde_json = "1"

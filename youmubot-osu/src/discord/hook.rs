@@ -1,3 +1,8 @@
+use super::OsuClient;
+use crate::{
+    models::{Beatmap, Mode},
+    request::BeatmapRequestKind,
+};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serenity::{
@@ -5,10 +10,6 @@ use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     model::channel::Message,
     utils::MessageBuilder,
-};
-use youmubot_osu::{
-    models::{Beatmap, Mode},
-    request::BeatmapRequestKind,
 };
 use youmubot_prelude::*;
 

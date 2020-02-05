@@ -4,15 +4,13 @@ use serenity::{
     framework::standard::{DispatchError, StandardFramework},
     model::{channel::Message, gateway},
 };
-use youmubot_osu::Client as OsuApiClient;
+use youmubot_osu::discord::{setup as setup_osu, OSU_GROUP};
 use youmubot_prelude::*;
 
 mod commands;
 mod db;
 
-use commands::osu::OsuAnnouncer;
-
-const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [commands::osu::hook];
+const MESSAGE_HOOKS: [fn(&mut Context, &Message) -> (); 1] = [youmubot_osu::discord::hook];
 
 struct Handler;
 
@@ -53,25 +51,14 @@ fn main() {
                 std::path::PathBuf::from("data")
             });
         youmubot_prelude::setup::setup_prelude(&db_path, &mut data, &mut fw);
-    }
-
-    // Setup initial data
-    db::setup_db(&mut client).expect("Setup db should succeed");
-    // Setup shared instances of things
-    {
-        let mut data = client.data.write();
-        let http_client = data.get_cloned::<HTTPClient>();
-        data.insert::<OsuClient>(OsuApiClient::new(
-            http_client.clone(),
-            var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
-        ));
+        // Setup initial data
+        db::setup_db(&db_path, &mut data).expect("Setup db should succeed");
+        // osu!
+        setup_osu(&db_path, &client, &mut data).expect("osu! is initialized");
     }
 
     // Create handler threads
     std::thread::spawn(commands::admin::watch_soft_bans(&mut client));
-
-    // Announcers
-    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(300));
 
     println!("Starting...");
     if let Err(v) = client.start() {
@@ -150,5 +137,5 @@ fn setup_framework(client: &Client) -> StandardFramework {
             .group(&commands::ADMIN_GROUP)
             .group(&commands::FUN_GROUP)
             .group(&commands::COMMUNITY_GROUP)
-            .group(&commands::OSU_GROUP)
+            .group(&OSU_GROUP)
 }

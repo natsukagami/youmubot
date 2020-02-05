@@ -18,13 +18,6 @@ impl TypeMapKey for HTTPClient {
     type Value = reqwest::blocking::Client;
 }
 
-/// The osu! client.
-// pub(crate) struct OsuClient;
-
-// impl TypeMapKey for OsuClient {
-//     type Value = OsuHttpClient;
-// }
-
 /// The TypeMap trait that allows TypeMaps to quickly get a clonable item.
 pub trait GetCloned {
     /// Gets an item from the store, cloned.

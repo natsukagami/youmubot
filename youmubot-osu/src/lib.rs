@@ -1,5 +1,5 @@
+pub mod discord;
 pub mod models;
-
 pub mod request;
 
 #[cfg(test)]

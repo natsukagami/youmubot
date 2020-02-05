@@ -1,15 +1,15 @@
-use super::{embeds::score_embed, BeatmapWithMode};
-use crate::db::{OsuSavedUsers, OsuUser};
+use super::db::{OsuSavedUsers, OsuUser};
+use super::{embeds::score_embed, BeatmapWithMode, OsuClient};
+use crate::{
+    models::{Mode, Score},
+    request::{BeatmapRequestKind, UserID},
+    Client as Osu,
+};
 use rayon::prelude::*;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     http::Http,
     model::id::{ChannelId, UserId},
-};
-use youmubot_osu::{
-    models::{Mode, Score},
-    request::{BeatmapRequestKind, UserID},
-    Client as Osu,
 };
 use youmubot_prelude::*;
 

@@ -1,5 +1,5 @@
+use super::db::OsuLastBeatmap;
 use super::BeatmapWithMode;
-use crate::db::OsuLastBeatmap;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     model::id::ChannelId,

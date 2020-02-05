@@ -10,14 +10,10 @@ use youmubot_prelude::*;
 pub mod admin;
 pub mod community;
 pub mod fun;
-pub mod osu;
 
 pub use admin::ADMIN_GROUP;
 pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
-pub use osu::OSU_GROUP;
-
-pub use announcer::Announcer;
 
 // A help command
 #[help]

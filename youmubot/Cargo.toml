@@ -14,10 +14,7 @@ chrono = "0.4.9"
 rand = "0.7.2"
 static_assertions = "1.1.0"
 reqwest = "0.10.1"
-regex = "1"
-lazy_static = "1"
 youmubot-osu = { path = "../youmubot-osu" }
-rayon = "1.1"
 youmubot-db = { path = "../youmubot-db" }
 youmubot-prelude = { path = "../youmubot-prelude" }
 

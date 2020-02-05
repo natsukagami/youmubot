@@ -1,4 +1,8 @@
-use crate::db::{OsuSavedUsers, OsuUser};
+use crate::{
+    models::{Beatmap, Mode, User},
+    request::{BeatmapRequestKind, UserID},
+    Client as OsuHttpClient,
+};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -8,20 +12,58 @@ use serenity::{
     utils::MessageBuilder,
 };
 use std::str::FromStr;
-use youmubot_osu::{
-    models::{Beatmap, Mode, User},
-    request::{BeatmapRequestKind, UserID},
-};
 use youmubot_prelude::*;
 
 mod announcer;
 mod cache;
+mod db;
 pub(crate) mod embeds;
 mod hook;
 
 pub use announcer::OsuAnnouncer;
+use db::OsuUser;
+use db::{OsuLastBeatmap, OsuSavedUsers};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
+
+/// The osu! client.
+pub(crate) struct OsuClient;
+
+impl TypeMapKey for OsuClient {
+    type Value = OsuHttpClient;
+}
+
+/// Sets up the osu! command handling section.
+///
+/// This automatically enables:
+///  - Related databases
+///  - An announcer system (that will eventually be revamped)
+///  - The osu! API client.
+///
+///  This does NOT automatically enable:
+///  - Commands on the "osu" prefix
+///  - Hooks. Hooks are completely opt-in.
+///  
+pub fn setup(
+    path: &std::path::Path,
+    client: &serenity::client::Client,
+    data: &mut ShareMap,
+) -> CommandResult {
+    // Databases
+    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
+    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
+
+    // API client
+    let http_client = data.get_cloned::<HTTPClient>();
+    data.insert::<OsuClient>(OsuHttpClient::new(
+        http_client,
+        std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
+    ));
+
+    // Announcer
+    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(300));
+    Ok(())
+}
 
 #[group]
 #[prefix = "osu"]
