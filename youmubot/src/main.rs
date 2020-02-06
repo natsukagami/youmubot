@@ -71,6 +71,8 @@ fn main() {
     println!("Core enabled.");
     #[cfg(feature = "osu")]
     println!("osu! enabled.");
+    #[cfg(feature = "codeforces")]
+    println!("codeforces enabled.");
 
     client.with_framework(fw);
 
@@ -155,5 +157,7 @@ fn setup_framework(client: &Client) -> StandardFramework {
         .group(&youmubot_core::COMMUNITY_GROUP);
     #[cfg(feature = "osu")]
     let fw = fw.group(&youmubot_osu::discord::OSU_GROUP);
+    #[cfg(feature = "codeforces")]
+    let fw = fw.group(&youmubot_cf::CODEFORCES_GROUP);
     fw
 }
