@@ -64,3 +64,14 @@ where
         (*self).0.borrow_data_mut()
     }
 }
+
+impl<T> Drop for DBWriteGuard<T>
+where
+    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
+{
+    fn drop(&mut self) {
+        if let Err(e) = self.0.save() {
+            dbg!(e);
+        }
+    }
+}
