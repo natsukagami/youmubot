@@ -9,4 +9,7 @@ edition = "2018"
 serde = { version = "1", features = ["derive"] }
 reqwest = "0.10.1"
 serenity = "0.8"
+Inflector = "0.11"
 codeforces = { git = "https://github.com/natsukagami/rust-codeforces-api" }
+
+youmubot-prelude = { path = "../youmubot-prelude" }

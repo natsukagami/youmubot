@@ -1,4 +1,5 @@
 use codeforces::{Contest, RatingChange, User};
+use inflector::Inflector;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use std::borrow::Borrow;
 
@@ -8,8 +9,8 @@ fn unwrap_or_ref<'a, T: ?Sized, B: Borrow<T>>(opt: &'a Option<B>, default: &'a T
 
 /// Create an embed representing the user.
 pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
-    let rank = unwrap_or_ref(&user.rank, "Unranked");
-    let max_rank = unwrap_or_ref(&user.max_rank, "Unranked");
+    let rank = unwrap_or_ref(&user.rank, "Unranked").to_title_case();
+    let max_rank = unwrap_or_ref(&user.max_rank, "Unranked").to_title_case();
     let rating = user.rating.unwrap_or(1500);
     let max_rating = user.max_rating.unwrap_or(1500);
     let name = &[&user.first_name, &user.last_name]
@@ -21,10 +22,12 @@ pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbe
         .iter()
         .filter_map(|v| v.as_ref().map(|v| v.as_str()))
         .collect::<Vec<_>>()
-        .join(" ");
+        .join(", ");
     e.color(user.color())
-        .author(|a| a.name(rank))
+        .author(|a| a.name(&rank))
+        .thumbnail(format!("https:{}", user.title_photo))
         .title(&user.handle)
+        .url(user.profile_url())
         .description(format!(
             "{}\n{}",
             if name == "" {
@@ -46,7 +49,7 @@ pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbe
         .field("Contribution", format!("**{}**", user.contribution), true)
         .field(
             "Rank",
-            format!("**{}** (max **{}**)", rank, max_rank),
+            format!("**{}** (max **{}**)", &rank, max_rank),
             false,
         )
 }
