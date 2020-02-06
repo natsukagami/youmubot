@@ -3,10 +3,12 @@ use std::sync::Arc;
 
 pub mod announcer;
 pub mod args;
+pub mod reaction_watch;
 pub mod setup;
 
 pub use announcer::Announcer;
 pub use args::Duration;
+pub use reaction_watch::{ReactionHandler, ReactionWatcher};
 
 /// The global app data.
 pub type AppData = Arc<RwLock<ShareMap>>;

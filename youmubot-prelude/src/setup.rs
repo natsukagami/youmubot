@@ -9,5 +9,9 @@ pub fn setup_prelude(db_path: &Path, data: &mut ShareMap, _: &mut StandardFramew
     crate::announcer::AnnouncerChannels::insert_into(data, db_path.join("announcers.yaml"))
         .expect("Announcers DB set up");
 
+    // Set up the HTTP client.
     data.insert::<crate::HTTPClient>(reqwest::blocking::Client::new());
+
+    // Set up the reaction watcher.
+    data.insert::<crate::ReactionWatcher>(crate::ReactionWatcher::new());
 }

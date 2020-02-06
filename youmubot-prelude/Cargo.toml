@@ -9,4 +9,5 @@ edition = "2018"
 [dependencies]
 serenity = "0.8"
 youmubot-db = { path = "../youmubot-db" }
+crossbeam-channel = "0.4"
 reqwest = "0.10"
