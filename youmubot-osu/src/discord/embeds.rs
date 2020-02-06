@@ -79,7 +79,7 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
                     link, link
                 )
             })
-            .push_line(b.beatmapset_link())
+            .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
             .push_line(&b.approval)
             .push("Language: ")
             .push_bold(&b.language)
