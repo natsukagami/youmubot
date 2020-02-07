@@ -2,13 +2,12 @@ use serenity::framework::standard::CommandError as Error;
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
     model::{
-        channel::{Message, MessageReaction, ReactionType},
+        channel::{Message,Reaction, ReactionType},
         id::UserId,
     },
     utils::MessageBuilder,
 };
 use std::collections::HashMap as Map;
-use std::thread;
 use std::time::Duration;
 use youmubot_prelude::{Duration as ParseDuration, *};
 
@@ -93,10 +92,50 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .iter()
         .try_for_each(|(v, _)| panel.react(&ctx, *v))?;
 
-    // Start sleeping
-    thread::sleep(*duration);
+    let reaction_to_choice: Map<_, _> = choices.iter().map(|r| (r.0, &r.1)).collect();
+    let mut user_reactions: Map<UserId, Vec<&str>> = Map::new();
 
-    let result = collect_reactions(ctx, &panel, &choices)?;
+    ctx.data.get_cloned::<ReactionWatcher>().handle_reactions(
+        |reaction: &Reaction, is_add| {
+            if reaction.message_id != panel.id {
+                return Ok(());
+            }
+            if reaction.user(&ctx)?.bot {
+                return Ok(());
+            }
+            let choice = if let ReactionType::Unicode(ref s) = reaction.emoji {
+                if let Some(choice) = reaction_to_choice.get(s.as_str()) {
+                    choice
+                } else {
+                    return Ok(());
+                }
+            } else {
+                return Ok(());
+            };
+            if is_add {
+                user_reactions
+                    .entry(reaction.user_id)
+                    .or_default()
+                    .push(choice);
+            } else {
+                user_reactions.entry(reaction.user_id).and_modify(|v| {
+                    v.retain(|f| &f != choice);
+                });
+            }
+            Ok(())
+        },
+        *duration,
+    )?;
+    let result: Vec<(&str, Vec<UserId>)> = {
+        let mut res: Map<&str, Vec<UserId>> = Map::new();
+        for (u, r) in user_reactions {
+            for t in r {
+                res.entry(t).or_default().push(u);
+            }
+        }
+        res.into_iter().collect()
+    };
+
     if result.len() == 0 {
         msg.reply(
             &ctx,
@@ -141,61 +180,6 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     // unimplemented!();
 }
 
-// Collect reactions and store them as a map from choice to
-fn collect_reactions<'a>(
-    ctx: &mut Context,
-    msg: &Message,
-    choices: &'a [(&'static str, String)],
-) -> Result<Vec<(&'a str, Vec<UserId>)>, Error> {
-    // Get a brand new version of the Message
-    let reactions = msg.channel_id.message(&ctx, msg.id)?.reactions;
-    let reaction_to_choice: Map<_, _> = choices.into_iter().map(|r| (r.0, &r.1)).collect();
-    let mut vec: Vec<(&str, Vec<UserId>)> = Vec::new();
-    reactions
-        .into_iter()
-        .filter_map(|r| {
-            if let ReactionType::Unicode(ref v) = r.reaction_type {
-                reaction_to_choice
-                    .get(&&v[..])
-                    .cloned()
-                    .filter(|_| r.count > 1)
-                    .map(|choice| (r.clone(), choice))
-            } else {
-                None
-            }
-        })
-        .try_for_each(|(r, choice)| -> Result<_, Error> {
-            let users = collect_reaction_users(ctx, &msg, &r)?;
-            vec.push((choice, users));
-            Ok(())
-        })?;
-    vec.sort_by(|(_, b): &(_, Vec<_>), (_, d)| d.len().cmp(&b.len()));
-    Ok(vec)
-}
-
-fn collect_reaction_users(
-    ctx: &mut Context,
-    msg: &Message,
-    reaction: &MessageReaction,
-) -> Result<Vec<UserId>, Error> {
-    let mut res = Vec::with_capacity(reaction.count as usize);
-    (0..reaction.count)
-        .step_by(100)
-        .try_for_each(|_| -> Result<_, Error> {
-            let user_ids = msg
-                .reaction_users(
-                    &ctx,
-                    reaction.reaction_type.clone(),
-                    Some(100),
-                    res.last().cloned(),
-                )?
-                .into_iter()
-                .map(|i| i.id);
-            res.extend(user_ids);
-            Ok(())
-        })?;
-    Ok(res)
-}
 // Pick a set of random n reactions!
 fn pick_n_reactions(n: usize) -> Result<Vec<&'static str>, Error> {
     use rand::seq::SliceRandom;
