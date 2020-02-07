@@ -2,7 +2,7 @@ use dotenv;
 use dotenv::var;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
-    model::{channel::Message, gateway},
+    model::{channel::{Message, Reaction}, gateway},
 };
 use youmubot_prelude::*;
 
@@ -24,6 +24,10 @@ impl EventHandler for Handler {
     fn message(&self, mut ctx: Context, message: Message) {
         println!("{:?}", message);
         self.hooks.iter().for_each(|f| f(&mut ctx, &message));
+    }
+
+    fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        ctx.data.get_cloned::<ReactionWatcher>().send(reaction);
     }
 }
 
