@@ -8,22 +8,24 @@ use std::sync::{Arc, Mutex};
 pub trait ReactionHandler {
     /// Handle a reaction. This is fired on EVERY reaction.
     /// You do the filtering yourself.
-    fn handle_reaction(&mut self, reaction: &Reaction) -> CommandResult;
+    ///
+    /// If `is_added` is false, the reaction was removed instead of added.
+    fn handle_reaction(&mut self, reaction: &Reaction, is_added: bool) -> CommandResult;
 }
 
 impl<T> ReactionHandler for T
 where
-    T: FnMut(&Reaction) -> CommandResult,
+    T: FnMut(&Reaction, bool) -> CommandResult,
 {
-    fn handle_reaction(&mut self, reaction: &Reaction) -> CommandResult {
-        self(reaction)
+    fn handle_reaction(&mut self, reaction: &Reaction, is_added: bool) -> CommandResult {
+        self(reaction, is_added)
     }
 }
 
 /// The store for a set of dynamic reaction handlers.
 #[derive(Debug, Clone)]
 pub struct ReactionWatcher {
-    channels: Arc<Mutex<Vec<Sender<Arc<Reaction>>>>>,
+    channels: Arc<Mutex<Vec<Sender<(Arc<Reaction>, bool)>>>>,
 }
 
 impl TypeMapKey for ReactionWatcher {
@@ -38,12 +40,13 @@ impl ReactionWatcher {
         }
     }
     /// Send a reaction.
-    pub fn send(&self, r: Reaction) {
+    /// If `is_added` is false, the reaction was removed.
+    pub fn send(&self, r: Reaction, is_added: bool) {
         let r = Arc::new(r);
         self.channels
             .lock()
             .expect("Poisoned!")
-            .retain(|e| e.send(r.clone()).is_ok());
+            .retain(|e| e.send((r.clone(), is_added)).is_ok());
     }
     /// React! to a series of reaction
     ///
@@ -60,7 +63,7 @@ impl ReactionWatcher {
         let timeout = after(duration);
         loop {
             let r = select! {
-                recv(reactions) -> r => h.handle_reaction(&*r.unwrap()),
+                recv(reactions) -> r => { let (r, is_added) = r.unwrap(); h.handle_reaction(&*r, is_added) },
                 recv(timeout) -> _ => break,
             };
             if let Err(v) = r {

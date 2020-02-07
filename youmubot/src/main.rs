@@ -2,7 +2,10 @@ use dotenv;
 use dotenv::var;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
-    model::{channel::{Message, Reaction}, gateway},
+    model::{
+        channel::{Message, Reaction},
+        gateway,
+    },
 };
 use youmubot_prelude::*;
 
@@ -27,7 +30,15 @@ impl EventHandler for Handler {
     }
 
     fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-        ctx.data.get_cloned::<ReactionWatcher>().send(reaction);
+        ctx.data
+            .get_cloned::<ReactionWatcher>()
+            .send(reaction, true);
+    }
+
+    fn reaction_remove(&self, ctx: Context, reaction: Reaction) {
+        ctx.data
+            .get_cloned::<ReactionWatcher>()
+            .send(reaction, false);
     }
 }
 
