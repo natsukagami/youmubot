@@ -145,6 +145,7 @@ pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                 OsuUser {
                     id: u.id,
                     last_update: chrono::Utc::now(),
+                    pp: vec![],
                 },
             );
             msg.reply(

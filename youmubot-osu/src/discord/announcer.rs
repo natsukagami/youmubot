@@ -28,25 +28,20 @@ impl Announcer for OsuAnnouncer {
         let osu = d.get_cloned::<OsuClient>();
         // For each user...
         let mut data = OsuSavedUsers::open(&*d.read()).borrow()?.clone();
-        for (user_id, osu_user) in data.iter_mut() {
-            let mut user = None;
+        'user_loop: for (user_id, osu_user) in data.iter_mut() {
+            let mut pp_values = vec![]; // Store the pp values here...
             for mode in &[Mode::Std, Mode::Taiko, Mode::Mania, Mode::Catch] {
                 let scores = OsuAnnouncer::scan_user(&osu, osu_user, *mode)?;
-                if scores.is_empty() {
+                if scores.is_empty() && !osu_user.pp.is_empty() {
+                    // Nothing to update: no new scores and pp is there.
+                    pp_values.push(osu_user.pp[*mode as usize]);
                     continue;
                 }
-                let user = {
-                    let user = &mut user;
-                    if let None = user {
-                        match osu.user(UserID::ID(osu_user.id), |f| f.mode(*mode)) {
-                            Ok(u) => {
-                                *user = u;
-                            }
-                            Err(_) => continue,
-                        }
-                    };
-                    user.as_ref().unwrap()
+                let user = match osu.user(UserID::ID(osu_user.id), |f| f.mode(*mode)) {
+                    Ok(Some(u)) => u,
+                    _ => continue 'user_loop,
                 };
+                pp_values.push(user.pp);
                 scores
                     .into_par_iter()
                     .filter_map(|(rank, score)| {
@@ -74,6 +69,8 @@ impl Announcer for OsuAnnouncer {
                     });
             }
             osu_user.last_update = chrono::Utc::now();
+            osu_user.pp = pp_values;
+            dbg!(&osu_user);
         }
         // Update users
         *OsuSavedUsers::open(&*d.read()).borrow_mut()? = data;
