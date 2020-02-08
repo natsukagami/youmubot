@@ -25,8 +25,7 @@ impl EventHandler for Handler {
     }
 
     fn message(&self, mut ctx: Context, message: Message) {
-        println!("{:?}", message);
-        self.hooks.iter().for_each(|f| f(&mut ctx, &message));
+       self.hooks.iter().for_each(|f| f(&mut ctx, &message));
     }
 
     fn reaction_add(&self, ctx: Context, reaction: Reaction) {

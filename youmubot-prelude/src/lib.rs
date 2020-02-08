@@ -3,11 +3,13 @@ use std::sync::Arc;
 
 pub mod announcer;
 pub mod args;
+pub mod pagination;
 pub mod reaction_watch;
 pub mod setup;
 
 pub use announcer::Announcer;
 pub use args::Duration;
+pub use pagination::Pagination;
 pub use reaction_watch::{ReactionHandler, ReactionWatcher};
 
 /// The global app data.
