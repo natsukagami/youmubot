@@ -25,7 +25,7 @@ impl EventHandler for Handler {
     }
 
     fn message(&self, mut ctx: Context, message: Message) {
-       self.hooks.iter().for_each(|f| f(&mut ctx, &message));
+        self.hooks.iter().for_each(|f| f(&mut ctx, &message));
     }
 
     fn reaction_add(&self, ctx: Context, reaction: Reaction) {
@@ -51,6 +51,8 @@ fn main() {
     // Set up hooks
     #[cfg(feature = "osu")]
     handler.hooks.push(youmubot_osu::discord::hook);
+    #[cfg(feature = "codeforces")]
+    handler.hooks.push(youmubot_cf::codeforces_info_hook);
 
     // Sets up a client
     let mut client = {

@@ -8,6 +8,9 @@ use serenity::{
 use youmubot_prelude::*;
 
 mod embed;
+mod hook;
+
+pub use hook::codeforces_info_hook;
 
 #[group]
 #[prefix = "cf"]
