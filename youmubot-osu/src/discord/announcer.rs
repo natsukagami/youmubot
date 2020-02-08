@@ -70,7 +70,6 @@ impl Announcer for OsuAnnouncer {
             }
             osu_user.last_update = chrono::Utc::now();
             osu_user.pp = pp_values;
-            dbg!(&osu_user);
         }
         // Update users
         *OsuSavedUsers::open(&*d.read()).borrow_mut()? = data;
