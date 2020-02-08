@@ -119,6 +119,9 @@ impl<T: Pagination> PaginationHandler<T> {
 
 impl<T: Pagination> ReactionHandler for PaginationHandler<T> {
     fn handle_reaction(&mut self, reaction: &Reaction, _is_add: bool) -> CommandResult {
+        if reaction.message_id != self.message.id {
+            return Ok(());
+        }
         match &reaction.emoji {
             ReactionType::Unicode(ref s) => match s.as_str() {
                 ARROW_LEFT if self.page == 0 => return Ok(()),
