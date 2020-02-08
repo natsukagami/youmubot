@@ -19,12 +19,14 @@ mod cache;
 mod db;
 pub(crate) mod embeds;
 mod hook;
+mod server_rank;
 
 pub use announcer::OsuAnnouncer;
 use db::OsuUser;
 use db::{OsuLastBeatmap, OsuSavedUsers};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
+use server_rank::SERVER_RANK_COMMAND;
 
 /// The osu! client.
 pub(crate) struct OsuClient;
@@ -68,7 +70,7 @@ pub fn setup(
 #[group]
 #[prefix = "osu"]
 #[description = "osu! related commands."]
-#[commands(std, taiko, catch, mania, save, recent, last, check, top)]
+#[commands(std, taiko, catch, mania, save, recent, last, check, top, server_rank)]
 struct Osu;
 
 #[command]
@@ -145,6 +147,7 @@ pub fn save(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                 OsuUser {
                     id: u.id,
                     last_update: chrono::Utc::now(),
+                    pp: vec![],
                 },
             );
             msg.reply(
