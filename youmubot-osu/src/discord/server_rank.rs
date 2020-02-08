@@ -6,8 +6,9 @@ use serenity::{
     model::channel::Message,
     utils::MessageBuilder,
 };
-use std::collections::HashMap;
 use youmubot_prelude::*;
+
+const ITEMS_PER_PAGE: usize = 10;
 
 #[command("ranks")]
 #[description = "See the server's ranks"]
@@ -17,7 +18,7 @@ use youmubot_prelude::*;
 pub fn server_rank(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
     let mode = args.single::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
     let guild = m.guild_id.expect("Guild-only command");
-    let mut users = OsuSavedUsers::open(&*ctx.data.read())
+    let users = OsuSavedUsers::open(&*ctx.data.read())
         .borrow()
         .expect("DB initialized")
         .iter()
@@ -28,9 +29,14 @@ pub fn server_rank(ctx: &mut Context, m: &Message, mut args: Args) -> CommandRes
                     .get(mode as usize)
                     .cloned()
                     .and_then(|pp| pp)
-                    .map(|pp| (pp, member.distinct()))
+                    .map(|pp| (pp, member.distinct(), osu_user.last_update.clone()))
             })
         })
+        .collect::<Vec<_>>();
+    let last_update = users.iter().map(|(_, _, a)| a).min().cloned();
+    let mut users = users
+        .into_iter()
+        .map(|(a, b, _)| (a, b))
         .collect::<Vec<_>>();
     users.sort_by(|(a, _), (b, _)| (*b).partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -38,15 +44,17 @@ pub fn server_rank(ctx: &mut Context, m: &Message, mut args: Args) -> CommandRes
         m.reply(&ctx, "No saved users in the current server...")?;
         return Ok(());
     }
+    let last_update = last_update.unwrap();
     ctx.data.get_cloned::<ReactionWatcher>().paginate_fn(
         ctx.clone(),
         m.channel_id,
         move |page: u8, e: &mut EditMessage| {
-            let start = (page as usize) * 5;
+            let start = (page as usize) * ITEMS_PER_PAGE;
             if start >= users.len() {
                 return (e, Err(Error("No more items".to_owned())));
             }
-            let users = users.iter().skip(start).take(5);
+            let total_len = users.len();
+            let users = users.iter().skip(start).take(ITEMS_PER_PAGE);
             let mut content = MessageBuilder::new();
             content
                 .push_line("```")
@@ -56,12 +64,17 @@ pub fn server_rank(ctx: &mut Context, m: &Message, mut args: Args) -> CommandRes
                 content
                     .push(format!(
                         "{:>4} | {:>7.2} | ",
-                        format!("#{}", id + start),
+                        format!("#{}", 1 + id + start),
                         pp
                     ))
                     .push_line_safe(member);
             }
-            content.push("```");
+            content.push_line("```").push_line(format!(
+                "Page **{}**/**{}**. Last updated: `{}`",
+                page + 1,
+                (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
+                last_update.to_rfc2822()
+            ));
             (e.content(content.build()), Ok(()))
         },
         std::time::Duration::from_secs(60),
