@@ -8,6 +8,9 @@ use serenity::{
     },
 };
 
+const ARROW_RIGHT: &'static str = "➡️";
+const ARROW_LEFT: &'static str = "⬅️";
+
 impl ReactionWatcher {
     /// Start a pagination.
     ///
@@ -23,6 +26,22 @@ impl ReactionWatcher {
     ) -> CommandResult {
         let handler = PaginationHandler::new(pager, ctx, channel)?;
         self.handle_reactions(handler, duration)
+    }
+
+    /// A version of `paginate` that compiles for closures.
+    ///
+    /// A workaround until https://github.com/rust-lang/rust/issues/36582 is solved.
+    pub fn paginate_fn<T>(
+        &self,
+        ctx: Context,
+        channel: ChannelId,
+        pager: T,
+        duration: std::time::Duration,
+    ) -> CommandResult
+    where
+        T: for<'a> Fn(u8, &'a mut EditMessage) -> (&'a mut EditMessage, CommandResult),
+    {
+        self.paginate(ctx, channel, pager, duration)
     }
 }
 
@@ -70,8 +89,8 @@ impl<T: Pagination> PaginationHandler<T> {
             e.content("Youmu is loading the first page...")
         })?;
         // React to the message
-        message.react(&mut ctx, "⬅️")?;
-        message.react(&mut ctx, "➡️️")?;
+        message.react(&mut ctx, ARROW_LEFT)?;
+        message.react(&mut ctx, ARROW_RIGHT)?;
         let mut p = Self {
             pager,
             message: message.clone(),
@@ -93,6 +112,7 @@ impl<T: Pagination> PaginationHandler<T> {
             res = r;
             e
         })?;
+        self.message = msg;
         res
     }
 }
@@ -101,14 +121,20 @@ impl<T: Pagination> ReactionHandler for PaginationHandler<T> {
     fn handle_reaction(&mut self, reaction: &Reaction, _is_add: bool) -> CommandResult {
         match &reaction.emoji {
             ReactionType::Unicode(ref s) => match s.as_str() {
-                "⬅" if self.page == 0 => return Ok(()),
-                "⬅" => {
+                ARROW_LEFT if self.page == 0 => return Ok(()),
+                ARROW_LEFT => {
                     self.page -= 1;
-                    self.call_pager()?;
+                    if let Err(e) = self.call_pager() {
+                        self.page += 1;
+                        return Err(e);
+                    }
                 }
-                "➡" => {
+                ARROW_RIGHT => {
                     self.page += 1;
-                    self.call_pager()?;
+                    if let Err(e) = self.call_pager() {
+                        self.page -= 1;
+                        return Err(e);
+                    }
                 }
                 _ => (),
             },

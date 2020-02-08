@@ -67,7 +67,7 @@ impl ReactionWatcher {
                 recv(timeout) -> _ => break,
             };
             if let Err(v) = r {
-                return Err(v);
+                dbg!(v);
             }
         }
         Ok(())
