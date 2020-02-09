@@ -7,7 +7,7 @@ pub mod pagination;
 pub mod reaction_watch;
 pub mod setup;
 
-pub use announcer::Announcer;
+pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::Duration;
 pub use pagination::Pagination;
 pub use reaction_watch::{ReactionHandler, ReactionWatcher};
@@ -48,5 +48,30 @@ impl GetCloned for AppData {
         T::Value: Clone + Send + Sync,
     {
         self.read().get::<T>().cloned().expect("Should be there")
+    }
+}
+
+pub mod prelude_commands {
+    use crate::announcer::ANNOUNCERCOMMANDS_GROUP;
+    use serenity::{
+        framework::standard::{
+            macros::{command, group},
+            CommandResult,
+        },
+        model::channel::Message,
+        prelude::Context,
+    };
+
+    #[group("Prelude")]
+    #[description = "All the commands that makes the base of Youmu"]
+    #[commands(ping)]
+    #[sub_groups(AnnouncerCommands)]
+    pub struct Prelude;
+
+    #[command]
+    #[description = "pong!"]
+    fn ping(ctx: &mut Context, m: &Message) -> CommandResult {
+        m.reply(&ctx, "Pong!")?;
+        Ok(())
     }
 }

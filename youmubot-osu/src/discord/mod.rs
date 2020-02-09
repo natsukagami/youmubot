@@ -21,7 +21,6 @@ pub(crate) mod embeds;
 mod hook;
 mod server_rank;
 
-pub use announcer::OsuAnnouncer;
 use db::OsuUser;
 use db::{OsuLastBeatmap, OsuSavedUsers};
 use embeds::{beatmap_embed, score_embed, user_embed};
@@ -48,8 +47,8 @@ impl TypeMapKey for OsuClient {
 ///  
 pub fn setup(
     path: &std::path::Path,
-    client: &serenity::client::Client,
     data: &mut ShareMap,
+    announcers: &mut AnnouncerHandler,
 ) -> CommandResult {
     // Databases
     OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
@@ -63,7 +62,7 @@ pub fn setup(
     ));
 
     // Announcer
-    OsuAnnouncer::scan(&client, std::time::Duration::from_secs(300));
+    announcers.add(announcer::ANNOUNCER_KEY, announcer::updates);
     Ok(())
 }
 
