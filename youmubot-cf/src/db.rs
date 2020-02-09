@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use codeforces::User;
 use serenity::model::id::UserId;
 use std::collections::HashMap;
 use youmubot_db::DB;
@@ -21,6 +22,16 @@ impl Default for CfUser {
             handle: "".to_owned(),
             last_update: Utc::now(),
             rating: None,
+        }
+    }
+}
+
+impl From<User> for CfUser {
+    fn from(u: User) -> Self {
+        Self {
+            handle: u.handle,
+            last_update: Utc::now(),
+            rating: u.rating,
         }
     }
 }
