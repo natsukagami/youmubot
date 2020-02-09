@@ -180,39 +180,24 @@ impl FromStr for ModeArg {
     }
 }
 
-enum UsernameArg {
-    Tagged(UserId),
-    Raw(String),
+fn to_user_id_query(
+    s: Option<UsernameArg>,
+    data: &ShareMap,
+    msg: &Message,
+) -> Result<UserID, Error> {
+    let id = match s {
+        Some(UsernameArg::Raw(s)) => return Ok(UserID::Auto(s)),
+        Some(UsernameArg::Tagged(r)) => r,
+        None => msg.author.id,
+    };
+
+    let db = OsuSavedUsers::open(data);
+    let db = db.borrow()?;
+    db.get(&id)
+        .cloned()
+        .map(|u| UserID::ID(u.id))
+        .ok_or(Error::from("No saved account found"))
 }
-
-impl UsernameArg {
-    fn to_user_id_query(s: Option<Self>, data: &ShareMap, msg: &Message) -> Result<UserID, Error> {
-        let id = match s {
-            Some(UsernameArg::Raw(s)) => return Ok(UserID::Auto(s)),
-            Some(UsernameArg::Tagged(r)) => r,
-            None => msg.author.id,
-        };
-
-        let db = OsuSavedUsers::open(data);
-        let db = db.borrow()?;
-        db.get(&id)
-            .cloned()
-            .map(|u| UserID::ID(u.id))
-            .ok_or(Error::from("No saved account found"))
-    }
-}
-
-impl FromStr for UsernameArg {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.parse::<UserId>() {
-            Ok(v) => Ok(UsernameArg::Tagged(v)),
-            Err(_) if !s.is_empty() => Ok(UsernameArg::Raw(s.to_owned())),
-            Err(_) => Err("username arg cannot be empty".to_owned()),
-        }
-    }
-}
-
 struct Nth(u8);
 
 impl FromStr for Nth {
@@ -235,8 +220,7 @@ impl FromStr for Nth {
 pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let nth = args.single::<Nth>().unwrap_or(Nth(1)).0.min(50).max(1);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user =
-        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
     let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu
@@ -308,11 +292,7 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
         Some(bm) => {
             let b = &bm.0;
             let m = bm.1;
-            let user = UsernameArg::to_user_id_query(
-                args.single::<UsernameArg>().ok(),
-                &*ctx.data.read(),
-                msg,
-            )?;
+            let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
             let osu = ctx.data.get_cloned::<OsuClient>();
 
@@ -348,8 +328,7 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .map(|ModeArg(t)| t)
         .unwrap_or(Mode::Std);
 
-    let user =
-        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
     let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu
@@ -387,8 +366,7 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 }
 
 fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
-    let user =
-        UsernameArg::to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
     let osu = ctx.data.get_cloned::<OsuClient>();
     let user = osu.user(user, |f| f.mode(mode))?;
     match user {

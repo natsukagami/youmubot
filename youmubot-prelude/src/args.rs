@@ -1,4 +1,5 @@
 pub use duration::Duration;
+pub use username_arg::UsernameArg;
 
 mod duration {
     use std::fmt;
@@ -166,6 +167,34 @@ mod duration {
                     input
                 );
             }
+        }
+    }
+}
+
+mod username_arg {
+    use serenity::model::id::UserId;
+    use std::str::FromStr;
+    /// An argument that can be either a tagged user, or a raw string.
+    pub enum UsernameArg {
+        Tagged(UserId),
+        Raw(String),
+    }
+
+    impl FromStr for UsernameArg {
+        type Err = String;
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s.parse::<UserId>() {
+                Ok(v) => Ok(UsernameArg::Tagged(v)),
+                Err(_) if !s.is_empty() => Ok(UsernameArg::Raw(s.to_owned())),
+                Err(_) => Err("username arg cannot be empty".to_owned()),
+            }
+        }
+    }
+
+    impl UsernameArg {
+        /// Mention yourself.
+        pub fn mention<T: Into<UserId>>(v: T) -> Self {
+            Self::Tagged(v.into())
         }
     }
 }
