@@ -25,7 +25,7 @@ impl EventHandler for Handler {
     }
 
     fn message(&self, mut ctx: Context, message: Message) {
-       self.hooks.iter().for_each(|f| f(&mut ctx, &message));
+        self.hooks.iter().for_each(|f| f(&mut ctx, &message));
     }
 
     fn reaction_add(&self, ctx: Context, reaction: Reaction) {
@@ -63,6 +63,9 @@ fn main() {
     // Set up base framework
     let mut fw = setup_framework(&client);
 
+    // Set up announcer handler
+    let mut announcers = AnnouncerHandler::new(&client);
+
     // Setup each package starting from the prelude.
     {
         let mut data = client.data.write();
@@ -78,7 +81,8 @@ fn main() {
         youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");
         // osu!
         #[cfg(feature = "osu")]
-        youmubot_osu::discord::setup(&db_path, &client, &mut data).expect("osu! is initialized");
+        youmubot_osu::discord::setup(&db_path, &mut data, &mut announcers)
+            .expect("osu! is initialized");
     }
 
     #[cfg(feature = "core")]
@@ -87,6 +91,7 @@ fn main() {
     println!("osu! enabled.");
 
     client.with_framework(fw);
+    announcers.scan(std::time::Duration::from_secs(300));
 
     println!("Starting...");
     if let Err(v) = client.start() {
