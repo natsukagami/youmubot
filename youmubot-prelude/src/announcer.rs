@@ -1,13 +1,17 @@
-use crate::AppData;
+use crate::{AppData, GetCloned};
 use rayon::prelude::*;
 use serenity::{
-    framework::standard::{macros::command, Args, CommandError as Error, CommandResult},
+    framework::standard::{
+        macros::{command, group},
+        Args, CommandError as Error, CommandResult,
+    },
     http::CacheHttp,
     model::{
         channel::Message,
         id::{ChannelId, GuildId, UserId},
     },
     prelude::*,
+    utils::MessageBuilder,
     CacheAndHttp,
 };
 use std::{
@@ -162,6 +166,87 @@ impl AnnouncerHandler {
 #[command("register")]
 #[description = "Register the current channel with an announcer"]
 #[usage = "[announcer key]"]
+#[required_permissions(MANAGE_CHANNELS)]
+#[only_in(guilds)]
+#[num_args(1)]
 pub fn register_announcer(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
-    unimplemented!()
+    let key = args.single::<String>()?;
+    let keys = ctx.data.get_cloned::<AnnouncerHandler>();
+    if !keys.contains(&key.as_str()) {
+        m.reply(
+            &ctx,
+            format!(
+                "Key not found. Available announcer keys are: `{}`",
+                keys.join(", ")
+            ),
+        )?;
+        return Ok(());
+    }
+    let guild = m.guild(&ctx).expect("Guild-only command");
+    let guild = guild.read();
+    let channel = m.channel_id.to_channel(&ctx)?;
+    AnnouncerChannels::open(&*ctx.data.read())
+        .borrow_mut()?
+        .entry(key.clone())
+        .or_default()
+        .insert(guild.id, m.channel_id);
+    m.reply(
+        &ctx,
+        MessageBuilder::new()
+            .push("Announcer ")
+            .push_mono_safe(key)
+            .push(" has been activated for server ")
+            .push_bold_safe(&guild.name)
+            .push(" on channel ")
+            .push_bold_safe(channel)
+            .build(),
+    )?;
+    Ok(())
 }
+
+#[command("remove")]
+#[description = "Remove an announcer from the server"]
+#[usage = "[announcer key]"]
+#[required_permissions(MANAGE_CHANNELS)]
+#[only_in(guilds)]
+#[num_args(1)]
+pub fn remove_announcer(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
+    let key = args.single::<String>()?;
+    let keys = ctx.data.get_cloned::<AnnouncerHandler>();
+    if !keys.contains(&key.as_str()) {
+        m.reply(
+            &ctx,
+            format!(
+                "Key not found. Available announcer keys are: `{}`",
+                keys.join(", ")
+            ),
+        )?;
+        return Ok(());
+    }
+    let guild = m.guild(&ctx).expect("Guild-only command");
+    let guild = guild.read();
+    AnnouncerChannels::open(&*ctx.data.read())
+        .borrow_mut()?
+        .entry(key.clone())
+        .and_modify(|m| {
+            m.remove(&guild.id);
+        });
+    m.reply(
+        &ctx,
+        MessageBuilder::new()
+            .push("Announcer ")
+            .push_mono_safe(key)
+            .push(" has been de-activated for server ")
+            .push_bold_safe(&guild.name)
+            .build(),
+    )?;
+    Ok(())
+}
+
+#[group("announcer")]
+#[prefix("announcer")]
+#[only_in(guilds)]
+#[required_permissions(MANAGE_CHANNELS)]
+#[description = "Manage the announcers in the server."]
+#[commands(remove_announcer, register_announcer)]
+pub struct AnnouncerCommands;

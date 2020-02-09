@@ -165,7 +165,8 @@ fn setup_framework(client: &Client) -> StandardFramework {
             .bucket("images", |c| c.time_span(60).limit(2))
             .bucket("community", |c| {
                 c.delay(30).time_span(30).limit(1)
-            });
+            })
+            .group(&prelude_commands::PRELUDE_GROUP);
     // groups here
     #[cfg(feature = "core")]
     let fw = fw

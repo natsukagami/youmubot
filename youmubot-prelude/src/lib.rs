@@ -50,3 +50,28 @@ impl GetCloned for AppData {
         self.read().get::<T>().cloned().expect("Should be there")
     }
 }
+
+pub mod prelude_commands {
+    use crate::announcer::ANNOUNCERCOMMANDS_GROUP;
+    use serenity::{
+        framework::standard::{
+            macros::{command, group},
+            CommandResult,
+        },
+        model::channel::Message,
+        prelude::Context,
+    };
+
+    #[group("Prelude")]
+    #[description = "All the commands that makes the base of Youmu"]
+    #[commands(ping)]
+    #[sub_groups(AnnouncerCommands)]
+    pub struct Prelude;
+
+    #[command]
+    #[description = "pong!"]
+    fn ping(ctx: &mut Context, m: &Message) -> CommandResult {
+        m.reply(&ctx, "Pong!")?;
+        Ok(())
+    }
+}
