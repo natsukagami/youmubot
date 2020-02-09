@@ -81,6 +81,9 @@ fn main() {
         // osu!
         #[cfg(feature = "osu")]
         youmubot_osu::discord::setup(&db_path, &client, &mut data).expect("osu! is initialized");
+        // codeforces
+        #[cfg(feature = "codeforces")]
+        youmubot_cf::setup(&db_path, &mut data);
     }
 
     #[cfg(feature = "core")]

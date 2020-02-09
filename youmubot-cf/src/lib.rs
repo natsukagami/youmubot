@@ -3,14 +3,25 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::{channel::Message, id::UserId},
+    model::channel::Message,
 };
 use youmubot_prelude::*;
 
+mod db;
 mod embed;
 mod hook;
 
+// /// Live-commentating a Codeforces round.
+// pub mod live;
+
+pub use db::CfSavedUsers;
 pub use hook::codeforces_info_hook;
+
+/// Sets up the CF databases.
+pub fn setup(path: &std::path::Path, data: &mut ShareMap) {
+    CfSavedUsers::insert_into(data, path.join("cf_saved_users.yaml"))
+        .expect("Must be able to set up DB")
+}
 
 #[group]
 #[prefix = "cf"]
