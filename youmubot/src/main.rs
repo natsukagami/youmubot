@@ -65,6 +65,9 @@ fn main() {
     // Set up base framework
     let mut fw = setup_framework(&client);
 
+    // Set up announcer handler
+    let mut announcers = AnnouncerHandler::new(&client);
+
     // Setup each package starting from the prelude.
     {
         let mut data = client.data.write();
@@ -80,7 +83,8 @@ fn main() {
         youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");
         // osu!
         #[cfg(feature = "osu")]
-        youmubot_osu::discord::setup(&db_path, &client, &mut data).expect("osu! is initialized");
+        youmubot_osu::discord::setup(&db_path, &mut data, &mut announcers)
+            .expect("osu! is initialized");
         // codeforces
         #[cfg(feature = "codeforces")]
         youmubot_cf::setup(&db_path, &mut data);
@@ -94,6 +98,7 @@ fn main() {
     println!("codeforces enabled.");
 
     client.with_framework(fw);
+    announcers.scan(std::time::Duration::from_secs(300));
 
     println!("Starting...");
     if let Err(v) = client.start() {
@@ -167,7 +172,8 @@ fn setup_framework(client: &Client) -> StandardFramework {
             .bucket("images", |c| c.time_span(60).limit(2))
             .bucket("community", |c| {
                 c.delay(30).time_span(30).limit(1)
-            });
+            })
+            .group(&prelude_commands::PRELUDE_GROUP);
     // groups here
     #[cfg(feature = "core")]
     let fw = fw

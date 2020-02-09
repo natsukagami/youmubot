@@ -11,3 +11,4 @@ serenity = "0.8"
 youmubot-db = { path = "../youmubot-db" }
 crossbeam-channel = "0.4"
 reqwest = "0.10"
+rayon = "1"

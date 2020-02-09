@@ -1777,6 +1777,7 @@ name = "youmubot-prelude"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rayon 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serenity 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "youmubot-db 0.1.0",
