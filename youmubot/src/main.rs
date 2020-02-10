@@ -87,7 +87,7 @@ fn main() {
             .expect("osu! is initialized");
         // codeforces
         #[cfg(feature = "codeforces")]
-        youmubot_cf::setup(&db_path, &mut data);
+        youmubot_cf::setup(&db_path, &mut data, &mut announcers);
     }
 
     #[cfg(feature = "core")]

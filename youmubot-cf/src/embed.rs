@@ -64,7 +64,7 @@ pub fn rating_change_embed<'a>(
 ) -> &'a mut CreateEmbed {
     let delta = (rating_change.new_rating as i64) - (rating_change.old_rating as i64);
     let color = if delta < 0 { 0xff0000 } else { 0x00ff00 };
-    let message = if delta < 0 {
+    let message = if delta > 0 {
         MessageBuilder::new()
             .push(tag)
             .push(" competed in ")
@@ -89,11 +89,19 @@ pub fn rating_change_embed<'a>(
     };
 
     e.author(|a| {
-        a.icon_url(&user.avatar)
+        a.icon_url(format!("http:{}", &user.avatar))
             .url(user.profile_url())
             .name(&user.handle)
     })
     .color(color)
     .description(message)
     .field("Contest Link", contest.url(), true)
+    .field(
+        "Rating Change",
+        format!(
+            "from **{}** to **{}**",
+            rating_change.old_rating, rating_change.new_rating
+        ),
+        false,
+    )
 }

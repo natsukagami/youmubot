@@ -8,6 +8,7 @@ use serenity::{
 };
 use youmubot_prelude::*;
 
+mod announcer;
 mod db;
 mod embed;
 mod hook;
@@ -20,9 +21,10 @@ use db::CfSavedUsers;
 pub use hook::codeforces_info_hook;
 
 /// Sets up the CF databases.
-pub fn setup(path: &std::path::Path, data: &mut ShareMap) {
+pub fn setup(path: &std::path::Path, data: &mut ShareMap, announcers: &mut AnnouncerHandler) {
     CfSavedUsers::insert_into(data, path.join("cf_saved_users.yaml"))
-        .expect("Must be able to set up DB")
+        .expect("Must be able to set up DB");
+    announcers.add("codeforces", announcer::updates);
 }
 
 #[group]
