@@ -70,6 +70,7 @@ pub fn setup(
 #[prefix = "osu"]
 #[description = "osu! related commands."]
 #[commands(std, taiko, catch, mania, save, recent, last, check, top, server_rank)]
+#[default_command(std)]
 struct Osu;
 
 #[command]
