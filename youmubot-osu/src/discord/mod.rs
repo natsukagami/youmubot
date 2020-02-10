@@ -8,7 +8,7 @@ use serenity::{
         macros::{command, group},
         Args, CommandError as Error, CommandResult,
     },
-    model::{channel::Message, id::UserId},
+    model::channel::Message,
     utils::MessageBuilder,
 };
 use std::str::FromStr;

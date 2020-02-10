@@ -3,9 +3,7 @@ use lazy_static::lazy_static;
 use rayon::{iter::Either, prelude::*};
 use regex::{Captures, Regex};
 use serenity::{
-    builder::CreateEmbed,
-    framework::standard::{CommandError, CommandResult},
-    model::channel::Message,
+    builder::CreateEmbed, framework::standard::CommandError, model::channel::Message,
     utils::MessageBuilder,
 };
 use youmubot_prelude::*;
