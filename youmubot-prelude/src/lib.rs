@@ -8,7 +8,7 @@ pub mod reaction_watch;
 pub mod setup;
 
 pub use announcer::{Announcer, AnnouncerHandler};
-pub use args::Duration;
+pub use args::{Duration, UsernameArg};
 pub use pagination::Pagination;
 pub use reaction_watch::{ReactionHandler, ReactionWatcher};
 

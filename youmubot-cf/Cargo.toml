@@ -1,0 +1,20 @@
+[package]
+name = "youmubot-cf"
+version = "0.1.0"
+authors = ["Natsu Kagami <natsukagami@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+reqwest = "0.10.1"
+serenity = "0.8"
+Inflector = "0.11"
+codeforces = { git = "https://github.com/natsukagami/rust-codeforces-api" }
+regex = "1"
+lazy_static = "1"
+rayon = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+youmubot-prelude = { path = "../youmubot-prelude" }
+youmubot-db = { path = "../youmubot-db" }

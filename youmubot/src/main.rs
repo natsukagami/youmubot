@@ -51,6 +51,8 @@ fn main() {
     // Set up hooks
     #[cfg(feature = "osu")]
     handler.hooks.push(youmubot_osu::discord::hook);
+    #[cfg(feature = "codeforces")]
+    handler.hooks.push(youmubot_cf::codeforces_info_hook);
 
     // Sets up a client
     let mut client = {
@@ -83,12 +85,17 @@ fn main() {
         #[cfg(feature = "osu")]
         youmubot_osu::discord::setup(&db_path, &mut data, &mut announcers)
             .expect("osu! is initialized");
+        // codeforces
+        #[cfg(feature = "codeforces")]
+        youmubot_cf::setup(&db_path, &mut data, &mut announcers);
     }
 
     #[cfg(feature = "core")]
     println!("Core enabled.");
     #[cfg(feature = "osu")]
     println!("osu! enabled.");
+    #[cfg(feature = "codeforces")]
+    println!("codeforces enabled.");
 
     client.with_framework(fw);
     announcers.scan(std::time::Duration::from_secs(300));
@@ -175,5 +182,7 @@ fn setup_framework(client: &Client) -> StandardFramework {
         .group(&youmubot_core::COMMUNITY_GROUP);
     #[cfg(feature = "osu")]
     let fw = fw.group(&youmubot_osu::discord::OSU_GROUP);
+    #[cfg(feature = "codeforces")]
+    let fw = fw.group(&youmubot_cf::CODEFORCES_GROUP);
     fw
 }

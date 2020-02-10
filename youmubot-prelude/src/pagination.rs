@@ -117,6 +117,12 @@ impl<T: Pagination> PaginationHandler<T> {
     }
 }
 
+impl<T: Pagination> Drop for PaginationHandler<T> {
+    fn drop(&mut self) {
+        self.message.react(&self.ctx, "🛑").ok();
+    }
+}
+
 impl<T: Pagination> ReactionHandler for PaginationHandler<T> {
     fn handle_reaction(&mut self, reaction: &Reaction, _is_add: bool) -> CommandResult {
         if reaction.message_id != self.message.id {
