@@ -58,7 +58,7 @@ pub fn watch_contest(
             contest.name,
             member_results
                 .iter()
-                .map(|(u, m)| format!("- {} as **{}**", m.member.distinct(), m.handle))
+                .map(|(_, m)| format!("- {} as **{}**", m.member.distinct(), m.handle))
                 .collect::<Vec<_>>()
                 .join("\n"),
         ))
