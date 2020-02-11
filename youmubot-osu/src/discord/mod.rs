@@ -230,7 +230,7 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
 
     let mut beatmaps: Vec<Option<String>> = vec![None; plays.len()];
 
-    const ITEMS_PER_PAGE: usize = 10;
+    const ITEMS_PER_PAGE: usize = 5;
     let total_pages = (plays.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
     watcher.paginate_fn(ctx, m.channel_id, |page, e| {
         let page = page as usize;
@@ -271,8 +271,6 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
         }
         // End
         m.push_line("```").push_line(format!("Page **{}/{}**", page + 1, total_pages));
-
-
         (e.content(m.build()), Ok(()))
     }, std::time::Duration::from_secs(60))
 }
