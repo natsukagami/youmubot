@@ -39,7 +39,7 @@ impl ReactionWatcher {
         duration: std::time::Duration,
     ) -> CommandResult
     where
-        T: for<'a> Fn(u8, &'a mut EditMessage) -> (&'a mut EditMessage, CommandResult),
+        T: for<'a> FnMut(u8, &'a mut EditMessage) -> (&'a mut EditMessage, CommandResult),
     {
         self.paginate(ctx, channel, pager, duration)
     }
@@ -57,7 +57,7 @@ pub trait Pagination {
     ///
     /// This would either create or edit a message, but you should not be worry about it.
     fn render_page<'a>(
-        &self,
+        &mut self,
         page: u8,
         target: &'a mut EditMessage,
     ) -> (&'a mut EditMessage, CommandResult);
@@ -65,10 +65,10 @@ pub trait Pagination {
 
 impl<T> Pagination for T
 where
-    T: for<'a> Fn(u8, &'a mut EditMessage) -> (&'a mut EditMessage, CommandResult),
+    T: for<'a> FnMut(u8, &'a mut EditMessage) -> (&'a mut EditMessage, CommandResult),
 {
     fn render_page<'a>(
-        &self,
+        &mut self,
         page: u8,
         target: &'a mut EditMessage,
     ) -> (&'a mut EditMessage, CommandResult) {
@@ -107,7 +107,7 @@ impl<T: Pagination> PaginationHandler<T> {
     fn call_pager(&mut self) -> CommandResult {
         let mut res: CommandResult = Ok(());
         let mut msg = self.message.clone();
-        msg.edit(&self.ctx, |e| {
+        msg.edit(self.ctx.http.clone(), |e| {
             let (e, r) = self.pager.render_page(self.page, e);
             res = r;
             e
