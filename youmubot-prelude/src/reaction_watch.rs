@@ -60,8 +60,8 @@ impl ReactionWatcher {
         {
             self.channels.lock().expect("Poisoned!").push(send);
         }
-        let timeout = after(duration);
         loop {
+            let timeout = after(duration);
             let r = select! {
                 recv(reactions) -> r => { let (r, is_added) = r.unwrap(); h.handle_reaction(&*r, is_added) },
                 recv(timeout) -> _ => break,

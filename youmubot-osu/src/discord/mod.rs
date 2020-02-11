@@ -1,8 +1,9 @@
 use crate::{
-    models::{Beatmap, Mode, User},
+    models::{Beatmap, Mode, Score, User},
     request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
+use rayon::prelude::*;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -70,6 +71,7 @@ pub fn setup(
 #[prefix = "osu"]
 #[description = "osu! related commands."]
 #[commands(std, taiko, catch, mania, save, recent, last, check, top, server_rank)]
+#[default_command(std)]
 struct Osu;
 
 #[command]
@@ -197,27 +199,91 @@ fn to_user_id_query(
         .map(|u| UserID::ID(u.id))
         .ok_or(Error::from("No saved account found"))
 }
-struct Nth(u8);
+
+enum Nth {
+    All,
+    Nth(u8),
+}
 
 impl FromStr for Nth {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if !s.starts_with("#") {
+        if s == "--all" || s == "-a" || s == "##" {
+            Ok(Nth::All)
+        } else if !s.starts_with("#") {
             Err(Error::from("Not an order"))
         } else {
             let v = s.split_at("#".len()).1.parse()?;
-            Ok(Nth(v))
+            Ok(Nth::Nth(v))
         }
     }
 }
 
+fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> CommandResult {
+    let watcher = ctx.data.get_cloned::<ReactionWatcher>();
+    let osu = ctx.data.get_cloned::<OsuClient>();
+
+    if plays.is_empty() {
+        m.reply(&ctx, "No plays found")?;
+        return Ok(());
+    }
+
+    let mut beatmaps: Vec<Option<String>> = vec![None; plays.len()];
+
+    const ITEMS_PER_PAGE: usize = 10;
+    let total_pages = (plays.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+    watcher.paginate_fn(ctx, m.channel_id, |page, e| {
+        let page = page as usize;
+        let start = page * ITEMS_PER_PAGE;
+        let end = plays.len().min(start + ITEMS_PER_PAGE);
+        if start >= end {
+            return (e, Err(Error::from("No more pages")));
+        }
+
+        let plays = &plays[start..end];
+        let beatmaps = {
+            let b = &mut beatmaps[start..end];
+            b.par_iter_mut().enumerate().map(
+                |(i, v)| v.get_or_insert_with(
+                    || osu.beatmaps(BeatmapRequestKind::Beatmap(plays[i].beatmap_id), |f| f)
+                    	.ok()
+                    	.and_then(|v| v.into_iter().next())
+                    	.map(|b| format!("{} - {} [{}] (#{})", b.artist, b.title, b.difficulty_name, b.beatmap_id))
+                    	.unwrap_or("FETCH FAILED".to_owned()))).collect::<Vec<_>>()
+        };
+        let /*mods width*/ mw = plays.iter().map(|v| v.mods.to_string().len()).max().unwrap().max(4);
+        let /*beatmap names*/ bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
+
+	let mut m = MessageBuilder::new();
+	m.push_line("```");
+        // Table header
+        m.push_line(format!(" #  | pp     | accuracy | rank | {:mw$} | {:bw$}", "mods", "beatmap", mw = mw, bw = bw));
+        m.push_line(format!("---------------------------------{:-<mw$}---{:-<bw$}", "", "", mw = mw, bw = bw));
+        // Each row
+        for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
+            m.push_line_safe(
+                format!(
+                    "{:>3} | {:>6} | {:>8} | {:^4} | {:mw$} | {:bw$}",
+                    id + start + 1,
+                    play.pp.map(|v| format!("{:.2}", v)).unwrap_or("-".to_owned()),
+                    format!("{:.2}%", play.accuracy(mode)),
+                    play.rank.to_string(), play.mods.to_string(), beatmap, mw = mw, bw = bw));
+        }
+        // End
+        m.push_line("```").push_line(format!("Page **{}/{}**", page + 1, total_pages));
+
+
+        (e.content(m.build()), Ok(()))
+    }, std::time::Duration::from_secs(60))
+}
+
 #[command]
 #[description = "Gets an user's recent play"]
-#[usage = "#[the nth recent play = 1] / [mode (std, taiko, mania, catch) = std] / [username / user id = your saved id]"]
+#[usage = "#[the nth recent play = --all] / [mode (std, taiko, mania, catch) = std] / [username / user id = your saved id]"]
 #[example = "#1 / taiko / natsukagami"]
 #[max_args(3)]
 pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let nth = args.single::<Nth>().unwrap_or(Nth(1)).0.min(50).max(1);
+    let nth = args.single::<Nth>().unwrap_or(Nth::All);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
@@ -225,31 +291,38 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
-    let recent_play = osu
-        .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
-        .into_iter()
-        .last()
-        .ok_or(Error::from("No such play"))?;
-    let beatmap = osu
-        .beatmaps(BeatmapRequestKind::Beatmap(recent_play.beatmap_id), |f| {
-            f.mode(mode, true)
-        })?
-        .into_iter()
-        .next()
-        .map(|v| BeatmapWithMode(v, mode))
-        .unwrap();
+    match nth {
+        Nth::Nth(nth) => {
+            let recent_play = osu
+                .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?
+                .into_iter()
+                .last()
+                .ok_or(Error::from("No such play"))?;
+            let beatmap = osu
+                .beatmaps(BeatmapRequestKind::Beatmap(recent_play.beatmap_id), |f| {
+                    f.mode(mode, true)
+                })?
+                .into_iter()
+                .next()
+                .map(|v| BeatmapWithMode(v, mode))
+                .unwrap();
 
-    msg.channel_id.send_message(&ctx, |m| {
-        m.content(format!(
-            "{}: here is the play that you requested",
-            msg.author
-        ))
-        .embed(|m| score_embed(&recent_play, &beatmap, &user, None, m))
-    })?;
+            msg.channel_id.send_message(&ctx, |m| {
+                m.content(format!(
+                    "{}: here is the play that you requested",
+                    msg.author
+                ))
+                .embed(|m| score_embed(&recent_play, &beatmap, &user, None, m))
+            })?;
 
-    // Save the beatmap...
-    cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
-
+            // Save the beatmap...
+            cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
+        }
+        Nth::All => {
+            let plays = osu.user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))?;
+            list_plays(&plays, mode, ctx.clone(), msg)?;
+        }
+    }
     Ok(())
 }
 
@@ -317,11 +390,11 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
 
 #[command]
 #[description = "Get the n-th top record of an user."]
-#[usage = "#[n-th = 1] / [mode (std, taiko, catch, mania) = std / [username or user_id = your saved user id]"]
+#[usage = "#[n-th = --all] / [mode (std, taiko, catch, mania) = std / [username or user_id = your saved user id]"]
 #[example = "#2 / taiko / natsukagami"]
 #[max_args(3)]
 pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let nth = args.single::<Nth>().unwrap_or(Nth(1)).0;
+    let nth = args.single::<Nth>().unwrap_or(Nth::All);
     let mode = args
         .single::<ModeArg>()
         .map(|ModeArg(t)| t)
@@ -333,34 +406,42 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
-    let top_play = osu.user_best(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?;
 
-    let rank = top_play.len() as u8;
+    match nth {
+        Nth::Nth(nth) => {
+            let top_play = osu.user_best(UserID::ID(user.id), |f| f.mode(mode).limit(nth))?;
 
-    let top_play = top_play
-        .into_iter()
-        .last()
-        .ok_or(Error::from("No such play"))?;
-    let beatmap = osu
-        .beatmaps(BeatmapRequestKind::Beatmap(top_play.beatmap_id), |f| {
-            f.mode(mode, true)
-        })?
-        .into_iter()
-        .next()
-        .map(|v| BeatmapWithMode(v, mode))
-        .unwrap();
+            let rank = top_play.len() as u8;
 
-    msg.channel_id.send_message(&ctx, |m| {
-        m.content(format!(
-            "{}: here is the play that you requested",
-            msg.author
-        ))
-        .embed(|m| score_embed(&top_play, &beatmap, &user, Some(rank), m))
-    })?;
+            let top_play = top_play
+                .into_iter()
+                .last()
+                .ok_or(Error::from("No such play"))?;
+            let beatmap = osu
+                .beatmaps(BeatmapRequestKind::Beatmap(top_play.beatmap_id), |f| {
+                    f.mode(mode, true)
+                })?
+                .into_iter()
+                .next()
+                .map(|v| BeatmapWithMode(v, mode))
+                .unwrap();
 
-    // Save the beatmap...
-    cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
+            msg.channel_id.send_message(&ctx, |m| {
+                m.content(format!(
+                    "{}: here is the play that you requested",
+                    msg.author
+                ))
+                .embed(|m| score_embed(&top_play, &beatmap, &user, Some(rank), m))
+            })?;
 
+            // Save the beatmap...
+            cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
+        }
+        Nth::All => {
+            let plays = osu.user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))?;
+            list_plays(&plays, mode, ctx.clone(), msg)?;
+        }
+    }
     Ok(())
 }
 
