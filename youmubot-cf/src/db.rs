@@ -3,7 +3,6 @@ use codeforces::User;
 use serenity::model::id::UserId;
 use std::collections::HashMap;
 use youmubot_db::DB;
-use youmubot_prelude::*;
 
 /// A database map that stores an user with the respective handle.
 pub type CfSavedUsers = DB<HashMap<UserId, CfUser>>;

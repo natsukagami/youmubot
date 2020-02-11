@@ -13,8 +13,8 @@ mod db;
 mod embed;
 mod hook;
 
-// /// Live-commentating a Codeforces round.
-// pub mod live;
+/// Live-commentating a Codeforces round.
+mod live;
 
 use db::CfSavedUsers;
 
@@ -30,7 +30,7 @@ pub fn setup(path: &std::path::Path, data: &mut ShareMap, announcers: &mut Annou
 #[group]
 #[prefix = "cf"]
 #[description = "Codeforces-related commands"]
-#[commands(profile, save, ranks)]
+#[commands(profile, save, ranks, watch)]
 #[default_command(profile)]
 pub struct Codeforces;
 
@@ -202,6 +202,20 @@ pub fn ranks(ctx: &mut Context, m: &Message) -> CommandResult {
         },
         std::time::Duration::from_secs(60),
     )?;
+
+    Ok(())
+}
+
+#[command]
+#[description = "Watch a contest and announce any change on the members of the server assigned to the contest."]
+#[usage = "[the contest id]"]
+#[num_args(1)]
+#[required_permissions(MANAGE_CHANNELS)]
+#[only_in(guilds)]
+pub fn watch(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
+    let contest_id: u64 = args.single()?;
+
+    live::watch_contest(ctx, m.guild_id.unwrap(), m.channel_id, contest_id)?;
 
     Ok(())
 }
