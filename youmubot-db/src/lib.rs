@@ -2,9 +2,7 @@ use rustbreak::{deser::Yaml as Ron, FileDatabase};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serenity::{framework::standard::CommandError as Error, model::id::GuildId, prelude::*};
 use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
-
+use std::{cell::Cell, path::Path, sync::Arc};
 /// GuildMap defines the guild-map type.
 /// It is basically a HashMap from a GuildId to a data structure.
 pub type GuildMap<V> = HashMap<GuildId, V>;
@@ -38,16 +36,23 @@ where
 /// The write guard for our FileDatabase.
 /// It wraps the FileDatabase in a write-on-drop lock.
 #[derive(Debug)]
-pub struct DBWriteGuard<T>(Arc<FileDatabase<T, Ron>>)
+pub struct DBWriteGuard<T>
 where
-    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned;
+    T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
+{
+    db: Arc<FileDatabase<T, Ron>>,
+    needs_save: Cell<bool>,
+}
 
 impl<T> From<Arc<FileDatabase<T, Ron>>> for DBWriteGuard<T>
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
     fn from(v: Arc<FileDatabase<T, Ron>>) -> Self {
-        DBWriteGuard(v)
+        DBWriteGuard {
+            db: v,
+            needs_save: Cell::new(false),
+        }
     }
 }
 
@@ -57,11 +62,12 @@ where
 {
     /// Borrows the FileDatabase.
     pub fn borrow(&self) -> Result<std::sync::RwLockReadGuard<T>, rustbreak::RustbreakError> {
-        (*self).0.borrow_data()
+        (*self).db.borrow_data()
     }
     /// Borrows the FileDatabase for writing.
     pub fn borrow_mut(&self) -> Result<std::sync::RwLockWriteGuard<T>, rustbreak::RustbreakError> {
-        (*self).0.borrow_data_mut()
+        self.needs_save.set(true);
+        (*self).db.borrow_data_mut()
     }
 }
 
@@ -70,8 +76,10 @@ where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
     fn drop(&mut self) {
-        if let Err(e) = self.0.save() {
-            dbg!(e);
+        if self.needs_save.get() {
+            if let Err(e) = self.db.save() {
+                dbg!(e);
+            }
         }
     }
 }
