@@ -3,6 +3,7 @@ use crate::{
     request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
+use rayon::prelude::*;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -242,7 +243,7 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
         let plays = &plays[start..end];
         let beatmaps = {
             let b = &mut beatmaps[start..end];
-            b.iter_mut().enumerate().map(
+            b.par_iter_mut().enumerate().map(
                 |(i, v)| v.get_or_insert_with(
                     || osu.beatmaps(BeatmapRequestKind::Beatmap(plays[i].beatmap_id), |f| f)
                     	.ok()
