@@ -84,6 +84,13 @@ mod duration {
         }
     }
 
+    impl Duration {
+        /// Create a duration from the number of seconds.
+        pub fn from_secs(secs: u64) -> Duration {
+            Duration(StdDuration::from_secs(secs))
+        }
+    }
+
     impl fmt::Display for Duration {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let d = self;
