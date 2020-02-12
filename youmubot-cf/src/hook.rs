@@ -45,11 +45,10 @@ impl ContestCache {
             Some((c, None)) => match Contest::standings(http, contest_id, |f| f.limit(1, 1)) {
                 Ok((c, p, _)) => Ok({
                     drop(rl);
-                    self.0
-                        .write()
-                        .entry(contest_id)
-                        .or_insert((c, Some(p)))
-                        .clone()
+                    let mut v = self.0.write();
+                    let v = v.entry(contest_id).or_insert((c, None));
+                    v.1 = Some(p);
+                    v.clone()
                 }),
                 Err(_) => Ok((c.clone(), None)),
             },
