@@ -1,3 +1,4 @@
+use chrono::{TimeZone, Utc};
 use codeforces::{Contest, Problem};
 use lazy_static::lazy_static;
 use rayon::{iter::Either, prelude::*};
@@ -156,18 +157,27 @@ fn print_info_message<'a>(
     if !contests.is_empty() {
         m.push_bold_line("Contests").push_line("");
         for (contest, problems, link) in contests {
-            let duration: Duration = format!("{}s", contest.duration_seconds).parse().unwrap();
+            let duration = Duration::from_secs(contest.duration_seconds);
             m.push(" - [")
                 .push_bold_safe(&contest.name)
                 .push(format!("]({})", link))
-                .push(format!(
-                    " | {} | duration **{}**",
+                .push(format!(" | {}", contest.phase))
+                .push(
                     problems
                         .as_ref()
-                        .map(|v| format!("{} | **{}** problems", contest.phase, v.len()))
-                        .unwrap_or(format!("{}", contest.phase)),
-                    duration
-                ));
+                        .map(|v| format!(" | **{}** problems", v.len()))
+                        .unwrap_or("".to_owned()),
+                )
+                .push(
+                    contest
+                        .start_time_seconds
+                        .as_ref()
+                        .map(|v| {
+                            format!(" | from **{}**", Utc.timestamp(*v as i64, 0).to_rfc2822())
+                        })
+                        .unwrap_or("".to_owned()),
+                )
+                .push(format!(" | duration **{}**", duration));
             if let Some(p) = &contest.prepared_by {
                 m.push(format!(
                     " | prepared by [{}](https://codeforces.com/profile/{})",
