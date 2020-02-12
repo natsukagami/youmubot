@@ -39,6 +39,8 @@ fn update_user(
     user_id: UserId,
     cfu: &mut CfUser,
 ) -> CommandResult {
+    // Ensure this takes 200ms
+    let after = crossbeam_channel::after(std::time::Duration::from_secs_f32(0.2));
     let info = User::info(reqwest, &[cfu.handle.as_str()])?
         .into_iter()
         .next()
@@ -91,6 +93,7 @@ fn update_user(
             }
         }
     }
+    after.recv().ok();
 
     Ok(())
 }

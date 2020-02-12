@@ -98,7 +98,7 @@ fn main() {
     println!("codeforces enabled.");
 
     client.with_framework(fw);
-    announcers.scan(std::time::Duration::from_secs(300));
+    announcers.scan(std::time::Duration::from_secs(120));
 
     println!("Starting...");
     if let Err(v) = client.start() {

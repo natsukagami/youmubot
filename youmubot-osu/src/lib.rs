@@ -41,7 +41,7 @@ impl Client {
 
     fn build_request(&self, r: RequestBuilder) -> Result<Response, Error> {
         let v = r.query(&[("k", &*self.key)]).build()?;
-        dbg!(v.url());
+        // dbg!(v.url());
         Ok(self.client.execute(v)?)
     }
 

@@ -1,4 +1,5 @@
 use crate::{AppData, GetCloned};
+use crossbeam_channel::after;
 use rayon::prelude::*;
 use serenity::{
     framework::standard::{
@@ -153,12 +154,16 @@ impl AnnouncerHandler {
         let keys = self.announcers.keys().cloned().collect::<Vec<_>>();
         self.data.write().insert::<Self>(keys.clone());
         spawn(move || loop {
+            eprintln!("{}: announcer started scanning", chrono::Utc::now());
+            let after_timer = after(cooldown);
             for key in &keys {
+                eprintln!(" - scanning key `{}`", key);
                 if let Err(e) = self.announce(key) {
                     dbg!(e);
                 }
             }
-            std::thread::sleep(cooldown);
+            eprintln!("{}: announcer finished scanning", chrono::Utc::now());
+            after_timer.recv().ok();
         })
     }
 }

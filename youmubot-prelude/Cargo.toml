@@ -12,3 +12,4 @@ youmubot-db = { path = "../youmubot-db" }
 crossbeam-channel = "0.4"
 reqwest = "0.10"
 rayon = "1"
+chrono = "0.4"
