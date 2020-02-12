@@ -6,11 +6,12 @@ use serenity::{
     builder::CreateEmbed, framework::standard::CommandError, model::channel::Message,
     utils::MessageBuilder,
 };
+use std::{collections::HashMap, sync::Arc};
 use youmubot_prelude::*;
 
 lazy_static! {
     static ref CONTEST_LINK: Regex = Regex::new(
-        r"https?://codeforces\.com/(contest|gym)/(?P<contest>\d+)(?:/problem/(?P<problem>\w+))?"
+        r"https?://codeforces\.com/(contest|gym)s?/(?P<contest>\d+)(?:/problem/(?P<problem>\w+))?"
     )
     .unwrap();
     static ref PROBLEMSET_LINK: Regex = Regex::new(
@@ -20,8 +21,69 @@ lazy_static! {
 }
 
 enum ContestOrProblem {
-    Contest(Contest, Vec<Problem>),
+    Contest(Contest, Option<Vec<Problem>>),
     Problem(Problem),
+}
+
+/// Caches the contest list.
+#[derive(Clone, Debug, Default)]
+pub struct ContestCache(Arc<RwLock<HashMap<u64, (Contest, Option<Vec<Problem>>)>>>);
+
+impl TypeMapKey for ContestCache {
+    type Value = ContestCache;
+}
+
+impl ContestCache {
+    fn get(
+        &self,
+        http: &<HTTPClient as TypeMapKey>::Value,
+        contest_id: u64,
+    ) -> Result<(Contest, Option<Vec<Problem>>), CommandError> {
+        let rl = self.0.read();
+        match rl.get(&contest_id) {
+            Some(r @ (_, Some(_))) => Ok(r.clone()),
+            Some((c, None)) => match Contest::standings(http, contest_id, |f| f.limit(1, 1)) {
+                Ok((c, p, _)) => Ok({
+                    drop(rl);
+                    self.0
+                        .write()
+                        .entry(contest_id)
+                        .or_insert((c, Some(p)))
+                        .clone()
+                }),
+                Err(_) => Ok((c.clone(), None)),
+            },
+            None => {
+                drop(rl);
+                // Step 1: try to fetch it individually
+                match Contest::standings(http, contest_id, |f| f.limit(1, 1)) {
+                    Ok((c, p, _)) => Ok(self
+                        .0
+                        .write()
+                        .entry(contest_id)
+                        .or_insert((c, Some(p)))
+                        .clone()),
+                    Err(codeforces::Error::Codeforces(s)) if s.ends_with("has not started") => {
+                        // Fetch the entire list
+                        {
+                            let mut m = self.0.write();
+                            let contests = Contest::list(http, contest_id > 100_000)?;
+                            contests.into_iter().for_each(|c| {
+                                m.entry(c.id).or_insert((c, None));
+                            });
+                        }
+                        self.0
+                            .read()
+                            .get(&contest_id)
+                            .cloned()
+                            .ok_or("No contest found".into())
+                    }
+                    Err(e) => Err(e.into()),
+                }
+                // Step 2: try to fetch the entire list.
+            }
+        }
+    }
 }
 
 /// Prints info whenever a problem or contest (or more) is sent on a channel.
@@ -30,18 +92,21 @@ pub fn codeforces_info_hook(ctx: &mut Context, m: &Message) {
         return;
     }
     let http = ctx.data.get_cloned::<HTTPClient>();
+    let contest_cache = ctx.data.get_cloned::<ContestCache>();
     let matches = CONTEST_LINK
         .captures_iter(&m.content)
         .chain(PROBLEMSET_LINK.captures_iter(&m.content))
         // .collect::<Vec<_>>()
         // .into_par_iter()
-        .filter_map(|v| match parse_capture(http.clone(), v) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                dbg!(e);
-                None
-            }
-        })
+        .filter_map(
+            |v| match parse_capture(http.clone(), contest_cache.clone(), v) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    dbg!(e);
+                    None
+                }
+            },
+        )
         .collect::<Vec<_>>();
     if !matches.is_empty() {
         m.channel_id
@@ -97,8 +162,11 @@ fn print_info_message<'a>(
                 .push_bold_safe(&contest.name)
                 .push(format!("]({})", link))
                 .push(format!(
-                    " | **{}** problems | duration **{}**",
-                    problems.len(),
+                    " | {} | duration **{}**",
+                    problems
+                        .as_ref()
+                        .map(|v| format!("{} | **{}** problems", contest.phase, v.len()))
+                        .unwrap_or(format!("{}", contest.phase)),
                     duration
                 ));
             if let Some(p) = &contest.prepared_by {
@@ -115,17 +183,18 @@ fn print_info_message<'a>(
 
 fn parse_capture<'a>(
     http: <HTTPClient as TypeMapKey>::Value,
+    contest_cache: ContestCache,
     cap: Captures<'a>,
 ) -> Result<(ContestOrProblem, &'a str), CommandError> {
-    let contest: u64 = cap
+    let contest_id: u64 = cap
         .name("contest")
         .ok_or(CommandError::from("Contest not captured"))?
         .as_str()
         .parse()?;
-    let (contest, problems, _) = Contest::standings(&http, contest, |f| f.limit(1, 1))?;
+    let (contest, problems) = contest_cache.get(&http, contest_id)?;
     match cap.name("problem") {
         Some(p) => {
-            for problem in problems {
+            for problem in problems.ok_or(CommandError::from("Contest hasn't started"))? {
                 if &problem.index == p.as_str() {
                     return Ok((
                         ContestOrProblem::Problem(problem),

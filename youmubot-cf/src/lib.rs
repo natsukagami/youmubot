@@ -24,6 +24,7 @@ pub use hook::codeforces_info_hook;
 pub fn setup(path: &std::path::Path, data: &mut ShareMap, announcers: &mut AnnouncerHandler) {
     CfSavedUsers::insert_into(data, path.join("cf_saved_users.yaml"))
         .expect("Must be able to set up DB");
+    data.insert::<hook::ContestCache>(hook::ContestCache::default());
     announcers.add("codeforces", announcer::updates);
 }
 

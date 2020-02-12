@@ -163,7 +163,7 @@ dependencies = [
 [[package]]
 name = "codeforces"
 version = "0.1.0"
-source = "git+https://github.com/natsukagami/rust-codeforces-api#3ec1dc2a97c8225a5ba6bafee517080fc9ae88f7"
+source = "git+https://github.com/natsukagami/rust-codeforces-api#e10f2155df238fe5edd2f0d33cb8d6a4ce252e69"
 dependencies = [
  "reqwest 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.104 (registry+https://github.com/rust-lang/crates.io-index)",
