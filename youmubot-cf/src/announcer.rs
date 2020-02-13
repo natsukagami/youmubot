@@ -1,6 +1,6 @@
 use crate::db::{CfSavedUsers, CfUser};
 use announcer::MemberToChannels;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use codeforces::{RatingChange, User};
 use serenity::{
     framework::standard::{CommandError, CommandResult},
@@ -53,7 +53,7 @@ fn update_user(
     };
 
     let mut channels_list: Option<Vec<ChannelId>> = None;
-    let last_update = std::mem::replace(&mut cfu.last_update, Utc::now());
+    cfu.last_update = Utc::now();
     // Update the rating
     cfu.rating = info.rating;
 
@@ -81,16 +81,24 @@ fn update_user(
         Ok(())
     };
 
+    let rating_changes = match cfu.last_contest_id {
+        None => rating_changes,
+        Some(v) => rating_changes
+            .into_iter()
+            .take_while(|rc| rc.contest_id != v)
+            .collect(),
+    };
+
+    cfu.last_contest_id = rating_changes
+        .iter()
+        .last()
+        .map(|v| v.contest_id)
+        .or(cfu.last_contest_id);
+
     // Check for any good announcements to make
     for rc in rating_changes {
-        let date: DateTime<Utc> = DateTime::from_utc(
-            chrono::NaiveDateTime::from_timestamp(rc.rating_update_time_seconds as i64, 0),
-            Utc,
-        );
-        if &date > &last_update {
-            if let Err(v) = send_message(rc) {
-                dbg!(v);
-            }
+        if let Err(v) = send_message(rc) {
+            dbg!(v);
         }
     }
     after.recv().ok();

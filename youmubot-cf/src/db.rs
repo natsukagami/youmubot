@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use codeforces::User;
+use codeforces::{RatingChange, User};
 use serenity::model::id::UserId;
 use std::collections::HashMap;
 use youmubot_db::DB;
@@ -12,24 +12,19 @@ pub type CfSavedUsers = DB<HashMap<UserId, CfUser>>;
 pub struct CfUser {
     pub handle: String,
     pub last_update: DateTime<Utc>,
+    #[serde(default)]
+    pub last_contest_id: Option<u64>,
     pub rating: Option<i64>,
 }
 
-impl Default for CfUser {
-    fn default() -> Self {
-        Self {
-            handle: "".to_owned(),
-            last_update: Utc::now(),
-            rating: None,
-        }
-    }
-}
-
-impl From<User> for CfUser {
-    fn from(u: User) -> Self {
+impl CfUser {
+    /// Save a new user as an internal CFUser.
+    /// Requires a vector of rating changes because we must rely on the Codeforces rating_changes API's return order to properly announce.
+    pub(crate) fn save(u: User, rc: Vec<RatingChange>) -> Self {
         Self {
             handle: u.handle,
             last_update: Utc::now(),
+            last_contest_id: rc.into_iter().last().map(|v| v.contest_id),
             rating: u.rating,
         }
     }

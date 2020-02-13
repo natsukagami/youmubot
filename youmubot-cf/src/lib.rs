@@ -16,7 +16,7 @@ mod hook;
 /// Live-commentating a Codeforces round.
 mod live;
 
-use db::CfSavedUsers;
+use db::{CfSavedUsers, CfUser};
 
 pub use hook::codeforces_info_hook;
 
@@ -97,13 +97,15 @@ pub fn save(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
             m.reply(&ctx, "cannot find an account with such handle")?;
         }
         Some(acc) => {
+            // Collect rating changes data.
+            let rating_changes = acc.rating_changes(&http)?;
             let db = CfSavedUsers::open(&*ctx.data.read());
             let mut db = db.borrow_mut()?;
             m.reply(
                 &ctx,
                 format!("account `{}` has been linked to your account.", &acc.handle),
             )?;
-            db.insert(m.author.id, acc.into());
+            db.insert(m.author.id, CfUser::save(acc, rating_changes));
         }
     }
 
