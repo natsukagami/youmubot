@@ -90,8 +90,7 @@ fn update_user(
     };
 
     cfu.last_contest_id = rating_changes
-        .iter()
-        .last()
+        .first()
         .map(|v| v.contest_id)
         .or(cfu.last_contest_id);
 
