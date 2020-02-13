@@ -182,7 +182,7 @@ fn scan_changes(
                     .iter()
                     .zip(row.problem_results.iter()),
             ) {
-                if let Some(message) = analyze_change(old, new).map(|c| {
+                if let Some(message) = analyze_change(&contest, old, new).map(|c| {
                     translate_change(
                         member_result.handle.as_str(),
                         &row,
@@ -314,7 +314,7 @@ enum Change {
     TestFailed,
 }
 
-fn analyze_change(old: &ProblemResult, new: &ProblemResult) -> Option<Change> {
+fn analyze_change(contest: &Contest, old: &ProblemResult, new: &ProblemResult) -> Option<Change> {
     use Change::*;
     if old.points == new.points {
         if new.rejected_attempt_count > old.rejected_attempt_count {
@@ -331,7 +331,11 @@ fn analyze_change(old: &ProblemResult, new: &ProblemResult) -> Option<Change> {
     } else {
         if new.points == 0.0 {
             if new.result_type == ProblemResultType::Preliminary {
-                Some(Hacked)
+                if contest.phase == ContestPhase::Coding {
+                    Some(Hacked)
+                } else {
+                    None // Just changes to In Queue...
+                }
             } else {
                 Some(TestFailed)
             }
