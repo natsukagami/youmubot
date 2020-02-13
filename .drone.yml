@@ -1,0 +1,51 @@
+---
+kind: pipeline
+type: docker
+name: default
+
+trigger:
+  event:
+  - push
+
+steps:
+- name: format_check
+  image: rust:1.41
+  commands:
+  - rustup component add rustfmt
+  - cargo fmt -- --check
+- name: cargo_check
+  image: rust:1.41
+  commands:
+  - cargo check
+
+---
+kind: pipeline
+type: docker
+name: deploy
+trigger:
+  branch:
+  - master
+  event:
+  - push
+
+steps:
+- name: build_release
+  image: rust:1.41
+  commands:
+  - cargo build --release
+- name: deploy
+  image: drillster/drone-rsync
+  environment:
+    RSYNC_KEY:
+      from_secret: rsync_key
+  settings:
+    user: natsukagami
+    args: -zz
+    hosts:
+    - "104.248.149.133" # Youmubot
+    source:
+    - ./target/release/youmubot
+    target:
+    - ~/youmubot/youmubot
+    script:
+    - systemctl --user restart youmubot

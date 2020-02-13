@@ -1,9 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Serialize};
-use serenity::{
-    model::id::{RoleId, UserId},
-};
+use serenity::model::id::{RoleId, UserId};
 use std::collections::HashMap;
 use youmubot_db::{GuildMap, DB};
 
