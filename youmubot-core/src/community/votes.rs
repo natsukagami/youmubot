@@ -2,7 +2,7 @@ use serenity::framework::standard::CommandError as Error;
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
     model::{
-        channel::{Message,Reaction, ReactionType},
+        channel::{Message, Reaction, ReactionType},
         id::UserId,
     },
     utils::MessageBuilder,

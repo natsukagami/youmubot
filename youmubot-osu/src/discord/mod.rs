@@ -248,20 +248,21 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
                     || osu.beatmaps(BeatmapRequestKind::Beatmap(plays[i].beatmap_id), |f| f)
                     	.ok()
                     	.and_then(|v| v.into_iter().next())
-                    	.map(|b| format!("{} - {} [{}] (#{})", b.artist, b.title, b.difficulty_name, b.beatmap_id))
+                    	.map(|b| format!(
+                        	"[{:.1}*] {} - {} [{}] (#{})",
+                        	b.difficulty.stars, b.artist, b.title, b.difficulty_name, b.beatmap_id))
                     	.unwrap_or("FETCH FAILED".to_owned()))).collect::<Vec<_>>()
         };
         let /*mods width*/ mw = plays.iter().map(|v| v.mods.to_string().len()).max().unwrap().max(4);
         let /*beatmap names*/ bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
 
 	let mut m = MessageBuilder::new();
-	m.push_line("```");
         // Table header
         m.push_line(format!(" #  | pp     | accuracy | rank | {:mw$} | {:bw$}", "mods", "beatmap", mw = mw, bw = bw));
         m.push_line(format!("---------------------------------{:-<mw$}---{:-<bw$}", "", "", mw = mw, bw = bw));
         // Each row
         for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
-            m.push_line_safe(
+            m.push_line(
                 format!(
                     "{:>3} | {:>6} | {:>8} | {:^4} | {:mw$} | {:bw$}",
                     id + start + 1,
@@ -270,7 +271,12 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
                     play.rank.to_string(), play.mods.to_string(), beatmap, mw = mw, bw = bw));
         }
         // End
-        m.push_line("```").push_line(format!("Page **{}/{}**", page + 1, total_pages));
+        let table = m.build().replace("```", "\\`\\`\\`");
+        let mut m = MessageBuilder::new();
+        m
+            .push_codeblock(table, None)
+            .push_line(format!("Page **{}/{}**", page + 1, total_pages))
+            .push_line("Note: star difficulty don't reflect mods applied.");
         (e.content(m.build()), Ok(()))
     }, std::time::Duration::from_secs(60))
 }
