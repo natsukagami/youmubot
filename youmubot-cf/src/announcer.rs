@@ -60,9 +60,12 @@ fn update_user(
     let mut send_message = |rc: RatingChange| -> CommandResult {
         let channels =
             channels_list.get_or_insert_with(|| channels.channels_of(http.clone(), user_id));
-            if channels.is_empty() { return Ok(()); }
-          let (contest, _, _) =
-            codeforces::Contest::standings(reqwest, rc.contest_id, |f| f.limit(1, 1))?;      for channel in channels {
+        if channels.is_empty() {
+            return Ok(());
+        }
+        let (contest, _, _) =
+            codeforces::Contest::standings(reqwest, rc.contest_id, |f| f.limit(1, 1))?;
+        for channel in channels {
             if let Err(e) = channel.send_message(http.http(), |e| {
                 e.content(format!("Rating change for {}!", user_id.mention()))
                     .embed(|c| {
