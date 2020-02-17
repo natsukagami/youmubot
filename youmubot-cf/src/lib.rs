@@ -328,6 +328,7 @@ pub fn contestranks(ctx: &mut Context, m: &Message, mut args: Args) -> CommandRe
                         table.push(format!("{:^4}", ""));
                     }
                 }
+                table.push_line("");
             }
 
             let mut m = MessageBuilder::new();
