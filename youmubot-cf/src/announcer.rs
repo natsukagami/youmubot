@@ -46,11 +46,7 @@ fn update_user(
         .next()
         .ok_or(CommandError::from("Not found"))?;
 
-    let rating_changes = {
-        let mut v = info.rating_changes(reqwest)?;
-        v.reverse();
-        v
-    };
+    let rating_changes = info.rating_changes(reqwest)?;
 
     let mut channels_list: Option<Vec<ChannelId>> = None;
     cfu.last_update = Utc::now();
@@ -86,10 +82,17 @@ fn update_user(
 
     let rating_changes = match cfu.last_contest_id {
         None => rating_changes,
-        Some(v) => rating_changes
-            .into_iter()
-            .take_while(|rc| rc.contest_id != v)
-            .collect(),
+        Some(v) => {
+            let mut v: Vec<_> = rating_changes
+                .into_iter()
+                // Skip instead of take because sometimes Codeforces
+                // performs rollback.
+                .skip_while(|rc| rc.contest_id != v)
+                .skip(1)
+                .collect();
+            v.reverse();
+            v
+        }
     };
 
     cfu.last_contest_id = rating_changes
