@@ -1,3 +1,4 @@
+use codeforces::Contest;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -6,6 +7,7 @@ use serenity::{
     model::channel::Message,
     utils::MessageBuilder,
 };
+use std::{collections::HashMap, time::Duration};
 use youmubot_prelude::*;
 
 mod announcer;
@@ -31,7 +33,7 @@ pub fn setup(path: &std::path::Path, data: &mut ShareMap, announcers: &mut Annou
 #[group]
 #[prefix = "cf"]
 #[description = "Codeforces-related commands"]
-#[commands(profile, save, ranks, watch)]
+#[commands(profile, save, ranks, watch, contestranks)]
 #[default_command(profile)]
 pub struct Codeforces;
 
@@ -207,6 +209,137 @@ pub fn ranks(ctx: &mut Context, m: &Message) -> CommandResult {
     )?;
 
     Ok(())
+}
+
+#[command]
+#[description = "See the server ranks on a certain contest"]
+#[usage = "[the contest id]"]
+#[num_args(1)]
+#[only_in(guilds)]
+pub fn contestranks(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
+    let contest_id: u64 = args.single()?;
+    let guild = m.guild_id.unwrap(); // Guild-only command
+    let members = CfSavedUsers::open(&*ctx.data.read()).borrow()?.clone();
+    let members = members
+        .into_iter()
+        .filter_map(|(user_id, cf_user)| {
+            guild
+                .member(&ctx, user_id)
+                .ok()
+                .map(|v| (cf_user.handle, v))
+        })
+        .collect::<HashMap<_, _>>();
+    let http = ctx.data.get_cloned::<HTTPClient>();
+    let (contest, problems, ranks) = Contest::standings(&http, contest_id, |f| {
+        f.handles(members.iter().map(|(k, _)| k.clone()).collect())
+    })?;
+
+    // Table me
+    let ranks = ranks
+        .iter()
+        .flat_map(|v| {
+            v.party
+                .members
+                .iter()
+                .filter_map(|m| members.get(&m.handle).map(|mem| (mem, m.handle.clone(), v)))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    if ranks.is_empty() {
+        m.reply(&ctx, "No one in this server participated in the contest...")?;
+        return Ok(());
+    }
+
+    const ITEMS_PER_PAGE: usize = 10;
+    let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+
+    ctx.data.get_cloned::<ReactionWatcher>().paginate_fn(
+        ctx.clone(),
+        m.channel_id,
+        move |page, e| {
+            let page = page as usize;
+            let start = page * ITEMS_PER_PAGE;
+            let end = total_pages.min(start + ITEMS_PER_PAGE);
+            if start >= end {
+                return (e, Err(Error::from("no more pages to show")));
+            }
+            let ranks = &ranks[start..end];
+            let hw = ranks
+                .iter()
+                .map(|(mem, handle, _)| format!("{} ({})", handle, mem.distinct()).len())
+                .max()
+                .unwrap_or(0)
+                .max(6);
+            let hackw = ranks
+                .iter()
+                .map(|(_, _, row)| {
+                    format!(
+                        "{}/{}",
+                        row.successful_hack_count, row.unsuccessful_hack_count
+                    )
+                    .len()
+                })
+                .max()
+                .unwrap_or(0)
+                .max(5);
+
+            let mut table = MessageBuilder::new();
+            let mut header = MessageBuilder::new();
+            // Header
+            header.push(format!(
+                " Rank | {:hw$} | Total | {:hackw$}",
+                "Handle",
+                "Hacks",
+                hw = hw,
+                hackw = hackw
+            ));
+            for p in &problems {
+                header.push(format!(" | {:4}", p.index));
+            }
+            let header = header.build();
+            table
+                .push_line(&header)
+                .push_line(format!("{:-<w$}", "", w = header.len()));
+
+            // Body
+            for (mem, handle, row) in ranks {
+                table.push(format!(
+                    "{:>5} | {:<hw$} | {:>5.0} | {:<hackw$}",
+                    row.rank,
+                    format!("{} ({})", handle, mem.distinct()),
+                    row.points,
+                    format!(
+                        "{}/{}",
+                        row.successful_hack_count, row.unsuccessful_hack_count
+                    ),
+                    hw = hw,
+                    hackw = hackw
+                ));
+                for p in &row.problem_results {
+                    table.push(" | ");
+                    if p.points > 0.0 {
+                        table.push(format!("{:^4.0}", p.points));
+                    } else if let Some(_) = p.best_submission_time_seconds {
+                        table.push(format!("{:^4}", "?"));
+                    } else if p.rejected_attempt_count > 0 {
+                        table.push(format!("{:^4}", format!("-{}", p.rejected_attempt_count)));
+                    } else {
+                        table.push(format!("{:^4}", ""));
+                    }
+                }
+            }
+
+            let mut m = MessageBuilder::new();
+            m.push_bold_safe(&contest.name)
+                .push(" ")
+                .push_line(contest.url())
+                .push_codeblock(table.build(), None)
+                .push_line(format!("Page **{}/{}**", page + 1, total_pages));
+            (e.content(m.build()), Ok(()))
+        },
+        Duration::from_secs(60),
+    )
 }
 
 #[command]
