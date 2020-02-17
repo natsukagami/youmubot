@@ -260,7 +260,7 @@ pub fn contestranks(ctx: &mut Context, m: &Message, mut args: Args) -> CommandRe
         move |page, e| {
             let page = page as usize;
             let start = page * ITEMS_PER_PAGE;
-            let end = total_pages.min(start + ITEMS_PER_PAGE);
+            let end = ranks.len().min(start + ITEMS_PER_PAGE);
             if start >= end {
                 return (e, Err(Error::from("no more pages to show")));
             }
