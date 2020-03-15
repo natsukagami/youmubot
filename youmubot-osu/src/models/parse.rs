@@ -152,8 +152,8 @@ impl TryFrom<raw::Beatmap> for Beatmap {
 fn parse_user_event(s: raw::UserEvent) -> ParseResult<UserEvent> {
     Ok(UserEvent {
         display_html: s.display_html,
-        beatmap_id: parse_from_str(&s.beatmap_id)?,
-        beatmapset_id: parse_from_str(&s.beatmapset_id)?,
+        beatmap_id: s.beatmap_id.map(parse_from_str).transpose()?,
+        beatmapset_id: s.beatmapset_id.map(parse_from_str).transpose()?,
         date: parse_date(&s.date)?,
         epic_factor: parse_from_str(&s.epicfactor)?,
     })
