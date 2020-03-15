@@ -181,8 +181,8 @@ impl Beatmap {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserEvent {
     pub display_html: String,
-    pub beatmap_id: u64,
-    pub beatmapset_id: u64,
+    pub beatmap_id: Option<u64>,
+    pub beatmapset_id: Option<u64>,
     pub date: DateTime<Utc>,
     pub epic_factor: u8,
 }

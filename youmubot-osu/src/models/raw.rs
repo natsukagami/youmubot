@@ -70,8 +70,8 @@ pub(crate) struct User {
 #[derive(Debug, Deserialize)]
 pub(crate) struct UserEvent {
     pub display_html: String,
-    pub beatmap_id: String,
-    pub beatmapset_id: String,
+    pub beatmap_id: Option<String>,
+    pub beatmapset_id: Option<String>,
     pub date: String,
     pub epicfactor: String,
 }
