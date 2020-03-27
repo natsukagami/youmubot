@@ -58,7 +58,7 @@ fn clean(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 #[command]
 #[required_permissions(ADMINISTRATOR)]
 #[description = "Ban an user with a certain reason."]
-#[usage = "ban user#1234 spam"]
+#[usage = "@user#1234/spam"]
 #[min_args(1)]
 #[max_args(2)]
 #[only_in("guilds")]
@@ -83,26 +83,18 @@ fn ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 
 #[command]
 #[required_permissions(ADMINISTRATOR)]
-#[description = "Kick an user with a certain reason."]
-#[usage = "kick user#1234 spam"]
-#[min_args(1)]
-#[max_args(2)]
+#[description = "Kick an user."]
+#[usage = "@user#1234"]
+#[num_args(1)]
 #[only_in("guilds")]
 fn kick(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user = args.single::<UserId>()?.to_user(&ctx)?;
-    let reason = args
-        .remains()
-        .map(|v| format!("`{}`", v))
-        .unwrap_or("no provided reason".to_owned());
 
-    msg.reply(
-        &ctx,
-        format!("🔫 Kicking user {} for {}.", user.tag(), reason),
-    )?;
+    msg.reply(&ctx, format!("🔫 Kicking user {}.", user.tag()))?;
 
     msg.guild_id
         .ok_or("Can't get guild from message?")? // we had a contract
-        .ban(&ctx.http, user, &reason)?;
+        .kick(&ctx.http, user)?;
 
     Ok(())
 }
