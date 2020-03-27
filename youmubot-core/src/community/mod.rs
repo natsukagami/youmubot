@@ -15,14 +15,16 @@ use serenity::{
 };
 use youmubot_prelude::*;
 
+mod roles;
 mod votes;
 
+use roles::{ADD_COMMAND, LIST_COMMAND, REMOVE_COMMAND, TOGGLE_COMMAND};
 use votes::VOTE_COMMAND;
 
 #[group]
 #[description = "Community related commands. Usually comes with some sort of delays, since it involves pinging"]
 #[only_in("guilds")]
-#[commands(choose, vote)]
+#[commands(choose, vote, add, list, remove, toggle)]
 struct Community;
 
 #[command]

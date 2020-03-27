@@ -23,6 +23,7 @@ pub fn setup(
     data: &mut youmubot_prelude::ShareMap,
 ) -> serenity::framework::standard::CommandResult {
     db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
+    db::Roles::insert_into(&mut *data, &path.join("roles.yaml"))?;
 
     // Create handler threads
     std::thread::spawn(admin::watch_soft_bans(client));
