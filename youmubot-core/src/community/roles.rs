@@ -1,7 +1,7 @@
 use crate::db::Roles as DB;
 use serenity::{
     framework::standard::{macros::command, Args, CommandError as Error, CommandResult},
-    model::{channel::Message, id::RoleId},
+    model::{channel::Message, guild::Role, id::RoleId},
     utils::MessageBuilder,
 };
 use youmubot_prelude::*;
@@ -26,7 +26,7 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
                 .iter()
                 .filter_map(|(_, role)| roles.get(&role.id).map(|r| (r, &role.description)))
                 .collect();
-            const ROLES_PER_PAGE: usize = 5;
+            const ROLES_PER_PAGE: usize = 8;
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
             let watcher = ctx.data.get_cloned::<ReactionWatcher>();
@@ -105,16 +105,10 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
 #[num_args(1)]
 #[only_in(guilds)]
 fn toggle(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
-    let role = args.single::<String>()?;
+    let role = args.single_quoted::<String>()?;
     let guild_id = m.guild_id.unwrap();
     let roles = guild_id.to_partial_guild(&ctx)?.roles;
-    let role = match role.parse::<u64>() {
-        Ok(id) => roles.get(&RoleId(id)).cloned(),
-        Err(_) => roles
-            .iter()
-            .find_map(|(_, r)| if r.name == role { Some(r) } else { None })
-            .cloned(),
-    };
+    let role = role_from_string(&role, &roles);
     match role {
         None => {
             m.reply(&ctx, "No such role exists")?;
@@ -150,17 +144,11 @@ fn toggle(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
 #[required_permissions(MANAGE_ROLES)]
 #[only_in(guilds)]
 fn add(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
-    let role = args.single::<String>()?;
+    let role = args.single_quoted::<String>()?;
     let description = args.single::<String>()?;
     let guild_id = m.guild_id.unwrap();
     let roles = guild_id.to_partial_guild(&ctx)?.roles;
-    let role = match role.parse::<u64>() {
-        Ok(id) => roles.get(&RoleId(id)).cloned(),
-        Err(_) => roles
-            .iter()
-            .find_map(|(_, r)| if r.name == role { Some(r) } else { None })
-            .cloned(),
-    };
+    let role = role_from_string(&role, &roles);
     match role {
         None => {
             m.reply(&ctx, "No such role exists")?;
@@ -200,16 +188,10 @@ fn add(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
 #[required_permissions(MANAGE_ROLES)]
 #[only_in(guilds)]
 fn remove(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
-    let role = args.single::<String>()?;
+    let role = args.single_quoted::<String>()?;
     let guild_id = m.guild_id.unwrap();
     let roles = guild_id.to_partial_guild(&ctx)?.roles;
-    let role = match role.parse::<u64>() {
-        Ok(id) => roles.get(&RoleId(id)).cloned(),
-        Err(_) => roles
-            .iter()
-            .find_map(|(_, r)| if r.name == role { Some(r) } else { None })
-            .cloned(),
-    };
+    let role = role_from_string(&role, &roles);
     match role {
         None => {
             m.reply(&ctx, "No such role exists")?;
@@ -233,4 +215,15 @@ fn remove(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
         }
     };
     Ok(())
+}
+
+/// Parse a string as a role.
+fn role_from_string(role: &str, roles: &std::collections::HashMap<RoleId, Role>) -> Option<Role> {
+    match role.parse::<u64>() {
+        Ok(id) if roles.contains_key(&RoleId(id)) => roles.get(&RoleId(id)).cloned(),
+        _ => roles
+            .iter()
+            .find_map(|(_, r)| if r.name == role { Some(r) } else { None })
+            .cloned(),
+    }
 }
