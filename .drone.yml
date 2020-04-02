@@ -6,6 +6,7 @@ name: default
 trigger:
   event:
   - push
+  - pull_request
 
 steps:
 - name: format_check
