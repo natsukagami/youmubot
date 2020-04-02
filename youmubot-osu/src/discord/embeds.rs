@@ -73,7 +73,10 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
     .description(
         MessageBuilder::new()
             .push({
-                let link = format!("https://osu.ppy.sh/beatmapsets/{}/download", b.beatmapset_id);
+                let link = format!(
+                    "https://osu.ppy.sh/beatmapsets/{}/download",
+                    b.beatmapset_id
+                );
                 format!(
                     "Download: [[Link]]({}) [[No Video]]({}?noVideo=1)",
                     link, link
@@ -123,7 +126,10 @@ pub fn beatmapset_embed<'a>(
     .description(
         MessageBuilder::new()
             .push_line({
-                let link = format!("https://osu.ppy.sh/beatmapsets/{}/download", b.beatmapset_id);
+                let link = format!(
+                    "https://osu.ppy.sh/beatmapsets/{}/download",
+                    b.beatmapset_id
+                );
                 format!(
                     "Download: [[Link]]({}) [[No Video]]({}?noVideo=1)",
                     link, link
