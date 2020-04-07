@@ -27,16 +27,15 @@ pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> 
         let mut pp_values = vec![]; // Store the pp values here...
         for mode in &[Mode::Std, Mode::Taiko, Mode::Mania, Mode::Catch] {
             let scores = scan_user(&osu, osu_user, *mode)?;
-            if scores.is_empty() && !osu_user.pp.is_empty() {
-                // Nothing to update: no new scores and pp is there.
-                pp_values.push(osu_user.pp[*mode as usize]);
-                continue;
-            }
             let user = match osu.user(UserID::ID(osu_user.id), |f| f.mode(*mode)) {
                 Ok(Some(u)) => u,
                 _ => continue 'user_loop,
             };
             pp_values.push(user.pp);
+            if scores.is_empty() && !osu_user.pp.is_empty() {
+                // Nothing to update: no new scores and pp is there.
+                continue;
+            }
             scores
                 .into_par_iter()
                 .filter_map(|(rank, score)| {
