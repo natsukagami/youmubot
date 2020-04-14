@@ -102,6 +102,7 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
 
 #[command("role")]
 #[description = "Toggle a role by its name or ID."]
+#[example = "\"IELTS / TOEFL\""]
 #[num_args(1)]
 #[only_in(guilds)]
 fn toggle(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
