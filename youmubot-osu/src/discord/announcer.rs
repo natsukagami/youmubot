@@ -74,8 +74,8 @@ fn scan_user(osu: &Osu, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Err
     let scores = osu.user_best(UserID::ID(u.id), |f| f.mode(mode).limit(25))?;
     let scores = scores
         .into_iter()
-        .filter(|s: &Score| s.date >= u.last_update)
         .enumerate()
+        .filter(|(_, s)| s.date >= u.last_update)
         .map(|(i, v)| ((i + 1) as u8, v))
         .collect();
     Ok(scores)
