@@ -95,7 +95,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let reaction_to_choice: Map<_, _> = choices.iter().map(|r| (r.0, &r.1)).collect();
     let mut user_reactions: Map<UserId, Vec<&str>> = Map::new();
 
-    ctx.data.get_cloned::<ReactionWatcher>().handle_reactions(
+    ctx.data.get_cloned::<ReactionWatcher>().handle_reactions_timed(
         |reaction: &Reaction, is_add| {
             if reaction.message_id != panel.id {
                 return Ok(());
