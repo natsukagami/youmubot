@@ -95,37 +95,39 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let reaction_to_choice: Map<_, _> = choices.iter().map(|r| (r.0, &r.1)).collect();
     let mut user_reactions: Map<UserId, Vec<&str>> = Map::new();
 
-    ctx.data.get_cloned::<ReactionWatcher>().handle_reactions_timed(
-        |reaction: &Reaction, is_add| {
-            if reaction.message_id != panel.id {
-                return Ok(());
-            }
-            if reaction.user(&ctx)?.bot {
-                return Ok(());
-            }
-            let choice = if let ReactionType::Unicode(ref s) = reaction.emoji {
-                if let Some(choice) = reaction_to_choice.get(s.as_str()) {
-                    choice
-                } else {
+    ctx.data
+        .get_cloned::<ReactionWatcher>()
+        .handle_reactions_timed(
+            |reaction: &Reaction, is_add| {
+                if reaction.message_id != panel.id {
                     return Ok(());
                 }
-            } else {
-                return Ok(());
-            };
-            if is_add {
-                user_reactions
-                    .entry(reaction.user_id)
-                    .or_default()
-                    .push(choice);
-            } else {
-                user_reactions.entry(reaction.user_id).and_modify(|v| {
-                    v.retain(|f| &f != choice);
-                });
-            }
-            Ok(())
-        },
-        *duration,
-    )?;
+                if reaction.user(&ctx)?.bot {
+                    return Ok(());
+                }
+                let choice = if let ReactionType::Unicode(ref s) = reaction.emoji {
+                    if let Some(choice) = reaction_to_choice.get(s.as_str()) {
+                        choice
+                    } else {
+                        return Ok(());
+                    }
+                } else {
+                    return Ok(());
+                };
+                if is_add {
+                    user_reactions
+                        .entry(reaction.user_id)
+                        .or_default()
+                        .push(choice);
+                } else {
+                    user_reactions.entry(reaction.user_id).and_modify(|v| {
+                        v.retain(|f| &f != choice);
+                    });
+                }
+                Ok(())
+            },
+            *duration,
+        )?;
     let result: Vec<(&str, Vec<UserId>)> = {
         let mut res: Map<&str, Vec<UserId>> = Map::new();
         for (u, r) in user_reactions {
