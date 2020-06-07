@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use serenity::{
     framework::standard::{CommandError as Error, CommandResult},
     http::CacheHttp,
+    model::id::{ChannelId, UserId},
     CacheAndHttp,
 };
 use std::sync::Arc;
@@ -23,51 +24,67 @@ pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> 
     let osu = d.get_cloned::<OsuClient>();
     // For each user...
     let mut data = OsuSavedUsers::open(&*d.read()).borrow()?.clone();
-    'user_loop: for (user_id, osu_user) in data.iter_mut() {
-        let mut pp_values = vec![]; // Store the pp values here...
-        for mode in &[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania] {
-            let scores = scan_user(&osu, osu_user, *mode)?;
-            let user = match osu.user(UserID::ID(osu_user.id), |f| f.mode(*mode)) {
-                Ok(Some(u)) => u,
-                _ => continue 'user_loop,
-            };
-            pp_values.push(user.pp);
-            if scores.is_empty() && !osu_user.pp.is_empty() {
-                // Nothing to update: no new scores and pp is there.
+    for (user_id, osu_user) in data.iter_mut() {
+        let channels = channels.channels_of(c.clone(), *user_id);
+        if channels.is_empty() {
+            continue; // We don't wanna update an user without any active server
+        }
+        osu_user.pp = match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
+            .par_iter()
+            .map(|m| handle_user_mode(c.clone(), &osu, &osu_user, *user_id, &channels[..], *m))
+            .collect::<Result<_, _>>()
+        {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("osu: Cannot update {}: {}", osu_user.id, e.0);
                 continue;
             }
-            scores
-                .into_par_iter()
-                .filter_map(|(rank, score)| {
-                    let beatmap = osu
-                        .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
-                        .map(|v| BeatmapWithMode(v.into_iter().next().unwrap(), *mode));
-                    let channels = channels.channels_of(c.clone(), *user_id);
-                    match beatmap {
-                        Ok(v) => Some((rank, score, v, channels)),
-                        Err(e) => {
-                            dbg!(e);
-                            None
-                        }
-                    }
-                })
-                .for_each(|(rank, score, beatmap, channels)| {
-                    for channel in channels {
-                        if let Err(e) = channel.send_message(c.http(), |c| {
-                            c.content(format!("New top record from {}!", user_id.mention()))
-                                .embed(|e| score_embed(&score, &beatmap, &user, Some(rank), e))
-                        }) {
-                            dbg!(e);
-                        }
-                    }
-                });
-        }
+        };
         osu_user.last_update = chrono::Utc::now();
-        osu_user.pp = pp_values;
     }
     // Update users
     *OsuSavedUsers::open(&*d.read()).borrow_mut()? = data;
     Ok(())
+}
+
+/// Handles an user/mode scan, announces all possible new scores, return the new pp value.
+fn handle_user_mode(
+    c: Arc<CacheAndHttp>,
+    osu: &Osu,
+    osu_user: &OsuUser,
+    user_id: UserId,
+    channels: &[ChannelId],
+    mode: Mode,
+) -> Result<Option<f64>, Error> {
+    let scores = scan_user(osu, osu_user, mode)?;
+    let user = osu
+        .user(UserID::ID(osu_user.id), |f| f.mode(mode))?
+        .ok_or(Error::from("user not found"))?;
+    scores
+        .into_par_iter()
+        .filter_map(|(rank, score)| {
+            let beatmap = osu
+                .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
+                .map(|v| BeatmapWithMode(v.into_iter().next().unwrap(), mode));
+            match beatmap {
+                Ok(v) => Some((rank, score, v)),
+                Err(e) => {
+                    dbg!(e);
+                    None
+                }
+            }
+        })
+        .for_each(|(rank, score, beatmap)| {
+            for channel in (&channels).iter() {
+                if let Err(e) = channel.send_message(c.http(), |c| {
+                    c.content(format!("New top record from {}!", user_id.mention()))
+                        .embed(|e| score_embed(&score, &beatmap, &user, Some(rank), e))
+                }) {
+                    dbg!(e);
+                }
+            }
+        });
+    Ok(user.pp)
 }
 
 fn scan_user(osu: &Osu, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
