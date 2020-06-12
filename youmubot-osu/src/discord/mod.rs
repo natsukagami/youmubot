@@ -1,5 +1,6 @@
 use crate::{
-    models::{Beatmap, Mode, Score, User},
+    discord::oppai_cache::BeatmapCache,
+    models::{Beatmap, Mode, Mods, Score, User},
     request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
@@ -20,7 +21,7 @@ mod cache;
 mod db;
 pub(crate) mod embeds;
 mod hook;
-mod oppai_cache;
+pub(crate) mod oppai_cache;
 mod server_rank;
 
 use db::OsuUser;
@@ -334,18 +335,26 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
 
 #[command]
 #[description = "Show information from the last queried beatmap."]
-#[num_args(0)]
-pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
+#[usage = "[mods = no mod]"]
+#[max_args(1)]
+pub fn last(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let b = cache::get_beatmap(&*ctx.data.read(), msg.channel_id)?;
 
     match b {
         Some(BeatmapWithMode(b, m)) => {
+            let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
+            let info = ctx
+                .data
+                .get_cloned::<BeatmapCache>()
+                .get_beatmap(b.beatmap_id)?
+                .get_info_with(m.to_oppai_mode(), mods)
+                .ok();
             msg.channel_id.send_message(&ctx, |f| {
                 f.content(format!(
                     "{}: here is the beatmap you requested!",
                     msg.author
                 ))
-                .embed(|c| beatmap_embed(&b, m, c))
+                .embed(|c| beatmap_embed(&b, m, mods, info, c))
             })?;
         }
         None => {

@@ -1,5 +1,8 @@
 use super::BeatmapWithMode;
-use crate::models::{Beatmap, Mode, Rank, Score, User};
+use crate::{
+    discord::oppai_cache::BeatmapInfo,
+    models::{Beatmap, Mode, Mods, Rank, Score, User},
+};
 use chrono::Utc;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use youmubot_prelude::*;
@@ -12,7 +15,32 @@ fn format_mode(actual: Mode, original: Mode) -> String {
     }
 }
 
-pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
+pub fn beatmap_embed<'a>(
+    b: &'_ Beatmap,
+    m: Mode,
+    mods: Mods,
+    info: Option<BeatmapInfo>,
+    c: &'a mut CreateEmbed,
+) -> &'a mut CreateEmbed {
+    let mod_str = if mods == Mods::NOMOD {
+        "".to_owned()
+    } else {
+        format!(" {}", mods)
+    };
+    let total_length = if mods.intersects(Mods::DT | Mods::NC) {
+        b.total_length * 2 / 3
+    } else if mods.intersects(Mods::HT) {
+        b.total_length * 4 / 3
+    } else {
+        b.total_length
+    };
+    let drain_length = if mods.intersects(Mods::DT | Mods::NC) {
+        b.drain_length * 2 / 3
+    } else if mods.intersects(Mods::HT) {
+        b.drain_length * 4 / 3
+    } else {
+        b.drain_length
+    };
     c.title(
         MessageBuilder::new()
             .push_bold_safe(&b.artist)
@@ -21,6 +49,7 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
             .push(" [")
             .push_bold_safe(&b.difficulty_name)
             .push("]")
+            .push(&mod_str)
             .build(),
     )
     .author(|a| {
@@ -34,15 +63,29 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
     .color(0xffb6c1)
     .field(
         "Star Difficulty",
-        format!("{:.2}⭐", b.difficulty.stars),
+        format!(
+            "{:.2}⭐",
+            info.map(|v| v.stars as f64).unwrap_or(b.difficulty.stars)
+        ),
         false,
     )
+    .fields(info.map(|info| {
+        (
+            "Calculated pp",
+            format!(
+                "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
+                info.pp[0], info.pp[1], info.pp[2], info.pp[3]
+            ),
+            false,
+        )
+    }))
+    .fields(Some(("Mods", mods, false)).filter(|_| mods != Mods::NOMOD))
     .field(
         "Length",
         MessageBuilder::new()
-            .push_bold_safe(Duration(b.total_length))
+            .push_bold_safe(Duration(total_length))
             .push(" (")
-            .push_bold_safe(Duration(b.drain_length))
+            .push_bold_safe(Duration(drain_length))
             .push(" drain)")
             .build(),
         false,
@@ -90,6 +133,12 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
             .push_bold(&b.genre)
             .build(),
     )
+    .footer(|f| {
+        if info.is_none() && mods != Mods::NOMOD {
+            f.text("Star difficulty not reflecting mods applied.");
+        }
+        f
+    })
 }
 
 const MAX_DIFFS: usize = 25 - 4;

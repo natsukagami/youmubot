@@ -118,6 +118,17 @@ impl fmt::Display for Mode {
     }
 }
 
+impl Mode {
+    /// Convert to oppai mode.
+    pub fn to_oppai_mode(self) -> Option<oppai_rs::Mode> {
+        Some(match self {
+            Mode::Std => oppai_rs::Mode::Std,
+            Mode::Taiko => oppai_rs::Mode::Taiko,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Beatmap {
     // Beatmapset info

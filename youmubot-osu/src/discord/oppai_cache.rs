@@ -12,8 +12,8 @@ pub struct BeatmapContent {
 /// the output of "one" oppai run.
 #[derive(Clone, Copy, Debug)]
 pub struct BeatmapInfo {
-    stars: f32,
-    pp: [f32; 4], // 95, 98, 99, 100
+    pub stars: f32,
+    pub pp: [f32; 4], // 95, 98, 99, 100
 }
 
 impl BeatmapContent {
@@ -22,21 +22,27 @@ impl BeatmapContent {
         &self,
         combo: oppai_rs::Combo,
         accuracy: f32,
+        mode: Option<oppai_rs::Mode>,
         mods: impl Into<oppai_rs::Mods>,
     ) -> Result<f32, CommandError> {
-        Ok(oppai_rs::Oppai::new_from_content(&self.content[..])?
-            .combo(combo)?
-            .accuracy(accuracy)?
-            .mods(mods.into())
-            .pp())
+        let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
+        oppai.combo(combo)?.accuracy(accuracy)?.mods(mods.into());
+        if let Some(mode) = mode {
+            oppai.mode(mode)?;
+        }
+        Ok(oppai.pp())
     }
 
     /// Get info given mods.
     pub fn get_info_with(
         &self,
+        mode: Option<oppai_rs::Mode>,
         mods: impl Into<oppai_rs::Mods>,
     ) -> Result<BeatmapInfo, CommandError> {
         let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
+        if let Some(mode) = mode {
+            oppai.mode(mode)?;
+        }
         oppai.mods(mods.into()).combo(oppai_rs::Combo::PERFECT)?;
         let pp = [
             oppai.accuracy(95.0)?.pp(),
@@ -50,6 +56,7 @@ impl BeatmapContent {
 }
 
 /// A central cache for the beatmaps.
+#[derive(Clone, Debug)]
 pub struct BeatmapCache {
     client: reqwest::blocking::Client,
     cache: Arc<dashmap::DashMap<u64, BeatmapContent>>,
@@ -67,7 +74,7 @@ impl BeatmapCache {
     fn download_beatmap(&self, id: u64) -> Result<BeatmapContent, CommandError> {
         let content = self
             .client
-            .get(&format!("https://osu.ppy.sh/u/{}", id))
+            .get(&format!("https://osu.ppy.sh/osu/{}", id))
             .send()?
             .bytes()?;
         Ok(BeatmapContent {
