@@ -20,6 +20,7 @@ mod cache;
 mod db;
 pub(crate) mod embeds;
 mod hook;
+mod oppai_cache;
 mod server_rank;
 
 use db::OsuUser;
@@ -58,9 +59,10 @@ pub fn setup(
     // API client
     let http_client = data.get_cloned::<HTTPClient>();
     data.insert::<OsuClient>(OsuHttpClient::new(
-        http_client,
+        http_client.clone(),
         std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
     ));
+    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(http_client));
 
     // Announcer
     announcers.add(announcer::ANNOUNCER_KEY, announcer::updates);
