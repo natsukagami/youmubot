@@ -50,17 +50,19 @@ pub fn server_rank(ctx: &mut Context, m: &Message, mut args: Args) -> CommandRes
         m.channel_id,
         move |page: u8, e: &mut EditMessage| {
             let start = (page as usize) * ITEMS_PER_PAGE;
-            if start >= users.len() {
+            let end = (start + ITEMS_PER_PAGE).min(users.len());
+            if start >= end {
                 return (e, Err(Error("No more items".to_owned())));
             }
             let total_len = users.len();
-            let users = users.iter().skip(start).take(ITEMS_PER_PAGE);
+            let users = &users[start..end];
+            let username_len = users.iter().map(|(_, u)| u.len()).max().unwrap_or(8).max(8);
             let mut content = MessageBuilder::new();
             content
                 .push_line("```")
                 .push_line("Rank | pp      | Username")
-                .push_line("-------------------------");
-            for (id, (pp, member)) in users.enumerate() {
+                .push_line(format!("-----------------{:-<uw$}", "", uw = username_len));
+            for (id, (pp, member)) in users.iter().enumerate() {
                 content
                     .push(format!(
                         "{:>4} | {:>7.2} | ",
