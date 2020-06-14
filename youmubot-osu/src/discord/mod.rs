@@ -282,6 +282,31 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
                     })
                     .collect::<Vec<_>>()
             };
+            let pp = plays
+                .iter()
+                .map(|p| {
+                    p.pp.map(|pp| format!("{:.2}pp", pp))
+                        .or_else(|| {
+                            beatmap_cache.get_beatmap(p.beatmap_id).ok().and_then(|b| {
+                                mode.to_oppai_mode().and_then(|op| {
+                                    b.get_pp_from(
+                                        oppai_rs::Combo::NonFC {
+                                            max_combo: p.max_combo as u32,
+                                            misses: p.count_miss as u32,
+                                        },
+                                        p.accuracy(mode) as f32,
+                                        Some(op),
+                                        p.mods,
+                                    )
+                                    .ok()
+                                    .map(|pp| format!("{:.2}pp [?]", pp))
+                                })
+                            })
+                        })
+                        .unwrap_or("-".to_owned())
+                })
+                .collect::<Vec<_>>();
+            let pw = pp.iter().map(|v| v.len()).max().unwrap_or(2);
             /*mods width*/
             let mw = plays
                 .iter()
@@ -295,31 +320,34 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
             let mut m = MessageBuilder::new();
             // Table header
             m.push_line(format!(
-                " #  | pp     | accuracy | rank | {:mw$} | {:bw$}",
+                " #  | {:pw$} | accuracy | rank | {:mw$} | {:bw$}",
+                "pp",
                 "mods",
                 "beatmap",
+                pw = pw,
                 mw = mw,
                 bw = bw
             ));
             m.push_line(format!(
-                "---------------------------------{:-<mw$}---{:-<bw$}",
+                "------{:-<pw$}---------------------{:-<mw$}---{:-<bw$}",
                 "",
                 "",
+                "",
+                pw = pw,
                 mw = mw,
                 bw = bw
             ));
             // Each row
             for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
                 m.push_line(format!(
-                    "{:>3} | {:>6} | {:>8} | {:^4} | {:mw$} | {:bw$}",
+                    "{:>3} | {:>pw$} | {:>8} | {:^4} | {:mw$} | {:bw$}",
                     id + start + 1,
-                    play.pp
-                        .map(|v| format!("{:.2}", v))
-                        .unwrap_or("-".to_owned()),
+                    pp[id],
                     format!("{:.2}%", play.accuracy(mode)),
                     play.rank.to_string(),
                     play.mods.to_string(),
                     beatmap,
+                    pw = pw,
                     mw = mw,
                     bw = bw
                 ));
@@ -333,7 +361,9 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
                 total_pages
             ));
             if let None = mode.to_oppai_mode() {
-                m.push_line("Note: star difficulty don't reflect mods applied.");
+                m.push_line("Note: star difficulty doesn't reflect mods applied.");
+            } else {
+                m.push_line("[?] means pp was predicted by oppai-rs.");
             }
             (e.content(m.build()), Ok(()))
         },
