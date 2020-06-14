@@ -27,20 +27,7 @@ pub fn beatmap_embed<'a>(
     } else {
         format!(" {}", mods)
     };
-    let total_length = if mods.intersects(Mods::DT | Mods::NC) {
-        b.total_length * 2 / 3
-    } else if mods.intersects(Mods::HT) {
-        b.total_length * 4 / 3
-    } else {
-        b.total_length
-    };
-    let drain_length = if mods.intersects(Mods::DT | Mods::NC) {
-        b.drain_length * 2 / 3
-    } else if mods.intersects(Mods::HT) {
-        b.drain_length * 4 / 3
-    } else {
-        b.drain_length
-    };
+    let diff = b.difficulty.apply_mods(mods);
     c.title(
         MessageBuilder::new()
             .push_bold_safe(&b.artist)
@@ -67,8 +54,9 @@ pub fn beatmap_embed<'a>(
             "{:.2}⭐",
             info.map(|v| v.stars as f64).unwrap_or(b.difficulty.stars)
         ),
-        false,
+        true,
     )
+    .fields(Some(("Mods", mods, true)).filter(|_| mods != Mods::NOMOD))
     .fields(info.map(|info| {
         (
             "Calculated pp",
@@ -79,25 +67,20 @@ pub fn beatmap_embed<'a>(
             false,
         )
     }))
-    .fields(Some(("Mods", mods, false)).filter(|_| mods != Mods::NOMOD))
     .field(
         "Length",
         MessageBuilder::new()
-            .push_bold_safe(Duration(total_length))
+            .push_bold_safe(Duration(diff.total_length))
             .push(" (")
-            .push_bold_safe(Duration(drain_length))
+            .push_bold_safe(Duration(diff.drain_length))
             .push(" drain)")
             .build(),
         false,
     )
-    .field("Circle Size", format!("{:.1}", b.difficulty.cs), true)
-    .field("Approach Rate", format!("{:.1}", b.difficulty.ar), true)
-    .field(
-        "Overall Difficulty",
-        format!("{:.1}", b.difficulty.od),
-        true,
-    )
-    .field("HP Drain", format!("{:.1}", b.difficulty.hp), true)
+    .field("Circle Size", format!("{:.1}", diff.cs), true)
+    .field("Approach Rate", format!("{:.1}", diff.ar), true)
+    .field("Overall Difficulty", format!("{:.1}", diff.od), true)
+    .field("HP Drain", format!("{:.1}", diff.hp), true)
     .field("BPM", b.bpm.round(), true)
     .fields(b.difficulty.max_combo.map(|v| ("Max combo", v, true)))
     .field("Mode", format_mode(m, b.mode), true)
@@ -194,7 +177,7 @@ pub fn beatmapset_embed<'a>(
     .field(
         "Length",
         MessageBuilder::new()
-            .push_bold_safe(Duration(b.total_length))
+            .push_bold_safe(Duration(b.difficulty.total_length))
             .build(),
         true,
     )
@@ -240,7 +223,7 @@ pub fn beatmapset_embed<'a>(
                 .push(", HP")
                 .push_bold(format!("{:.1}", b.difficulty.hp))
                 .push(", ⌛ ")
-                .push_bold(format!("{}", Duration(b.drain_length)))
+                .push_bold(format!("{}", Duration(b.difficulty.drain_length)))
                 .build(),
             false,
         )
@@ -272,6 +255,7 @@ pub(crate) fn score_embed<'a>(
     let top_record = top_record
         .map(|v| format!("| #{} top record!", v))
         .unwrap_or("".to_owned());
+    let diff = b.difficulty.apply_mods(s.mods);
     m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
         .color(0xffb6c1)
         .title(format!(
@@ -313,15 +297,15 @@ pub(crate) fn score_embed<'a>(
                         },
                 )
                 .push("CS")
-                .push_bold(format!("{:.1}", b.difficulty.cs))
+                .push_bold(format!("{:.1}", diff.cs))
                 .push(", AR")
-                .push_bold(format!("{:.1}", b.difficulty.ar))
+                .push_bold(format!("{:.1}", diff.ar))
                 .push(", OD")
-                .push_bold(format!("{:.1}", b.difficulty.od))
+                .push_bold(format!("{:.1}", diff.od))
                 .push(", HP")
-                .push_bold(format!("{:.1}", b.difficulty.hp))
+                .push_bold(format!("{:.1}", diff.hp))
                 .push(", ⌛ ")
-                .push_bold(format!("{}", Duration(b.drain_length)))
+                .push_bold(format!("{}", Duration(diff.drain_length)))
                 .build(),
             false,
         )
