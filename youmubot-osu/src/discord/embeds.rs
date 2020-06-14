@@ -1,6 +1,6 @@
 use super::BeatmapWithMode;
 use crate::{
-    discord::oppai_cache::BeatmapInfo,
+    discord::oppai_cache::{BeatmapContent, BeatmapInfo},
     models::{Beatmap, Mode, Mods, Rank, Score, User},
 };
 use chrono::Utc;
@@ -233,6 +233,7 @@ pub fn beatmapset_embed<'a>(
 pub(crate) fn score_embed<'a>(
     s: &Score,
     bm: &BeatmapWithMode,
+    content: &BeatmapContent,
     u: &User,
     top_record: Option<u8>,
     m: &'a mut CreateEmbed,
@@ -240,6 +241,11 @@ pub(crate) fn score_embed<'a>(
     let mode = bm.mode();
     let b = &bm.0;
     let accuracy = s.accuracy(mode);
+    let stars = mode
+        .to_oppai_mode()
+        .and_then(|mode| content.get_info_with(Some(mode), s.mods).ok())
+        .map(|info| info.stars as f64)
+        .unwrap_or(b.difficulty.stars);
     let score_line = match &s.rank {
         Rank::SS | Rank::SSH => format!("SS"),
         _ if s.perfect => format!("{:.2}% FC", accuracy),
@@ -249,9 +255,23 @@ pub(crate) fn score_embed<'a>(
             accuracy, s.max_combo, s.count_miss, v
         ),
     };
-    let score_line =
-        s.pp.map(|pp| format!("{} | {:.2}pp", &score_line, pp))
-            .unwrap_or(score_line);
+    let pp = s.pp.map(|pp| format!("{:.2}pp", pp)).or_else(|| {
+        mode.to_oppai_mode()
+            .and_then(|op| {
+                content
+                    .get_pp_from(
+                        oppai_rs::Combo::non_fc(s.max_combo as u32, s.count_miss as u32),
+                        accuracy as f32,
+                        Some(op),
+                        s.mods,
+                    )
+                    .ok()
+            })
+            .map(|pp| format!("{:.2}pp [?]", pp))
+    });
+    let score_line = pp
+        .map(|pp| format!("{} | {}", &score_line, pp))
+        .unwrap_or(score_line);
     let top_record = top_record
         .map(|v| format!("| #{} top record!", v))
         .unwrap_or("".to_owned());
@@ -265,7 +285,7 @@ pub(crate) fn score_embed<'a>(
             b.title,
             b.difficulty_name,
             s.mods,
-            b.difficulty.stars,
+            stars,
             b.creator,
             score_line,
             top_record
@@ -286,7 +306,7 @@ pub(crate) fn score_embed<'a>(
             MessageBuilder::new()
                 .push(format!("[[Link]]({})", b.link()))
                 .push(", ")
-                .push_bold(format!("{:.2}⭐", b.difficulty.stars))
+                .push_bold(format!("{:.2}⭐", stars))
                 .push(", ")
                 .push_bold_line(
                     b.mode.to_string()
@@ -309,7 +329,11 @@ pub(crate) fn score_embed<'a>(
                 .build(),
             false,
         )
-        .field("Played on", s.date.format("%F %T"), false)
+        .field("Played on", s.date.format("%F %T"), false);
+    if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
+        m.footer(|f| f.text("Star difficulty does not reflect game mods."));
+    }
+    m
 }
 
 pub(crate) fn user_embed<'a>(

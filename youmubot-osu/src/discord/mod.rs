@@ -383,6 +383,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
 
     let osu = ctx.data.get_cloned::<OsuClient>();
     let meta_cache = ctx.data.get_cloned::<BeatmapMetaCache>();
+    let oppai = ctx.data.get_cloned::<BeatmapCache>();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -395,19 +396,20 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
                 .ok_or(Error::from("No such play"))?;
             let beatmap = meta_cache
                 .get_beatmap(recent_play.beatmap_id, mode)
-                .map(|v| BeatmapWithMode(v, mode))
                 .unwrap();
+            let content = oppai.get_beatmap(beatmap.beatmap_id)?;
+            let beatmap_mode = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id.send_message(&ctx, |m| {
                 m.content(format!(
                     "{}: here is the play that you requested",
                     msg.author
                 ))
-                .embed(|m| score_embed(&recent_play, &beatmap, &user, None, m))
+                .embed(|m| score_embed(&recent_play, &beatmap_mode, &content, &user, None, m))
             })?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
+            cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap_mode)?;
         }
         Nth::All => {
             let plays = osu.user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))?;
@@ -466,6 +468,9 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
             let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
             let osu = ctx.data.get_cloned::<OsuClient>();
+            let oppai = ctx.data.get_cloned::<BeatmapCache>();
+
+            let content = oppai.get_beatmap(b.beatmap_id)?;
 
             let user = osu
                 .user(user, |f| f)?
@@ -478,7 +483,7 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
 
             for score in scores.into_iter() {
                 msg.channel_id.send_message(&ctx, |c| {
-                    c.embed(|m| score_embed(&score, &bm, &user, None, m))
+                    c.embed(|m| score_embed(&score, &bm, &content, &user, None, m))
                 })?;
             }
         }
@@ -502,6 +507,7 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
     let osu = ctx.data.get_cloned::<OsuClient>();
+    let oppai = ctx.data.get_cloned::<BeatmapCache>();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -522,15 +528,16 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                 })?
                 .into_iter()
                 .next()
-                .map(|v| BeatmapWithMode(v, mode))
                 .unwrap();
+            let content = oppai.get_beatmap(beatmap.beatmap_id)?;
+            let beatmap = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id.send_message(&ctx, |m| {
                 m.content(format!(
                     "{}: here is the play that you requested",
                     msg.author
                 ))
-                .embed(|m| score_embed(&top_play, &beatmap, &user, Some(rank), m))
+                .embed(|m| score_embed(&top_play, &beatmap, &content, &user, Some(rank), m))
             })?;
 
             // Save the beatmap...
