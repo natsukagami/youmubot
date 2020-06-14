@@ -225,6 +225,7 @@ impl FromStr for Nth {
 fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> CommandResult {
     let watcher = ctx.data.get_cloned::<ReactionWatcher>();
     let osu = ctx.data.get_cloned::<OsuClient>();
+    let beatmap_cache = ctx.data.get_cloned::<BeatmapCache>();
 
     if plays.is_empty() {
         m.reply(&ctx, "No plays found")?;
@@ -235,53 +236,107 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
 
     const ITEMS_PER_PAGE: usize = 5;
     let total_pages = (plays.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    watcher.paginate_fn(ctx, m.channel_id, |page, e| {
-        let page = page as usize;
-        let start = page * ITEMS_PER_PAGE;
-        let end = plays.len().min(start + ITEMS_PER_PAGE);
-        if start >= end {
-            return (e, Err(Error::from("No more pages")));
-        }
+    watcher.paginate_fn(
+        ctx,
+        m.channel_id,
+        |page, e| {
+            let page = page as usize;
+            let start = page * ITEMS_PER_PAGE;
+            let end = plays.len().min(start + ITEMS_PER_PAGE);
+            if start >= end {
+                return (e, Err(Error::from("No more pages")));
+            }
 
-        let plays = &plays[start..end];
-        let beatmaps = {
-            let b = &mut beatmaps[start..end];
-            b.par_iter_mut().enumerate().map(
-                |(i, v)| v.get_or_insert_with(
-                    || osu.beatmaps(BeatmapRequestKind::Beatmap(plays[i].beatmap_id), |f| f)
-                    	.ok()
-                    	.and_then(|v| v.into_iter().next())
-                    	.map(|b| format!(
-                        	"[{:.1}*] {} - {} [{}] (#{})",
-                        	b.difficulty.stars, b.artist, b.title, b.difficulty_name, b.beatmap_id))
-                    	.unwrap_or("FETCH FAILED".to_owned()))).collect::<Vec<_>>()
-        };
-        let /*mods width*/ mw = plays.iter().map(|v| v.mods.to_string().len()).max().unwrap().max(4);
-        let /*beatmap names*/ bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
+            let plays = &plays[start..end];
+            let beatmaps = {
+                let b = &mut beatmaps[start..end];
+                b.par_iter_mut()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        v.get_or_insert_with(|| {
+                            if let Some(b) = osu
+                                .beatmaps(BeatmapRequestKind::Beatmap(plays[i].beatmap_id), |f| f)
+                                .ok()
+                                .and_then(|v| v.into_iter().next())
+                            {
+                                let stars = beatmap_cache
+                                    .get_beatmap(b.beatmap_id)
+                                    .ok()
+                                    .and_then(|b| {
+                                        mode.to_oppai_mode().and_then(|mode| {
+                                            b.get_info_with(Some(mode), plays[i].mods).ok()
+                                        })
+                                    })
+                                    .map(|info| info.stars as f64)
+                                    .unwrap_or(b.difficulty.stars);
+                                format!(
+                                    "[{:.1}*] {} - {} [{}] (#{})",
+                                    stars, b.artist, b.title, b.difficulty_name, b.beatmap_id
+                                )
+                            } else {
+                                "FETCH_FAILED".to_owned()
+                            }
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            };
+            /*mods width*/
+            let mw = plays
+                .iter()
+                .map(|v| v.mods.to_string().len())
+                .max()
+                .unwrap()
+                .max(4);
+            /*beatmap names*/
+            let bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
 
-	let mut m = MessageBuilder::new();
-        // Table header
-        m.push_line(format!(" #  | pp     | accuracy | rank | {:mw$} | {:bw$}", "mods", "beatmap", mw = mw, bw = bw));
-        m.push_line(format!("---------------------------------{:-<mw$}---{:-<bw$}", "", "", mw = mw, bw = bw));
-        // Each row
-        for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
-            m.push_line(
-                format!(
+            let mut m = MessageBuilder::new();
+            // Table header
+            m.push_line(format!(
+                " #  | pp     | accuracy | rank | {:mw$} | {:bw$}",
+                "mods",
+                "beatmap",
+                mw = mw,
+                bw = bw
+            ));
+            m.push_line(format!(
+                "---------------------------------{:-<mw$}---{:-<bw$}",
+                "",
+                "",
+                mw = mw,
+                bw = bw
+            ));
+            // Each row
+            for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
+                m.push_line(format!(
                     "{:>3} | {:>6} | {:>8} | {:^4} | {:mw$} | {:bw$}",
                     id + start + 1,
-                    play.pp.map(|v| format!("{:.2}", v)).unwrap_or("-".to_owned()),
+                    play.pp
+                        .map(|v| format!("{:.2}", v))
+                        .unwrap_or("-".to_owned()),
                     format!("{:.2}%", play.accuracy(mode)),
-                    play.rank.to_string(), play.mods.to_string(), beatmap, mw = mw, bw = bw));
-        }
-        // End
-        let table = m.build().replace("```", "\\`\\`\\`");
-        let mut m = MessageBuilder::new();
-        m
-            .push_codeblock(table, None)
-            .push_line(format!("Page **{}/{}**", page + 1, total_pages))
-            .push_line("Note: star difficulty don't reflect mods applied.");
-        (e.content(m.build()), Ok(()))
-    }, std::time::Duration::from_secs(60))
+                    play.rank.to_string(),
+                    play.mods.to_string(),
+                    beatmap,
+                    mw = mw,
+                    bw = bw
+                ));
+            }
+            // End
+            let table = m.build().replace("```", "\\`\\`\\`");
+            let mut m = MessageBuilder::new();
+            m.push_codeblock(table, None).push_line(format!(
+                "Page **{}/{}**",
+                page + 1,
+                total_pages
+            ));
+            if let None = mode.to_oppai_mode() {
+                m.push_line("Note: star difficulty don't reflect mods applied.");
+            }
+            (e.content(m.build()), Ok(()))
+        },
+        std::time::Duration::from_secs(60),
+    )
 }
 
 #[command]
