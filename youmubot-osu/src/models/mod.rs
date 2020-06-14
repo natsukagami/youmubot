@@ -94,7 +94,7 @@ impl fmt::Display for Language {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, std::hash::Hash)]
 pub enum Mode {
     Std,
     Taiko,

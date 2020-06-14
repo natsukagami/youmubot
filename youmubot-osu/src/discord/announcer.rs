@@ -1,8 +1,9 @@
 use super::db::{OsuSavedUsers, OsuUser};
 use super::{embeds::score_embed, BeatmapWithMode, OsuClient};
 use crate::{
+    discord::beatmap_cache::BeatmapMetaCache,
     models::{Mode, Score},
-    request::{BeatmapRequestKind, UserID},
+    request::UserID,
     Client as Osu,
 };
 use announcer::MemberToChannels;
@@ -22,6 +23,7 @@ pub const ANNOUNCER_KEY: &'static str = "osu";
 /// Announce osu! top scores.
 pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> CommandResult {
     let osu = d.get_cloned::<OsuClient>();
+    let cache = d.get_cloned::<BeatmapMetaCache>();
     // For each user...
     let mut data = OsuSavedUsers::open(&*d.read()).borrow()?.clone();
     for (user_id, osu_user) in data.iter_mut() {
@@ -31,7 +33,17 @@ pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> 
         }
         osu_user.pp = match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
             .par_iter()
-            .map(|m| handle_user_mode(c.clone(), &osu, &osu_user, *user_id, &channels[..], *m))
+            .map(|m| {
+                handle_user_mode(
+                    c.clone(),
+                    &osu,
+                    &cache,
+                    &osu_user,
+                    *user_id,
+                    &channels[..],
+                    *m,
+                )
+            })
             .collect::<Result<_, _>>()
         {
             Ok(v) => v,
@@ -51,6 +63,7 @@ pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> 
 fn handle_user_mode(
     c: Arc<CacheAndHttp>,
     osu: &Osu,
+    cache: &BeatmapMetaCache,
     osu_user: &OsuUser,
     user_id: UserId,
     channels: &[ChannelId],
@@ -63,9 +76,9 @@ fn handle_user_mode(
     scores
         .into_par_iter()
         .filter_map(|(rank, score)| {
-            let beatmap = osu
-                .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
-                .map(|v| BeatmapWithMode(v.into_iter().next().unwrap(), mode));
+            let beatmap = cache
+                .get_beatmap_default(score.beatmap_id)
+                .map(|v| BeatmapWithMode(v, mode));
             match beatmap {
                 Ok(v) => Some((rank, score, v)),
                 Err(e) => {

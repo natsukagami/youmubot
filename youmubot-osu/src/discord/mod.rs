@@ -1,4 +1,5 @@
 use crate::{
+    discord::beatmap_cache::BeatmapMetaCache,
     discord::oppai_cache::BeatmapCache,
     models::{Beatmap, Mode, Mods, Score, User},
     request::{BeatmapRequestKind, UserID},
@@ -17,6 +18,7 @@ use std::str::FromStr;
 use youmubot_prelude::*;
 
 mod announcer;
+pub(crate) mod beatmap_cache;
 mod cache;
 mod db;
 pub(crate) mod embeds;
@@ -59,11 +61,15 @@ pub fn setup(
 
     // API client
     let http_client = data.get_cloned::<HTTPClient>();
-    data.insert::<OsuClient>(OsuHttpClient::new(
+    let osu_client = OsuHttpClient::new(
         http_client.clone(),
         std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
-    ));
+    );
+    data.insert::<OsuClient>(osu_client.clone());
     data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(http_client));
+    data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
+        osu_client,
+    ));
 
     // Announcer
     announcers.add(announcer::ANNOUNCER_KEY, announcer::updates);
@@ -224,7 +230,7 @@ impl FromStr for Nth {
 
 fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> CommandResult {
     let watcher = ctx.data.get_cloned::<ReactionWatcher>();
-    let osu = ctx.data.get_cloned::<OsuClient>();
+    let osu = ctx.data.get_cloned::<BeatmapMetaCache>();
     let beatmap_cache = ctx.data.get_cloned::<BeatmapCache>();
 
     if plays.is_empty() {
@@ -254,11 +260,7 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
                     .enumerate()
                     .map(|(i, v)| {
                         v.get_or_insert_with(|| {
-                            if let Some(b) = osu
-                                .beatmaps(BeatmapRequestKind::Beatmap(plays[i].beatmap_id), |f| f)
-                                .ok()
-                                .and_then(|v| v.into_iter().next())
-                            {
+                            if let Some(b) = osu.get_beatmap(plays[i].beatmap_id, mode).ok() {
                                 let stars = beatmap_cache
                                     .get_beatmap(b.beatmap_id)
                                     .ok()
@@ -350,6 +352,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
     let osu = ctx.data.get_cloned::<OsuClient>();
+    let meta_cache = ctx.data.get_cloned::<BeatmapMetaCache>();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -360,12 +363,8 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
                 .into_iter()
                 .last()
                 .ok_or(Error::from("No such play"))?;
-            let beatmap = osu
-                .beatmaps(BeatmapRequestKind::Beatmap(recent_play.beatmap_id), |f| {
-                    f.mode(mode, true)
-                })?
-                .into_iter()
-                .next()
+            let beatmap = meta_cache
+                .get_beatmap(recent_play.beatmap_id, mode)
                 .map(|v| BeatmapWithMode(v, mode))
                 .unwrap();
 
