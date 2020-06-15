@@ -180,11 +180,11 @@ struct ModeArg(Mode);
 impl FromStr for ModeArg {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(ModeArg(match s {
-            "std" => Mode::Std,
-            "taiko" => Mode::Taiko,
-            "catch" => Mode::Catch,
-            "mania" => Mode::Mania,
+        Ok(ModeArg(match &s.to_lowercase()[..] {
+            "osu" | "std" => Mode::Std,
+            "taiko" | "osu!taiko" => Mode::Taiko,
+            "ctb" | "fruits" | "catch" | "osu!ctb" | "osu!catch" => Mode::Catch,
+            "osu!mania" | "mania" => Mode::Mania,
             _ => return Err(format!("Unknown mode {}", s)),
         }))
     }
