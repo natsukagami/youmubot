@@ -298,8 +298,15 @@ pub(crate) fn score_embed<'a>(
             false,
         )
         .field("Rank", &score_line, false)
+        .field(
+            "300s / 100s / 50s / misses",
+            format!(
+                "**{}** ({}) / **{}** ({}) / **{}** / **{}**",
+                s.count_300, s.count_geki, s.count_100, s.count_katu, s.count_50, s.count_miss
+            ),
+            true,
+        )
         .fields(s.pp.map(|pp| ("pp gained", format!("{:.2}pp", pp), true)))
-        .field("Creator", &b.creator, true)
         .field("Mode", mode.to_string(), true)
         .field(
             "Map stats",
@@ -329,6 +336,7 @@ pub(crate) fn score_embed<'a>(
                 .build(),
             false,
         )
+        .timestamp(&s.date)
         .field("Played on", s.date.format("%F %T"), false);
     if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
         m.footer(|f| f.text("Star difficulty does not reflect game mods."));
