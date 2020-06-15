@@ -1,8 +1,10 @@
 use super::db::{OsuSavedUsers, OsuUser};
 use super::{embeds::score_embed, BeatmapWithMode, OsuClient};
 use crate::{
+    discord::beatmap_cache::BeatmapMetaCache,
+    discord::oppai_cache::BeatmapCache,
     models::{Mode, Score},
-    request::{BeatmapRequestKind, UserID},
+    request::UserID,
     Client as Osu,
 };
 use announcer::MemberToChannels;
@@ -22,6 +24,8 @@ pub const ANNOUNCER_KEY: &'static str = "osu";
 /// Announce osu! top scores.
 pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> CommandResult {
     let osu = d.get_cloned::<OsuClient>();
+    let cache = d.get_cloned::<BeatmapMetaCache>();
+    let oppai = d.get_cloned::<BeatmapCache>();
     // For each user...
     let mut data = OsuSavedUsers::open(&*d.read()).borrow()?.clone();
     for (user_id, osu_user) in data.iter_mut() {
@@ -31,7 +35,18 @@ pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> 
         }
         osu_user.pp = match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
             .par_iter()
-            .map(|m| handle_user_mode(c.clone(), &osu, &osu_user, *user_id, &channels[..], *m))
+            .map(|m| {
+                handle_user_mode(
+                    c.clone(),
+                    &osu,
+                    &cache,
+                    &oppai,
+                    &osu_user,
+                    *user_id,
+                    &channels[..],
+                    *m,
+                )
+            })
             .collect::<Result<_, _>>()
         {
             Ok(v) => v,
@@ -51,6 +66,8 @@ pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> 
 fn handle_user_mode(
     c: Arc<CacheAndHttp>,
     osu: &Osu,
+    cache: &BeatmapMetaCache,
+    oppai: &BeatmapCache,
     osu_user: &OsuUser,
     user_id: UserId,
     channels: &[ChannelId],
@@ -62,23 +79,17 @@ fn handle_user_mode(
         .ok_or(Error::from("user not found"))?;
     scores
         .into_par_iter()
-        .filter_map(|(rank, score)| {
-            let beatmap = osu
-                .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| f)
-                .map(|v| BeatmapWithMode(v.into_iter().next().unwrap(), mode));
-            match beatmap {
-                Ok(v) => Some((rank, score, v)),
-                Err(e) => {
-                    dbg!(e);
-                    None
-                }
-            }
+        .map(|(rank, score)| -> Result<_, Error> {
+            let beatmap = cache.get_beatmap_default(score.beatmap_id)?;
+            let content = oppai.get_beatmap(beatmap.beatmap_id)?;
+            Ok((rank, score, BeatmapWithMode(beatmap, mode), content))
         })
-        .for_each(|(rank, score, beatmap)| {
+        .filter_map(|v| v.ok())
+        .for_each(|(rank, score, beatmap, content)| {
             for channel in (&channels).iter() {
                 if let Err(e) = channel.send_message(c.http(), |c| {
                     c.content(format!("New top record from {}!", user_id.mention()))
-                        .embed(|e| score_embed(&score, &beatmap, &user, Some(rank), e))
+                        .embed(|e| score_embed(&score, &beatmap, &content, &user, Some(rank), e))
                 }) {
                     dbg!(e);
                 }

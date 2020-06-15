@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub(crate) struct Beatmap {
     pub approved: String,
     pub submit_date: String,

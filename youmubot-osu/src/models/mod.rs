@@ -45,6 +45,77 @@ pub struct Difficulty {
     pub count_slider: u64,
     pub count_spinner: u64,
     pub max_combo: Option<u64>,
+
+    pub drain_length: Duration,
+    pub total_length: Duration,
+}
+
+impl Difficulty {
+    // Difficulty calculation is based on
+    // https://www.reddit.com/r/osugame/comments/6phntt/difficulty_settings_table_with_all_values/
+
+    fn apply_everything_by_ratio(&mut self, rat: f64) {
+        self.cs = (self.cs * rat).min(10.0);
+        self.od = (self.od * rat).min(10.0);
+        self.ar = (self.ar * rat).min(10.0);
+        self.hp = (self.hp * rat).min(10.0);
+    }
+    fn apply_ar_by_time_ratio(&mut self, rat: f64) {
+        // Convert AR to approach time...
+        let approach_time = if self.ar < 5.0 {
+            1800.0 - self.ar * 120.0
+        } else {
+            1200.0 - (self.ar - 5.0) * 150.0
+        };
+        // Update it...
+        let approach_time = approach_time * rat;
+        // Convert it back to AR...
+        self.ar = if approach_time > 1200.0 {
+            (1800.0 - approach_time) / 120.0
+        } else {
+            (1200.0 - approach_time) / 150.0 + 5.0
+        };
+    }
+    fn apply_od_by_time_ratio(&mut self, rat: f64) {
+        // Convert OD to hit timing
+        let hit_timing = 79.0 - self.od * 6.0 + 0.5;
+        // Update it...
+        let hit_timing = hit_timing * rat + 0.5 / rat;
+        // then convert back
+        self.od = (79.0 - (hit_timing - 0.5)) / 6.0;
+    }
+    fn apply_length_by_ratio(&mut self, mul: u32, div: u32) {
+        self.drain_length = self.drain_length * mul / div;
+        self.total_length = self.total_length * mul / div;
+    }
+    /// Apply mods to the given difficulty.
+    /// Note that `stars`, `aim` and `speed` cannot be calculated from this alone.
+    pub fn apply_mods(&self, mods: Mods) -> Difficulty {
+        let mut diff = self.clone();
+
+        // Apply mods one by one
+        if mods.contains(Mods::EZ) {
+            diff.apply_everything_by_ratio(0.5);
+        }
+        if mods.contains(Mods::HT) {
+            diff.apply_ar_by_time_ratio(4.0 / 3.0);
+            diff.apply_od_by_time_ratio(4.0 / 3.0);
+            diff.apply_length_by_ratio(4, 3);
+        }
+        if mods.contains(Mods::HR) {
+            let old_cs = diff.cs;
+            diff.apply_everything_by_ratio(1.4);
+            // CS is changed by 1.3 tho
+            diff.cs = old_cs * 1.3;
+        }
+        if mods.contains(Mods::DT) {
+            diff.apply_ar_by_time_ratio(2.0 / 3.0);
+            diff.apply_od_by_time_ratio(2.0 / 3.0);
+            diff.apply_length_by_ratio(2, 3);
+        }
+
+        diff
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize)]
@@ -94,7 +165,7 @@ impl fmt::Display for Language {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, std::hash::Hash)]
 pub enum Mode {
     Std,
     Taiko,
@@ -115,6 +186,38 @@ impl fmt::Display for Mode {
                 Catch => "osu!catch",
             }
         )
+    }
+}
+
+impl Mode {
+    /// Convert to oppai mode.
+    pub fn to_oppai_mode(self) -> Option<oppai_rs::Mode> {
+        Some(match self {
+            Mode::Std => oppai_rs::Mode::Std,
+            Mode::Taiko => oppai_rs::Mode::Taiko,
+            _ => return None,
+        })
+    }
+
+    /// Parse from the new site's convention.
+    pub fn parse_from_new_site(s: &str) -> Option<Self> {
+        Some(match s {
+            "osu" => Mode::Std,
+            "taiko" => Mode::Taiko,
+            "fruits" => Mode::Catch,
+            "mania" => Mode::Mania,
+            _ => return None,
+        })
+    }
+
+    /// Returns the mode string in the new convention.
+    pub fn to_str_new_site(&self) -> &'static str {
+        match self {
+            Mode::Std => "osu",
+            Mode::Taiko => "taiko",
+            Mode::Catch => "fruits",
+            Mode::Mania => "mania",
+        }
     }
 }
 
@@ -141,8 +244,6 @@ pub struct Beatmap {
     pub beatmap_id: u64,
     pub difficulty_name: String,
     pub difficulty: Difficulty,
-    pub drain_length: Duration,
-    pub total_length: Duration,
     pub file_hash: String,
     pub mode: Mode,
     pub favourite_count: u64,
@@ -166,6 +267,19 @@ impl Beatmap {
         format!(
             "https://osu.ppy.sh/beatmapsets/{}#{}/{}",
             self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize], self.beatmap_id
+        )
+    }
+
+    /// Return a parsable short link.
+    pub fn short_link(&self, override_mode: Option<Mode>, mods: Option<Mods>) -> String {
+        format!(
+            "/b/{}{}{}",
+            self.beatmap_id,
+            match override_mode {
+                Some(mode) if mode != self.mode => format!("/{}", mode.to_str_new_site()),
+                _ => "".to_owned(),
+            },
+            mods.map(|m| format!("{}", m)).unwrap_or("".to_owned()),
         )
     }
 

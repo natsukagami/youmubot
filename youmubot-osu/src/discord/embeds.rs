@@ -1,5 +1,8 @@
 use super::BeatmapWithMode;
-use crate::models::{Beatmap, Mode, Rank, Score, User};
+use crate::{
+    discord::oppai_cache::{BeatmapContent, BeatmapInfo},
+    models::{Beatmap, Mode, Mods, Rank, Score, User},
+};
 use chrono::Utc;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use youmubot_prelude::*;
@@ -12,7 +15,19 @@ fn format_mode(actual: Mode, original: Mode) -> String {
     }
 }
 
-pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
+pub fn beatmap_embed<'a>(
+    b: &'_ Beatmap,
+    m: Mode,
+    mods: Mods,
+    info: Option<BeatmapInfo>,
+    c: &'a mut CreateEmbed,
+) -> &'a mut CreateEmbed {
+    let mod_str = if mods == Mods::NOMOD {
+        "".to_owned()
+    } else {
+        format!(" {}", mods)
+    };
+    let diff = b.difficulty.apply_mods(mods);
     c.title(
         MessageBuilder::new()
             .push_bold_safe(&b.artist)
@@ -21,6 +36,7 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
             .push(" [")
             .push_bold_safe(&b.difficulty_name)
             .push("]")
+            .push(&mod_str)
             .build(),
     )
     .author(|a| {
@@ -34,27 +50,37 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
     .color(0xffb6c1)
     .field(
         "Star Difficulty",
-        format!("{:.2}⭐", b.difficulty.stars),
-        false,
+        format!(
+            "{:.2}⭐",
+            info.map(|v| v.stars as f64).unwrap_or(b.difficulty.stars)
+        ),
+        true,
     )
+    .fields(Some(("Mods", mods, true)).filter(|_| mods != Mods::NOMOD))
+    .fields(info.map(|info| {
+        (
+            "Calculated pp",
+            format!(
+                "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
+                info.pp[0], info.pp[1], info.pp[2], info.pp[3]
+            ),
+            false,
+        )
+    }))
     .field(
         "Length",
         MessageBuilder::new()
-            .push_bold_safe(Duration(b.total_length))
+            .push_bold_safe(Duration(diff.total_length))
             .push(" (")
-            .push_bold_safe(Duration(b.drain_length))
+            .push_bold_safe(Duration(diff.drain_length))
             .push(" drain)")
             .build(),
         false,
     )
-    .field("Circle Size", format!("{:.1}", b.difficulty.cs), true)
-    .field("Approach Rate", format!("{:.1}", b.difficulty.ar), true)
-    .field(
-        "Overall Difficulty",
-        format!("{:.1}", b.difficulty.od),
-        true,
-    )
-    .field("HP Drain", format!("{:.1}", b.difficulty.hp), true)
+    .field("Circle Size", format!("{:.1}", diff.cs), true)
+    .field("Approach Rate", format!("{:.1}", diff.ar), true)
+    .field("Overall Difficulty", format!("{:.1}", diff.od), true)
+    .field("HP Drain", format!("{:.1}", diff.hp), true)
     .field("BPM", b.bpm.round(), true)
     .fields(b.difficulty.max_combo.map(|v| ("Max combo", v, true)))
     .field("Mode", format_mode(m, b.mode), true)
@@ -83,13 +109,23 @@ pub fn beatmap_embed<'a>(b: &'_ Beatmap, m: Mode, c: &'a mut CreateEmbed) -> &'a
                 )
             })
             .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
-            .push_line(&b.approval)
+            .push_line(format!(
+                "Short link: `{}`",
+                b.short_link(Some(m), Some(mods))
+            ))
+            .push_bold_line(&b.approval)
             .push("Language: ")
             .push_bold(&b.language)
             .push(" | Genre: ")
             .push_bold(&b.genre)
             .build(),
     )
+    .footer(|f| {
+        if info.is_none() && mods != Mods::NOMOD {
+            f.text("Star difficulty not reflecting mods applied.");
+        }
+        f
+    })
 }
 
 const MAX_DIFFS: usize = 25 - 4;
@@ -145,7 +181,7 @@ pub fn beatmapset_embed<'a>(
     .field(
         "Length",
         MessageBuilder::new()
-            .push_bold_safe(Duration(b.total_length))
+            .push_bold_safe(Duration(b.difficulty.total_length))
             .build(),
         true,
     )
@@ -177,7 +213,11 @@ pub fn beatmapset_embed<'a>(
         (
             format!("[{}]", b.difficulty_name),
             MessageBuilder::new()
-                .push(format!("[[Link]]({})", b.link()))
+                .push(format!(
+                    "[[Link]]({}) (`{}`)",
+                    b.link(),
+                    b.short_link(m, None)
+                ))
                 .push(", ")
                 .push_bold(format!("{:.2}⭐", b.difficulty.stars))
                 .push(", ")
@@ -191,7 +231,7 @@ pub fn beatmapset_embed<'a>(
                 .push(", HP")
                 .push_bold(format!("{:.1}", b.difficulty.hp))
                 .push(", ⌛ ")
-                .push_bold(format!("{}", Duration(b.drain_length)))
+                .push_bold(format!("{}", Duration(b.difficulty.drain_length)))
                 .build(),
             false,
         )
@@ -201,6 +241,7 @@ pub fn beatmapset_embed<'a>(
 pub(crate) fn score_embed<'a>(
     s: &Score,
     bm: &BeatmapWithMode,
+    content: &BeatmapContent,
     u: &User,
     top_record: Option<u8>,
     m: &'a mut CreateEmbed,
@@ -208,6 +249,11 @@ pub(crate) fn score_embed<'a>(
     let mode = bm.mode();
     let b = &bm.0;
     let accuracy = s.accuracy(mode);
+    let stars = mode
+        .to_oppai_mode()
+        .and_then(|mode| content.get_info_with(Some(mode), s.mods).ok())
+        .map(|info| info.stars as f64)
+        .unwrap_or(b.difficulty.stars);
     let score_line = match &s.rank {
         Rank::SS | Rank::SSH => format!("SS"),
         _ if s.perfect => format!("{:.2}% FC", accuracy),
@@ -217,12 +263,27 @@ pub(crate) fn score_embed<'a>(
             accuracy, s.max_combo, s.count_miss, v
         ),
     };
-    let score_line =
-        s.pp.map(|pp| format!("{} | {:.2}pp", &score_line, pp))
-            .unwrap_or(score_line);
+    let pp = s.pp.map(|pp| format!("{:.2}pp", pp)).or_else(|| {
+        mode.to_oppai_mode()
+            .and_then(|op| {
+                content
+                    .get_pp_from(
+                        oppai_rs::Combo::non_fc(s.max_combo as u32, s.count_miss as u32),
+                        accuracy as f32,
+                        Some(op),
+                        s.mods,
+                    )
+                    .ok()
+            })
+            .map(|pp| format!("{:.2}pp [?]", pp))
+    });
+    let score_line = pp
+        .map(|pp| format!("{} | {}", &score_line, pp))
+        .unwrap_or(score_line);
     let top_record = top_record
         .map(|v| format!("| #{} top record!", v))
         .unwrap_or("".to_owned());
+    let diff = b.difficulty.apply_mods(s.mods);
     m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
         .color(0xffb6c1)
         .title(format!(
@@ -232,7 +293,7 @@ pub(crate) fn score_embed<'a>(
             b.title,
             b.difficulty_name,
             s.mods,
-            b.difficulty.stars,
+            stars,
             b.creator,
             score_line,
             top_record
@@ -245,15 +306,26 @@ pub(crate) fn score_embed<'a>(
             false,
         )
         .field("Rank", &score_line, false)
+        .field(
+            "300s / 100s / 50s / misses",
+            format!(
+                "**{}** ({}) / **{}** ({}) / **{}** / **{}**",
+                s.count_300, s.count_geki, s.count_100, s.count_katu, s.count_50, s.count_miss
+            ),
+            true,
+        )
         .fields(s.pp.map(|pp| ("pp gained", format!("{:.2}pp", pp), true)))
-        .field("Creator", &b.creator, true)
         .field("Mode", mode.to_string(), true)
         .field(
             "Map stats",
             MessageBuilder::new()
-                .push(format!("[[Link]]({})", b.link()))
+                .push(format!(
+                    "[[Link]]({}) (`{}`)",
+                    b.link(),
+                    b.short_link(Some(mode), Some(s.mods))
+                ))
                 .push(", ")
-                .push_bold(format!("{:.2}⭐", b.difficulty.stars))
+                .push_bold(format!("{:.2}⭐", stars))
                 .push(", ")
                 .push_bold_line(
                     b.mode.to_string()
@@ -264,24 +336,29 @@ pub(crate) fn score_embed<'a>(
                         },
                 )
                 .push("CS")
-                .push_bold(format!("{:.1}", b.difficulty.cs))
+                .push_bold(format!("{:.1}", diff.cs))
                 .push(", AR")
-                .push_bold(format!("{:.1}", b.difficulty.ar))
+                .push_bold(format!("{:.1}", diff.ar))
                 .push(", OD")
-                .push_bold(format!("{:.1}", b.difficulty.od))
+                .push_bold(format!("{:.1}", diff.od))
                 .push(", HP")
-                .push_bold(format!("{:.1}", b.difficulty.hp))
+                .push_bold(format!("{:.1}", diff.hp))
                 .push(", ⌛ ")
-                .push_bold(format!("{}", Duration(b.drain_length)))
+                .push_bold(format!("{}", Duration(diff.drain_length)))
                 .build(),
             false,
         )
-        .field("Played on", s.date.format("%F %T"), false)
+        .timestamp(&s.date)
+        .field("Played on", s.date.format("%F %T"), false);
+    if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
+        m.footer(|f| f.text("Star difficulty does not reflect game mods."));
+    }
+    m
 }
 
 pub(crate) fn user_embed<'a>(
     u: User,
-    best: Option<(Score, BeatmapWithMode)>,
+    best: Option<(Score, BeatmapWithMode, Option<BeatmapInfo>)>,
     m: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
     m.title(u.username)
@@ -323,8 +400,8 @@ pub(crate) fn user_embed<'a>(
             ),
             false,
         )
-        .fields(best.map(|(v, map)| {
-            let map = map.0;
+        .fields(best.map(|(v, map, info)| {
+            let BeatmapWithMode(map, mode) = map;
             (
                 "Best Record",
                 MessageBuilder::new()
@@ -348,8 +425,12 @@ pub(crate) fn user_embed<'a>(
                         MessageBuilder::new().push_bold_safe(&map.title).build(),
                         map.link()
                     ))
-                    .push(format!(" [{}]", map.difficulty_name))
-                    .push(format!(" ({:.1}⭐)", map.difficulty.stars))
+                    .push_line(format!(" [{}]", map.difficulty_name))
+                    .push(format!(
+                        "{:.1}⭐ | `{}`",
+                        info.map(|i| i.stars as f64).unwrap_or(map.difficulty.stars),
+                        map.short_link(Some(mode), Some(v.mods))
+                    ))
                     .build(),
                 false,
             )

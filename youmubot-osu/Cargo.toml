@@ -15,6 +15,8 @@ bitflags = "1"
 rayon = "1.1"
 lazy_static = "1"
 regex = "1"
+oppai-rs = "0.2.0"
+dashmap = "3.11.4"
 
 youmubot-db = { path = "../youmubot-db" }
 youmubot-prelude = { path = "../youmubot-prelude" }

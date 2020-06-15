@@ -1,5 +1,7 @@
 use crate::{
-    models::{Beatmap, Mode, Score, User},
+    discord::beatmap_cache::BeatmapMetaCache,
+    discord::oppai_cache::BeatmapCache,
+    models::{Beatmap, Mode, Mods, Score, User},
     request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
@@ -16,10 +18,12 @@ use std::str::FromStr;
 use youmubot_prelude::*;
 
 mod announcer;
+pub(crate) mod beatmap_cache;
 mod cache;
 mod db;
 pub(crate) mod embeds;
 mod hook;
+pub(crate) mod oppai_cache;
 mod server_rank;
 
 use db::OsuUser;
@@ -57,9 +61,14 @@ pub fn setup(
 
     // API client
     let http_client = data.get_cloned::<HTTPClient>();
-    data.insert::<OsuClient>(OsuHttpClient::new(
-        http_client,
+    let osu_client = OsuHttpClient::new(
+        http_client.clone(),
         std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
+    );
+    data.insert::<OsuClient>(osu_client.clone());
+    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(http_client));
+    data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
+        osu_client,
     ));
 
     // Announcer
@@ -171,11 +180,11 @@ struct ModeArg(Mode);
 impl FromStr for ModeArg {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(ModeArg(match s {
-            "std" => Mode::Std,
-            "taiko" => Mode::Taiko,
-            "catch" => Mode::Catch,
-            "mania" => Mode::Mania,
+        Ok(ModeArg(match &s.to_lowercase()[..] {
+            "osu" | "std" => Mode::Std,
+            "taiko" | "osu!taiko" => Mode::Taiko,
+            "ctb" | "fruits" | "catch" | "osu!ctb" | "osu!catch" => Mode::Catch,
+            "osu!mania" | "mania" => Mode::Mania,
             _ => return Err(format!("Unknown mode {}", s)),
         }))
     }
@@ -221,7 +230,8 @@ impl FromStr for Nth {
 
 fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> CommandResult {
     let watcher = ctx.data.get_cloned::<ReactionWatcher>();
-    let osu = ctx.data.get_cloned::<OsuClient>();
+    let osu = ctx.data.get_cloned::<BeatmapMetaCache>();
+    let beatmap_cache = ctx.data.get_cloned::<BeatmapCache>();
 
     if plays.is_empty() {
         m.reply(&ctx, "No plays found")?;
@@ -232,53 +242,137 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
 
     const ITEMS_PER_PAGE: usize = 5;
     let total_pages = (plays.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    watcher.paginate_fn(ctx, m.channel_id, |page, e| {
-        let page = page as usize;
-        let start = page * ITEMS_PER_PAGE;
-        let end = plays.len().min(start + ITEMS_PER_PAGE);
-        if start >= end {
-            return (e, Err(Error::from("No more pages")));
-        }
+    watcher.paginate_fn(
+        ctx,
+        m.channel_id,
+        |page, e| {
+            let page = page as usize;
+            let start = page * ITEMS_PER_PAGE;
+            let end = plays.len().min(start + ITEMS_PER_PAGE);
+            if start >= end {
+                return (e, Err(Error::from("No more pages")));
+            }
 
-        let plays = &plays[start..end];
-        let beatmaps = {
-            let b = &mut beatmaps[start..end];
-            b.par_iter_mut().enumerate().map(
-                |(i, v)| v.get_or_insert_with(
-                    || osu.beatmaps(BeatmapRequestKind::Beatmap(plays[i].beatmap_id), |f| f)
-                    	.ok()
-                    	.and_then(|v| v.into_iter().next())
-                    	.map(|b| format!(
-                        	"[{:.1}*] {} - {} [{}] (#{})",
-                        	b.difficulty.stars, b.artist, b.title, b.difficulty_name, b.beatmap_id))
-                    	.unwrap_or("FETCH FAILED".to_owned()))).collect::<Vec<_>>()
-        };
-        let /*mods width*/ mw = plays.iter().map(|v| v.mods.to_string().len()).max().unwrap().max(4);
-        let /*beatmap names*/ bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
+            let plays = &plays[start..end];
+            let beatmaps = {
+                let b = &mut beatmaps[start..end];
+                b.par_iter_mut()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        v.get_or_insert_with(|| {
+                            if let Some(b) = osu.get_beatmap(plays[i].beatmap_id, mode).ok() {
+                                let stars = beatmap_cache
+                                    .get_beatmap(b.beatmap_id)
+                                    .ok()
+                                    .and_then(|b| {
+                                        mode.to_oppai_mode().and_then(|mode| {
+                                            b.get_info_with(Some(mode), plays[i].mods).ok()
+                                        })
+                                    })
+                                    .map(|info| info.stars as f64)
+                                    .unwrap_or(b.difficulty.stars);
+                                format!(
+                                    "[{:.1}*] {} - {} [{}] ({})",
+                                    stars,
+                                    b.artist,
+                                    b.title,
+                                    b.difficulty_name,
+                                    b.short_link(Some(mode), Some(plays[i].mods)),
+                                )
+                            } else {
+                                "FETCH_FAILED".to_owned()
+                            }
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let pp = plays
+                .iter()
+                .map(|p| {
+                    p.pp.map(|pp| format!("{:.2}pp", pp))
+                        .or_else(|| {
+                            beatmap_cache.get_beatmap(p.beatmap_id).ok().and_then(|b| {
+                                mode.to_oppai_mode().and_then(|op| {
+                                    b.get_pp_from(
+                                        oppai_rs::Combo::NonFC {
+                                            max_combo: p.max_combo as u32,
+                                            misses: p.count_miss as u32,
+                                        },
+                                        p.accuracy(mode) as f32,
+                                        Some(op),
+                                        p.mods,
+                                    )
+                                    .ok()
+                                    .map(|pp| format!("{:.2}pp [?]", pp))
+                                })
+                            })
+                        })
+                        .unwrap_or("-".to_owned())
+                })
+                .collect::<Vec<_>>();
+            let pw = pp.iter().map(|v| v.len()).max().unwrap_or(2);
+            /*mods width*/
+            let mw = plays
+                .iter()
+                .map(|v| v.mods.to_string().len())
+                .max()
+                .unwrap()
+                .max(4);
+            /*beatmap names*/
+            let bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
 
-	let mut m = MessageBuilder::new();
-        // Table header
-        m.push_line(format!(" #  | pp     | accuracy | rank | {:mw$} | {:bw$}", "mods", "beatmap", mw = mw, bw = bw));
-        m.push_line(format!("---------------------------------{:-<mw$}---{:-<bw$}", "", "", mw = mw, bw = bw));
-        // Each row
-        for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
-            m.push_line(
-                format!(
-                    "{:>3} | {:>6} | {:>8} | {:^4} | {:mw$} | {:bw$}",
+            let mut m = MessageBuilder::new();
+            // Table header
+            m.push_line(format!(
+                " #  | {:pw$} | accuracy | rank | {:mw$} | {:bw$}",
+                "pp",
+                "mods",
+                "beatmap",
+                pw = pw,
+                mw = mw,
+                bw = bw
+            ));
+            m.push_line(format!(
+                "------{:-<pw$}---------------------{:-<mw$}---{:-<bw$}",
+                "",
+                "",
+                "",
+                pw = pw,
+                mw = mw,
+                bw = bw
+            ));
+            // Each row
+            for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
+                m.push_line(format!(
+                    "{:>3} | {:>pw$} | {:>8} | {:^4} | {:mw$} | {:bw$}",
                     id + start + 1,
-                    play.pp.map(|v| format!("{:.2}", v)).unwrap_or("-".to_owned()),
+                    pp[id],
                     format!("{:.2}%", play.accuracy(mode)),
-                    play.rank.to_string(), play.mods.to_string(), beatmap, mw = mw, bw = bw));
-        }
-        // End
-        let table = m.build().replace("```", "\\`\\`\\`");
-        let mut m = MessageBuilder::new();
-        m
-            .push_codeblock(table, None)
-            .push_line(format!("Page **{}/{}**", page + 1, total_pages))
-            .push_line("Note: star difficulty don't reflect mods applied.");
-        (e.content(m.build()), Ok(()))
-    }, std::time::Duration::from_secs(60))
+                    play.rank.to_string(),
+                    play.mods.to_string(),
+                    beatmap,
+                    pw = pw,
+                    mw = mw,
+                    bw = bw
+                ));
+            }
+            // End
+            let table = m.build().replace("```", "\\`\\`\\`");
+            let mut m = MessageBuilder::new();
+            m.push_codeblock(table, None).push_line(format!(
+                "Page **{}/{}**",
+                page + 1,
+                total_pages
+            ));
+            if let None = mode.to_oppai_mode() {
+                m.push_line("Note: star difficulty doesn't reflect mods applied.");
+            } else {
+                m.push_line("[?] means pp was predicted by oppai-rs.");
+            }
+            (e.content(m.build()), Ok(()))
+        },
+        std::time::Duration::from_secs(60),
+    )
 }
 
 #[command]
@@ -292,6 +386,8 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
     let osu = ctx.data.get_cloned::<OsuClient>();
+    let meta_cache = ctx.data.get_cloned::<BeatmapMetaCache>();
+    let oppai = ctx.data.get_cloned::<BeatmapCache>();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -302,25 +398,22 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
                 .into_iter()
                 .last()
                 .ok_or(Error::from("No such play"))?;
-            let beatmap = osu
-                .beatmaps(BeatmapRequestKind::Beatmap(recent_play.beatmap_id), |f| {
-                    f.mode(mode, true)
-                })?
-                .into_iter()
-                .next()
-                .map(|v| BeatmapWithMode(v, mode))
+            let beatmap = meta_cache
+                .get_beatmap(recent_play.beatmap_id, mode)
                 .unwrap();
+            let content = oppai.get_beatmap(beatmap.beatmap_id)?;
+            let beatmap_mode = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id.send_message(&ctx, |m| {
                 m.content(format!(
                     "{}: here is the play that you requested",
                     msg.author
                 ))
-                .embed(|m| score_embed(&recent_play, &beatmap, &user, None, m))
+                .embed(|m| score_embed(&recent_play, &beatmap_mode, &content, &user, None, m))
             })?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap)?;
+            cache::save_beatmap(&*ctx.data.read(), msg.channel_id, &beatmap_mode)?;
         }
         Nth::All => {
             let plays = osu.user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))?;
@@ -332,18 +425,26 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
 
 #[command]
 #[description = "Show information from the last queried beatmap."]
-#[num_args(0)]
-pub fn last(ctx: &mut Context, msg: &Message, _: Args) -> CommandResult {
+#[usage = "[mods = no mod]"]
+#[max_args(1)]
+pub fn last(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let b = cache::get_beatmap(&*ctx.data.read(), msg.channel_id)?;
 
     match b {
         Some(BeatmapWithMode(b, m)) => {
+            let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
+            let info = ctx
+                .data
+                .get_cloned::<BeatmapCache>()
+                .get_beatmap(b.beatmap_id)?
+                .get_info_with(m.to_oppai_mode(), mods)
+                .ok();
             msg.channel_id.send_message(&ctx, |f| {
                 f.content(format!(
                     "{}: here is the beatmap you requested!",
                     msg.author
                 ))
-                .embed(|c| beatmap_embed(&b, m, c))
+                .embed(|c| beatmap_embed(&b, m, mods, info, c))
             })?;
         }
         None => {
@@ -371,6 +472,9 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
             let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
             let osu = ctx.data.get_cloned::<OsuClient>();
+            let oppai = ctx.data.get_cloned::<BeatmapCache>();
+
+            let content = oppai.get_beatmap(b.beatmap_id)?;
 
             let user = osu
                 .user(user, |f| f)?
@@ -383,7 +487,7 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
 
             for score in scores.into_iter() {
                 msg.channel_id.send_message(&ctx, |c| {
-                    c.embed(|m| score_embed(&score, &bm, &user, None, m))
+                    c.embed(|m| score_embed(&score, &bm, &content, &user, None, m))
                 })?;
             }
         }
@@ -407,6 +511,7 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
 
     let osu = ctx.data.get_cloned::<OsuClient>();
+    let oppai = ctx.data.get_cloned::<BeatmapCache>();
     let user = osu
         .user(user, |f| f.mode(mode))?
         .ok_or(Error::from("User not found"))?;
@@ -427,15 +532,16 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                 })?
                 .into_iter()
                 .next()
-                .map(|v| BeatmapWithMode(v, mode))
                 .unwrap();
+            let content = oppai.get_beatmap(beatmap.beatmap_id)?;
+            let beatmap = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id.send_message(&ctx, |m| {
                 m.content(format!(
                     "{}: here is the play that you requested",
                     msg.author
                 ))
-                .embed(|m| score_embed(&top_play, &beatmap, &user, Some(rank), m))
+                .embed(|m| score_embed(&top_play, &beatmap, &content, &user, Some(rank), m))
             })?;
 
             // Save the beatmap...
@@ -452,18 +558,26 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
     let osu = ctx.data.get_cloned::<OsuClient>();
+    let cache = ctx.data.get_cloned::<BeatmapMetaCache>();
     let user = osu.user(user, |f| f.mode(mode))?;
+    let oppai = ctx.data.get_cloned::<BeatmapCache>();
     match user {
         Some(u) => {
             let best = osu
                 .user_best(UserID::ID(u.id), |f| f.limit(1).mode(mode))?
                 .into_iter()
                 .next()
-                .map(|m| {
-                    osu.beatmaps(BeatmapRequestKind::Beatmap(m.beatmap_id), |f| {
-                        f.mode(mode, true)
-                    })
-                    .map(|map| (m, BeatmapWithMode(map.into_iter().next().unwrap(), mode)))
+                .map(|m| -> Result<_, Error> {
+                    let beatmap = cache.get_beatmap(m.beatmap_id, mode)?;
+                    let info = mode
+                        .to_oppai_mode()
+                        .map(|mode| -> Result<_, Error> {
+                            Ok(oppai
+                                .get_beatmap(m.beatmap_id)?
+                                .get_info_with(Some(mode), m.mods)?)
+                        })
+                        .transpose()?;
+                    Ok((m, BeatmapWithMode(beatmap, mode), info))
                 })
                 .transpose()?;
             msg.channel_id.send_message(&ctx, |m| {

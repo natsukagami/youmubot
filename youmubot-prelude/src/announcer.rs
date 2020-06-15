@@ -168,6 +168,51 @@ impl AnnouncerHandler {
     }
 }
 
+/// Gets the announcer of the given guild.
+pub fn announcer_of(
+    ctx: &Context,
+    key: &'static str,
+    guild: GuildId,
+) -> Result<Option<ChannelId>, Error> {
+    Ok(AnnouncerChannels::open(&*ctx.data.read())
+        .borrow()?
+        .get(key)
+        .and_then(|channels| channels.get(&guild).cloned()))
+}
+
+#[command("list")]
+#[description = "List the registered announcers of this server"]
+#[num_args(0)]
+#[only_in(guilds)]
+pub fn list_announcers(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
+    let guild_id = m.guild_id.unwrap();
+    let announcers = AnnouncerChannels::open(&*ctx.data.read());
+    let announcers = announcers.borrow()?;
+
+    let channels = ctx
+        .data
+        .get_cloned::<AnnouncerHandler>()
+        .into_iter()
+        .filter_map(|key| {
+            announcers
+                .get(key)
+                .and_then(|channels| channels.get(&guild_id))
+                .map(|&ch| (key, ch))
+        })
+        .map(|(key, ch)| format!(" - `{}`: activated on channel {}", key, ch.mention()))
+        .collect::<Vec<_>>();
+
+    m.reply(
+        &ctx,
+        format!(
+            "Activated announcers on this server:\n{}",
+            channels.join("\n")
+        ),
+    )?;
+
+    Ok(())
+}
+
 #[command("register")]
 #[description = "Register the current channel with an announcer"]
 #[usage = "[announcer key]"]
@@ -253,5 +298,5 @@ pub fn remove_announcer(ctx: &mut Context, m: &Message, mut args: Args) -> Comma
 #[only_in(guilds)]
 #[required_permissions(MANAGE_CHANNELS)]
 #[description = "Manage the announcers in the server."]
-#[commands(remove_announcer, register_announcer)]
+#[commands(remove_announcer, register_announcer, list_announcers)]
 pub struct AnnouncerCommands;

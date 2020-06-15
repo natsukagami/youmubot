@@ -14,7 +14,7 @@ use std::{convert::TryInto, sync::Arc};
 
 /// Client is the client that will perform calls to the osu! api server.
 /// It's cheap to clone, so do it.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Client {
     key: Arc<String>,
     client: HTTPClient,
