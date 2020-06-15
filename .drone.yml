@@ -10,12 +10,12 @@ trigger:
 
 steps:
 - name: format_check
-  image: rust:1.41
+  image: rust:1.44
   commands:
   - rustup component add rustfmt
   - cargo fmt -- --check
 - name: cargo_check
-  image: rust:1.41
+  image: rust:1.44
   commands:
   - cargo check
 
@@ -31,7 +31,7 @@ trigger:
 
 steps:
 - name: build_release
-  image: rust:1.41
+  image: rust:1.44
   commands:
   - cargo build --release
 - name: deploy
