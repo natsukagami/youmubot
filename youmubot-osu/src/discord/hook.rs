@@ -1,5 +1,6 @@
 use super::OsuClient;
 use crate::{
+    discord::beatmap_cache::BeatmapMetaCache,
     discord::oppai_cache::{BeatmapCache, BeatmapInfo},
     models::{Beatmap, Mode, Mods},
     request::BeatmapRequestKind,
@@ -24,6 +25,9 @@ lazy_static! {
     static ref NEW_LINK_REGEX: Regex = Regex::new(
         r"https?://osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:\+(?P<mods>[A-Z]+))?"
     ).unwrap();
+    static ref SHORT_LINK_REGEX: Regex = Regex::new(
+        r"/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>[A-Z]+))?"
+    ).unwrap();
 }
 
 pub fn hook(ctx: &mut Context, msg: &Message) -> () {
@@ -33,8 +37,13 @@ pub fn hook(ctx: &mut Context, msg: &Message) -> () {
     let mut v = move || -> CommandResult {
         let old_links = handle_old_links(ctx, &msg.content)?;
         let new_links = handle_new_links(ctx, &msg.content)?;
+        let short_links = handle_short_links(ctx, &msg, &msg.content)?;
         let mut last_beatmap = None;
-        for l in old_links.into_iter().chain(new_links.into_iter()) {
+        for l in old_links
+            .into_iter()
+            .chain(new_links.into_iter())
+            .chain(short_links.into_iter())
+        {
             if let Err(v) = msg.channel_id.send_message(&ctx, |m| match l.embed {
                 EmbedType::Beatmap(b, info, mods) => {
                     let t = handle_beatmap(&b, info, l.link, l.mode, mods, m);
@@ -137,15 +146,9 @@ fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
     let mut to_prints: Vec<ToPrint<'a>> = Vec::new();
     let cache = ctx.data.get_cloned::<BeatmapCache>();
     for capture in NEW_LINK_REGEX.captures_iter(content) {
-        let mode = capture.name("mode").and_then(|v| {
-            Some(match v.as_str() {
-                "osu" => Mode::Std,
-                "taiko" => Mode::Taiko,
-                "fruits" => Mode::Catch,
-                "mania" => Mode::Mania,
-                _ => return None,
-            })
-        });
+        let mode = capture
+            .name("mode")
+            .and_then(|v| Mode::parse_from_new_site(v.as_str()));
         let link = capture.get(0).unwrap().as_str();
         let req = match capture.name("beatmap_id") {
             Some(ref v) => BeatmapRequestKind::Beatmap(v.as_str().parse()?),
@@ -163,8 +166,7 @@ fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
                     // collect beatmap info
                     let mods = capture
                         .name("mods")
-                        .map(|v| Mods::from_str(v.as_str()).ok())
-                        .flatten()
+                        .and_then(|v| Mods::from_str(v.as_str()).ok())
                         .unwrap_or(Mods::NOMOD);
                     let info = mode
                         .unwrap_or(beatmap.mode)
@@ -190,6 +192,55 @@ fn handle_new_links<'a>(ctx: &mut Context, content: &'a str) -> Result<Vec<ToPri
         }
     }
     Ok(to_prints)
+}
+
+fn handle_short_links<'a>(
+    ctx: &mut Context,
+    msg: &Message,
+    content: &'a str,
+) -> Result<Vec<ToPrint<'a>>, Error> {
+    if let Some(guild_id) = msg.guild_id {
+        if announcer::announcer_of(ctx, crate::discord::announcer::ANNOUNCER_KEY, guild_id)?
+            != Some(msg.channel_id)
+        {
+            // Disable if we are not in the server's announcer channel
+            return Ok(vec![]);
+        }
+    }
+    let osu = ctx.data.get_cloned::<BeatmapMetaCache>();
+    let cache = ctx.data.get_cloned::<BeatmapCache>();
+    Ok(SHORT_LINK_REGEX
+        .captures_iter(content)
+        .map(|capture| -> Result<_, Error> {
+            let mode = capture
+                .name("mode")
+                .and_then(|v| Mode::parse_from_new_site(v.as_str()));
+            let id: u64 = capture.name("id").unwrap().as_str().parse()?;
+            let beatmap = match mode {
+                Some(mode) => osu.get_beatmap(id, mode),
+                None => osu.get_beatmap_default(id),
+            }?;
+            let mods = capture
+                .name("mods")
+                .and_then(|v| Mods::from_str(v.as_str()).ok())
+                .unwrap_or(Mods::NOMOD);
+            let info = mode
+                .unwrap_or(beatmap.mode)
+                .to_oppai_mode()
+                .and_then(|mode| {
+                    cache
+                        .get_beatmap(beatmap.beatmap_id)
+                        .and_then(|b| b.get_info_with(Some(mode), mods))
+                        .ok()
+                });
+            Ok(ToPrint {
+                embed: EmbedType::Beatmap(beatmap, info, mods),
+                link: capture.get(0).unwrap().as_str(),
+                mode,
+            })
+        })
+        .filter_map(|v| v.ok())
+        .collect())
 }
 
 fn handle_beatmap<'a, 'b>(

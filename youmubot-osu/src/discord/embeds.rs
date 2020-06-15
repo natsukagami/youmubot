@@ -109,7 +109,11 @@ pub fn beatmap_embed<'a>(
                 )
             })
             .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
-            .push_line(&b.approval)
+            .push_line(format!(
+                "Short link: `{}`",
+                b.short_link(Some(m), Some(mods))
+            ))
+            .push_bold_line(&b.approval)
             .push("Language: ")
             .push_bold(&b.language)
             .push(" | Genre: ")
@@ -209,7 +213,11 @@ pub fn beatmapset_embed<'a>(
         (
             format!("[{}]", b.difficulty_name),
             MessageBuilder::new()
-                .push(format!("[[Link]]({})", b.link()))
+                .push(format!(
+                    "[[Link]]({}) (`{}`)",
+                    b.link(),
+                    b.short_link(m, None)
+                ))
                 .push(", ")
                 .push_bold(format!("{:.2}⭐", b.difficulty.stars))
                 .push(", ")
@@ -311,7 +319,11 @@ pub(crate) fn score_embed<'a>(
         .field(
             "Map stats",
             MessageBuilder::new()
-                .push(format!("[[Link]]({})", b.link()))
+                .push(format!(
+                    "[[Link]]({}) (`{}`)",
+                    b.link(),
+                    b.short_link(Some(mode), Some(s.mods))
+                ))
                 .push(", ")
                 .push_bold(format!("{:.2}⭐", stars))
                 .push(", ")
@@ -346,7 +358,7 @@ pub(crate) fn score_embed<'a>(
 
 pub(crate) fn user_embed<'a>(
     u: User,
-    best: Option<(Score, BeatmapWithMode)>,
+    best: Option<(Score, BeatmapWithMode, Option<BeatmapInfo>)>,
     m: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
     m.title(u.username)
@@ -388,8 +400,8 @@ pub(crate) fn user_embed<'a>(
             ),
             false,
         )
-        .fields(best.map(|(v, map)| {
-            let map = map.0;
+        .fields(best.map(|(v, map, info)| {
+            let BeatmapWithMode(map, mode) = map;
             (
                 "Best Record",
                 MessageBuilder::new()
@@ -413,8 +425,12 @@ pub(crate) fn user_embed<'a>(
                         MessageBuilder::new().push_bold_safe(&map.title).build(),
                         map.link()
                     ))
-                    .push(format!(" [{}]", map.difficulty_name))
-                    .push(format!(" ({:.1}⭐)", map.difficulty.stars))
+                    .push_line(format!(" [{}]", map.difficulty_name))
+                    .push(format!(
+                        "{:.1}⭐ | `{}`",
+                        info.map(|i| i.stars as f64).unwrap_or(map.difficulty.stars),
+                        map.short_link(Some(mode), Some(v.mods))
+                    ))
                     .build(),
                 false,
             )

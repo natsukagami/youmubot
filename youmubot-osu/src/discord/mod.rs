@@ -272,8 +272,12 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
                                     .map(|info| info.stars as f64)
                                     .unwrap_or(b.difficulty.stars);
                                 format!(
-                                    "[{:.1}*] {} - {} [{}] (#{})",
-                                    stars, b.artist, b.title, b.difficulty_name, b.beatmap_id
+                                    "[{:.1}*] {} - {} [{}] ({})",
+                                    stars,
+                                    b.artist,
+                                    b.title,
+                                    b.difficulty_name,
+                                    b.short_link(Some(mode), Some(plays[i].mods)),
                                 )
                             } else {
                                 "FETCH_FAILED".to_owned()
@@ -554,18 +558,26 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 fn get_user(ctx: &mut Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
     let osu = ctx.data.get_cloned::<OsuClient>();
+    let cache = ctx.data.get_cloned::<BeatmapMetaCache>();
     let user = osu.user(user, |f| f.mode(mode))?;
+    let oppai = ctx.data.get_cloned::<BeatmapCache>();
     match user {
         Some(u) => {
             let best = osu
                 .user_best(UserID::ID(u.id), |f| f.limit(1).mode(mode))?
                 .into_iter()
                 .next()
-                .map(|m| {
-                    osu.beatmaps(BeatmapRequestKind::Beatmap(m.beatmap_id), |f| {
-                        f.mode(mode, true)
-                    })
-                    .map(|map| (m, BeatmapWithMode(map.into_iter().next().unwrap(), mode)))
+                .map(|m| -> Result<_, Error> {
+                    let beatmap = cache.get_beatmap(m.beatmap_id, mode)?;
+                    let info = mode
+                        .to_oppai_mode()
+                        .map(|mode| -> Result<_, Error> {
+                            Ok(oppai
+                                .get_beatmap(m.beatmap_id)?
+                                .get_info_with(Some(mode), m.mods)?)
+                        })
+                        .transpose()?;
+                    Ok((m, BeatmapWithMode(beatmap, mode), info))
                 })
                 .transpose()?;
             msg.channel_id.send_message(&ctx, |m| {

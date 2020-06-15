@@ -198,6 +198,27 @@ impl Mode {
             _ => return None,
         })
     }
+
+    /// Parse from the new site's convention.
+    pub fn parse_from_new_site(s: &str) -> Option<Self> {
+        Some(match s {
+            "osu" => Mode::Std,
+            "taiko" => Mode::Taiko,
+            "fruits" => Mode::Catch,
+            "mania" => Mode::Mania,
+            _ => return None,
+        })
+    }
+
+    /// Returns the mode string in the new convention.
+    pub fn to_str_new_site(&self) -> &'static str {
+        match self {
+            Mode::Std => "osu",
+            Mode::Taiko => "taiko",
+            Mode::Catch => "fruits",
+            Mode::Mania => "mania",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -246,6 +267,19 @@ impl Beatmap {
         format!(
             "https://osu.ppy.sh/beatmapsets/{}#{}/{}",
             self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize], self.beatmap_id
+        )
+    }
+
+    /// Return a parsable short link.
+    pub fn short_link(&self, override_mode: Option<Mode>, mods: Option<Mods>) -> String {
+        format!(
+            "/b/{}{}{}",
+            self.beatmap_id,
+            match override_mode {
+                Some(mode) if mode != self.mode => format!("/{}", mode.to_str_new_site()),
+                _ => "".to_owned(),
+            },
+            mods.map(|m| format!("{}", m)).unwrap_or("".to_owned()),
         )
     }
 
