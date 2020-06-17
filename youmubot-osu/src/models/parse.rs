@@ -184,7 +184,7 @@ fn parse_language(s: impl AsRef<str>) -> ParseResult<Language> {
     use Language::*;
     Ok(match t {
         0 => Any,
-        1 => Other,
+        1 | 14 => Other,
         2 => English,
         3 => Japanese,
         4 => Chinese,
@@ -197,7 +197,7 @@ fn parse_language(s: impl AsRef<str>) -> ParseResult<Language> {
         11 => Italian,
         _ => {
             return Err(ParseError::InvalidValue {
-                field: "langugae",
+                field: "language",
                 value: t.to_string(),
             })
         }
