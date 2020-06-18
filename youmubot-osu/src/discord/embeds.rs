@@ -263,7 +263,7 @@ pub(crate) fn score_embed<'a>(
             accuracy, s.max_combo, s.count_miss, v
         ),
     };
-    let pp = s.pp.map(|pp| format!("{:.2}pp", pp)).or_else(|| {
+    let pp = s.pp.map(|pp| (pp, format!("{:.2}pp", pp))).or_else(|| {
         mode.to_oppai_mode()
             .and_then(|op| {
                 content
@@ -275,7 +275,7 @@ pub(crate) fn score_embed<'a>(
                     )
                     .ok()
             })
-            .map(|pp| format!("{:.2}pp [?]", pp))
+            .map(|pp| (pp as f64, format!("{:.2}pp [?]", pp)))
     });
     let pp = if !s.perfect {
         mode.to_oppai_mode()
@@ -284,10 +284,18 @@ pub(crate) fn score_embed<'a>(
                     .get_pp_from(oppai_rs::Combo::FC(0), accuracy as f32, Some(op), s.mods)
                     .ok()
             })
-            .filter(|&v| s.pp.map(|origin| origin < v as f64).unwrap_or(false))
-            .and_then(|value| pp.map(|original| format!("{} ({:.2}pp if FC?)", original, value)))
+            .filter(|&v| {
+                pp.as_ref()
+                    .map(|&(origin, _)| origin < v as f64)
+                    .unwrap_or(false)
+            })
+            .and_then(|value| {
+                pp.as_ref()
+                    .map(|(_, original)| format!("{} ({:.2}pp if FC?)", original, value))
+            })
+            .or(pp.map(|v| v.1))
     } else {
-        pp
+        pp.map(|v| v.1)
     };
     let score_line = pp
         .map(|pp| format!("{} | {}", &score_line, pp))
