@@ -130,6 +130,7 @@ pub enum Genre {
     Novelty,
     HipHop,
     Electronic,
+    Folk,
 }
 
 impl fmt::Display for Genre {
