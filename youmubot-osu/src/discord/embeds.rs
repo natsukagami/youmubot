@@ -277,14 +277,18 @@ pub(crate) fn score_embed<'a>(
             })
             .map(|pp| format!("{:.2}pp [?]", pp))
     });
-    let pp = mode
-        .to_oppai_mode()
-        .and_then(|op| {
-            content
-                .get_pp_from(oppai_rs::Combo::FC(0), accuracy as f32, Some(op), s.mods)
-                .ok()
-        })
-        .and_then(|value| pp.map(|original| format!("{} ({:.2}pp if FC?)", original, value)));
+    let pp = if !s.perfect {
+        mode.to_oppai_mode()
+            .and_then(|op| {
+                content
+                    .get_pp_from(oppai_rs::Combo::FC(0), accuracy as f32, Some(op), s.mods)
+                    .ok()
+            })
+            .filter(|&v| s.pp.map(|origin| origin < v as f64).unwrap_or(false))
+            .and_then(|value| pp.map(|original| format!("{} ({:.2}pp if FC?)", original, value)))
+    } else {
+        pp
+    };
     let score_line = pp
         .map(|pp| format!("{} | {}", &score_line, pp))
         .unwrap_or(score_line);
