@@ -218,6 +218,7 @@ fn parse_genre(s: impl AsRef<str>) -> ParseResult<Genre> {
         7 => Novelty,
         9 => HipHop,
         10 => Electronic,
+        13 => Folk,
         _ => {
             return Err(ParseError::InvalidValue {
                 field: "genre",
