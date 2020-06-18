@@ -81,7 +81,7 @@ pub fn beatmap_embed<'a>(
     .field("Approach Rate", format!("{:.1}", diff.ar), true)
     .field("Overall Difficulty", format!("{:.1}", diff.od), true)
     .field("HP Drain", format!("{:.1}", diff.hp), true)
-    .field("BPM", b.bpm.round(), true)
+    .field("BPM", diff.bpm.round(), true)
     .fields(b.difficulty.max_combo.map(|v| ("Max combo", v, true)))
     .field("Mode", format_mode(m, b.mode), true)
     .fields(b.source.as_ref().map(|v| ("Source", v, true)))
@@ -185,7 +185,7 @@ pub fn beatmapset_embed<'a>(
             .build(),
         true,
     )
-    .field("BPM", b.bpm.round(), true)
+    .field("BPM", b.difficulty.bpm.round(), true)
     .fields(b.source.as_ref().map(|v| ("Source", v, false)))
     .field(
         "Tags",
@@ -277,6 +277,14 @@ pub(crate) fn score_embed<'a>(
             })
             .map(|pp| format!("{:.2}pp [?]", pp))
     });
+    let pp = mode
+        .to_oppai_mode()
+        .and_then(|op| {
+            content
+                .get_pp_from(oppai_rs::Combo::FC(0), accuracy as f32, Some(op), s.mods)
+                .ok()
+        })
+        .and_then(|value| pp.map(|original| format!("{} ({:.2}pp if FC?)", original, value)));
     let score_line = pp
         .map(|pp| format!("{} | {}", &score_line, pp))
         .unwrap_or(score_line);
@@ -343,6 +351,8 @@ pub(crate) fn score_embed<'a>(
                 .push_bold(format!("{:.1}", diff.od))
                 .push(", HP")
                 .push_bold(format!("{:.1}", diff.hp))
+                .push(", BPM ")
+                .push_bold(format!("{}", diff.bpm.round()))
                 .push(", ⌛ ")
                 .push_bold(format!("{}", Duration(diff.drain_length)))
                 .build(),

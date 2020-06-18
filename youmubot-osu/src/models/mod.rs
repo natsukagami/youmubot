@@ -46,6 +46,7 @@ pub struct Difficulty {
     pub count_spinner: u64,
     pub max_combo: Option<u64>,
 
+    pub bpm: f64,
     pub drain_length: Duration,
     pub total_length: Duration,
 }
@@ -85,6 +86,7 @@ impl Difficulty {
         self.od = (79.0 - (hit_timing - 0.5)) / 6.0;
     }
     fn apply_length_by_ratio(&mut self, mul: u32, div: u32) {
+        self.bpm = self.bpm / (mul as f64) * (div as f64); // Inverse since bpm increases while time decreases
         self.drain_length = self.drain_length * mul / div;
         self.total_length = self.total_length * mul / div;
     }
@@ -234,7 +236,6 @@ pub struct Beatmap {
     pub artist: String,
     pub title: String,
     pub beatmapset_id: u64,
-    pub bpm: f64,
     pub creator: String,
     pub creator_id: u64,
     pub source: Option<String>,
