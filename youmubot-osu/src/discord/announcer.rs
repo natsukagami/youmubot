@@ -2,6 +2,7 @@ use super::db::{OsuSavedUsers, OsuUser};
 use super::{embeds::score_embed, BeatmapWithMode, OsuClient};
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
+    discord::cache::save_beatmap,
     discord::oppai_cache::BeatmapCache,
     models::{Mode, Score},
     request::UserID,
@@ -45,6 +46,7 @@ pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> 
                     *user_id,
                     &channels[..],
                     *m,
+                    d.clone(),
                 )
             })
             .collect::<Result<_, _>>()
@@ -72,6 +74,7 @@ fn handle_user_mode(
     user_id: UserId,
     channels: &[ChannelId],
     mode: Mode,
+    d: AppData,
 ) -> Result<Option<f64>, Error> {
     let scores = scan_user(osu, osu_user, mode)?;
     let user = osu
@@ -93,6 +96,7 @@ fn handle_user_mode(
                 }) {
                     dbg!(e);
                 }
+                save_beatmap(&*d.read(), *channel, &beatmap).ok();
             }
         });
     Ok(user.pp)
