@@ -1,5 +1,8 @@
 # youmubot 
 
+![Deploy](https://github.com/natsukagami/youmubot/workflows/Deploy/badge.svg)
+![Build and Test](https://github.com/natsukagami/youmubot/workflows/Build%20and%20Test/badge.svg)
+
 A Discord bot made specifically for server "Dự tuyển Tổng Hợp". Written in Rust.
 
 All PRs welcome.
