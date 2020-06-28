@@ -132,7 +132,10 @@ pub enum Genre {
     Novelty,
     HipHop,
     Electronic,
+    Metal,
+    Classical,
     Folk,
+    Jazz,
 }
 
 impl fmt::Display for Genre {
@@ -160,6 +163,8 @@ pub enum Language {
     Swedish,
     Spanish,
     Italian,
+    Russian,
+    Polish,
 }
 
 impl fmt::Display for Language {

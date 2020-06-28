@@ -195,6 +195,8 @@ fn parse_language(s: impl AsRef<str>) -> ParseResult<Language> {
         9 => Swedish,
         10 => Spanish,
         11 => Italian,
+        12 => Russian,
+        13 => Polish,
         _ => {
             return Err(ParseError::InvalidValue {
                 field: "language",
@@ -218,7 +220,10 @@ fn parse_genre(s: impl AsRef<str>) -> ParseResult<Genre> {
         7 => Novelty,
         9 => HipHop,
         10 => Electronic,
+        11 => Metal,
+        12 => Classical,
         13 => Folk,
+        14 => Jazz,
         _ => {
             return Err(ParseError::InvalidValue {
                 field: "genre",
