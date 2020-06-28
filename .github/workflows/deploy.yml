@@ -53,4 +53,6 @@ jobs:
                   username: ${{ secrets.USERNAME }}
                   key: ${{ secrets.SSH_KEY }}
                   port: ${{ secrets.PORT }}
-                  script: systemctl --user restart youmubot
+                  script: |
+                      chmod +x youmubot/youmubot
+                      systemctl --user restart youmubot
