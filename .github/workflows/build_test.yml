@@ -19,14 +19,14 @@ jobs:
               with:
                   toolchain: stable
                   components: rustfmt
-             - uses: actions/cache@v2
+            - uses: actions/cache@v2
               with:
                   path: |
                         ~/.cargo/registry
                         ~/.cargo/git
                         target
                   key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-           - name: Run rustfmt
+            - name: Run rustfmt
               run: cargo fmt -- --check
     check:
         name: Lint
