@@ -30,6 +30,7 @@ jobs:
                   path: target/release/youmubot
     deploy:
         name: Deploy to remote
+        needs: build
         runs-on: ubuntu-latest
         steps:
             - name: Collect artifact
