@@ -166,7 +166,7 @@ mod duration {
 
         #[test]
         fn test_parse_fail() {
-            let tests = ["", "1w", "-1W", "1"];
+            let tests = ["", "-1W", "1"];
             for input in &tests {
                 assert!(
                     parse_duration_string(input).is_err(),

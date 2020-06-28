@@ -1,0 +1,60 @@
+name: Build and Test
+
+on:
+    push:
+        branches: [ master ]
+    pull_request:
+        branches: [ master ]
+
+env:
+    CARGO_TERM_COLOR: always
+
+jobs:
+    format_check:
+        name: Format check
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  toolchain: stable
+                  components: rustfmt
+            - name: Run rustfmt
+              run: cargo fmt -- --check
+    check:
+        name: Lint
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  toolchain: stable
+                  components: clippy
+            - uses: actions/cache@v2
+              with:
+                  path: |
+                        ~/.cargo/registry
+                        ~/.cargo/git
+                        target
+                  key: ${{ runner.os }}-rust-check-${{ hashFiles('**/Cargo.lock') }}
+            - name: Run cargo check
+              run: cargo check
+            - name: Run clippy
+              run: cargo clippy
+    test:
+        name: Test
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  toolchain: stable
+            - uses: actions/cache@v2
+              with:
+                  path: |
+                        ~/.cargo/registry
+                        ~/.cargo/git
+                        target
+                  key: ${{ runner.os }}-rust-debug-${{ hashFiles('**/Cargo.lock') }}
+            - name: Run cargo test
+              run: cargo test
