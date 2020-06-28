@@ -10,6 +10,9 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  toolchain: stable
             - uses: actions/cache@v2
               with:
                   path: |
@@ -17,9 +20,6 @@ jobs:
                         ~/.cargo/git
                         target
                   key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-            - uses: actions-rs/toolchain@v1
-              with:
-                  toolchain: stable
             - name: Build release
               run: cargo build --release
             - name: Upload binary

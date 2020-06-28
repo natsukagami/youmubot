@@ -15,24 +15,28 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
-            - uses: actions/cache@v2
-              with:
-                  path: |
-                        ~/.cargo/registry
-                        ~/.cargo/git
-                        target
-                  key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - uses: actions-rs/toolchain@v1
               with:
                   toolchain: stable
                   components: rustfmt
-            - name: Run rustfmt
+             - uses: actions/cache@v2
+              with:
+                  path: |
+                        ~/.cargo/registry
+                        ~/.cargo/git
+                        target
+                  key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+           - name: Run rustfmt
               run: cargo fmt -- --check
-    check_and_test:
-        name: Lint and Test
+    check:
+        name: Lint
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  toolchain: stable
+                  components: clippy
             - uses: actions/cache@v2
               with:
                   path: |
@@ -40,10 +44,24 @@ jobs:
                         ~/.cargo/git
                         target
                   key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            - name: Run cargo check
+              run: cargo check
+            - name: Run clippy
+              run: cargo clippy
+    test:
+        name: Test
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
             - uses: actions-rs/toolchain@v1
               with:
                   toolchain: stable
-            - name: Check
-              run: cargo check --verbose
-            - name: Test
-              run: cargo test --verbose
+            - uses: actions/cache@v2
+              with:
+                  path: |
+                        ~/.cargo/registry
+                        ~/.cargo/git
+                        target
+                  key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            - name: Run cargo test
+              run: cargo test
