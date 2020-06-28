@@ -46,6 +46,7 @@ jobs:
                   port: ${{ secrets.PORT }}
                   source: youmubot-release/youmubot
                   target: youmubot
+                  strip_components: 1
             - name: Restart youmubot
               uses: appleboy/ssh-action@master
               with:
