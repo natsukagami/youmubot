@@ -1,8 +1,9 @@
 name: Deploy
 
-on:
-    push:
-        branches: [ master ]
+# on:
+    # push:
+        # branches: [ master ]
+on: [ push ]
 
 jobs:
     deploy:
@@ -19,7 +20,7 @@ jobs:
                         ~/.cargo/registry
                         ~/.cargo/git
                         target
-                  key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+                  key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
             - name: Build release
               run: cargo build --release
             - name: Upload binary
