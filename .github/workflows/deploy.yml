@@ -31,7 +31,7 @@ jobs:
                   key: ${{ secrets.SSH_KEY }}
                   port: ${{ secrets.PORT }}
                   source: "target/release/youmubot"
-                  target: "youmubot/youmubot"
+                  target: "youmubot"
             - name: Restart youmubot
               uses: appleboy/ssh-action@master
               with:
