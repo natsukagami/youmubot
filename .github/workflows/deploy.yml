@@ -6,8 +6,8 @@ name: Deploy
 on: [ push ]
 
 jobs:
-    deploy:
-        name: Build and Deploy
+    build:
+        name: Build a Release Binary
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
@@ -23,6 +23,19 @@ jobs:
                   key: ${{ runner.os }}-rust-release-${{ hashFiles('**/Cargo.lock') }}
             - name: Build release
               run: cargo build --release
+            - name: Upload compiled binary artifact
+              uses: actions/upload-artifact@v1
+              with:
+                  name: youmubot-release
+                  path: target/release/youmubot
+    deploy:
+        name: Deploy to remote
+        runs-on: ubuntu-latest
+        steps:
+            - name: Collect artifact
+              uses: actions/download-artifact@v1
+              with:
+                  name: youmubot-release
             - name: Upload binary
               uses: appleboy/scp-action@master
               with:
@@ -30,8 +43,8 @@ jobs:
                   username: ${{ secrets.USERNAME }}
                   key: ${{ secrets.SSH_KEY }}
                   port: ${{ secrets.PORT }}
-                  source: "target/release/youmubot"
-                  target: "youmubot"
+                  source: youmubot-release/youmubot
+                  target: youmubot
             - name: Restart youmubot
               uses: appleboy/ssh-action@master
               with:
