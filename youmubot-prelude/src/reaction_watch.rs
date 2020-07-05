@@ -51,49 +51,55 @@ impl ReactionWatcher {
     /// React! to a series of reaction
     ///
     /// The reactions stop after `duration` of idle.
-    pub fn handle_reactions(
+    pub fn handle_reactions<H: ReactionHandler + Send + 'static>(
         &self,
-        mut h: impl ReactionHandler,
+        mut h: H,
         duration: std::time::Duration,
-    ) -> CommandResult {
+        callback: impl FnOnce(H) -> () + Send + 'static,
+    ) {
         let (send, reactions) = bounded(0);
         {
             self.channels.lock().expect("Poisoned!").push(send);
         }
-        loop {
-            let timeout = after(duration);
-            let r = select! {
-                recv(reactions) -> r => { let (r, is_added) = r.unwrap(); h.handle_reaction(&*r, is_added) },
-                recv(timeout) -> _ => break,
-            };
-            if let Err(v) = r {
-                dbg!(v);
+        std::thread::spawn(move || {
+            loop {
+                let timeout = after(duration);
+                let r = select! {
+                    recv(reactions) -> r => { let (r, is_added) = r.unwrap(); h.handle_reaction(&*r, is_added) },
+                    recv(timeout) -> _ => break,
+                };
+                if let Err(v) = r {
+                    dbg!(v);
+                }
             }
-        }
-        Ok(())
+            callback(h)
+        });
     }
     /// React! to a series of reaction
     ///
     /// The handler will stop after `duration` no matter what.
-    pub fn handle_reactions_timed(
+    pub fn handle_reactions_timed<H: ReactionHandler + Send + 'static>(
         &self,
-        mut h: impl ReactionHandler,
+        mut h: H,
         duration: std::time::Duration,
-    ) -> CommandResult {
+        callback: impl FnOnce(H) -> () + Send + 'static,
+    ) {
         let (send, reactions) = bounded(0);
         {
             self.channels.lock().expect("Poisoned!").push(send);
         }
-        let timeout = after(duration);
-        loop {
-            let r = select! {
-                recv(reactions) -> r => { let (r, is_added) = r.unwrap(); h.handle_reaction(&*r, is_added) },
-                recv(timeout) -> _ => break,
-            };
-            if let Err(v) = r {
-                dbg!(v);
+        std::thread::spawn(move || {
+            let timeout = after(duration);
+            loop {
+                let r = select! {
+                    recv(reactions) -> r => { let (r, is_added) = r.unwrap(); h.handle_reaction(&*r, is_added) },
+                    recv(timeout) -> _ => break,
+                };
+                if let Err(v) = r {
+                    dbg!(v);
+                }
             }
-        }
-        Ok(())
+            callback(h);
+        });
     }
 }

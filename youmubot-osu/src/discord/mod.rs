@@ -228,7 +228,7 @@ impl FromStr for Nth {
     }
 }
 
-fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> CommandResult {
+fn list_plays(plays: Vec<Score>, mode: Mode, ctx: Context, m: &Message) -> CommandResult {
     let watcher = ctx.data.get_cloned::<ReactionWatcher>();
     let osu = ctx.data.get_cloned::<BeatmapMetaCache>();
     let beatmap_cache = ctx.data.get_cloned::<BeatmapCache>();
@@ -245,7 +245,7 @@ fn list_plays(plays: &[Score], mode: Mode, ctx: Context, m: &Message) -> Command
     watcher.paginate_fn(
         ctx,
         m.channel_id,
-        |page, e| {
+        move |page, e| {
             let page = page as usize;
             let start = page * ITEMS_PER_PAGE;
             let end = plays.len().min(start + ITEMS_PER_PAGE);
@@ -417,7 +417,7 @@ pub fn recent(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
         }
         Nth::All => {
             let plays = osu.user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))?;
-            list_plays(&plays, mode, ctx.clone(), msg)?;
+            list_plays(plays, mode, ctx.clone(), msg)?;
         }
     }
     Ok(())
@@ -549,7 +549,7 @@ pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         }
         Nth::All => {
             let plays = osu.user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))?;
-            list_plays(&plays, mode, ctx.clone(), msg)?;
+            list_plays(plays, mode, ctx.clone(), msg)?;
         }
     }
     Ok(())
