@@ -18,6 +18,7 @@ use youmubot_prelude::{Duration as ParseDuration, *};
 #[bucket = "voting"]
 #[only_in(guilds)]
 #[min_args(2)]
+#[owner_privilege]
 pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     // Parse stuff first
     let args = args.quoted();
