@@ -145,7 +145,7 @@ pub fn ranks(ctx: &mut Context, m: &Message) -> CommandResult {
     ctx.data.get_cloned::<ReactionWatcher>().paginate_fn(
         ctx.clone(),
         m.channel_id,
-        |page, e| {
+        move |page, e| {
             let page = page as usize;
             let start = ITEMS_PER_PAGE * page;
             let end = ranks.len().min(start + ITEMS_PER_PAGE);
@@ -236,12 +236,17 @@ pub fn contestranks(ctx: &mut Context, m: &Message, mut args: Args) -> CommandRe
 
     // Table me
     let ranks = ranks
-        .iter()
+        .into_iter()
         .flat_map(|v| {
             v.party
                 .members
                 .iter()
-                .filter_map(|m| members.get(&m.handle).map(|mem| (mem, m.handle.clone(), v)))
+                .filter_map(|m| {
+                    members
+                        .get(&m.handle)
+                        .cloned()
+                        .map(|mem| (mem, m.handle.clone(), v.clone()))
+                })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();

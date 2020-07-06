@@ -15,7 +15,7 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
 
     let db = DB::open(&*ctx.data.read());
     let db = db.borrow()?;
-    let roles = db.get(&guild_id).filter(|v| !v.is_empty());
+    let roles = db.get(&guild_id).filter(|v| !v.is_empty()).cloned();
     match roles {
         None => {
             m.reply(&ctx, "No roles available for assigning.")?;
@@ -23,8 +23,8 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
         Some(v) => {
             let roles = guild_id.to_partial_guild(&ctx)?.roles;
             let roles: Vec<_> = v
-                .iter()
-                .filter_map(|(_, role)| roles.get(&role.id).map(|r| (r, &role.description)))
+                .into_iter()
+                .filter_map(|(_, role)| roles.get(&role.id).cloned().map(|r| (r, role.description)))
                 .collect();
             const ROLES_PER_PAGE: usize = 8;
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
@@ -33,7 +33,7 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
             watcher.paginate_fn(
                 ctx.clone(),
                 m.channel_id,
-                |page, e| {
+                move |page, e| {
                     let page = page as usize;
                     let start = page * ROLES_PER_PAGE;
                     let end = roles.len().min(start + ROLES_PER_PAGE);

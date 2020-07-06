@@ -7,7 +7,7 @@ use serenity::{
     },
     utils::MessageBuilder,
 };
-use std::collections::HashMap as Map;
+use std::collections::{HashMap as Map, HashSet as Set};
 use std::time::Duration;
 use youmubot_prelude::{Duration as ParseDuration, *};
 
@@ -18,6 +18,7 @@ use youmubot_prelude::{Duration as ParseDuration, *};
 #[bucket = "voting"]
 #[only_in(guilds)]
 #[min_args(2)]
+#[owner_privilege]
 pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     // Parse stuff first
     let args = args.quoted();
@@ -29,7 +30,10 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     }
     let question = args.single::<String>()?;
     let choices = if args.is_empty() {
-        vec![("😍", "Yes! 😍".to_owned()), ("🤢", "No! 🤢".to_owned())]
+        vec![
+            ("😍".to_owned(), "Yes! 😍".to_owned()),
+            ("🤢".to_owned(), "No! 🤢".to_owned()),
+        ]
     } else {
         let choices: Vec<_> = args.iter().map(|v| v.unwrap()).collect();
         if choices.len() < 2 {
@@ -73,7 +77,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 
     // Ok... now we post up a nice voting panel.
     let channel = msg.channel_id;
-    let author = &msg.author;
+    let author = msg.author.clone();
     let panel = channel.send_message(&ctx, |c| {
         c.content("@here").embed(|e| {
             e.author(|au| {
@@ -90,100 +94,122 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     // React on all the choices
     choices
         .iter()
-        .try_for_each(|(v, _)| panel.react(&ctx, *v))?;
+        .try_for_each(|(v, _)| panel.react(&ctx, v.clone()))?;
 
-    let reaction_to_choice: Map<_, _> = choices.iter().map(|r| (r.0, &r.1)).collect();
-    let mut user_reactions: Map<UserId, Vec<&str>> = Map::new();
+    // A handler for votes.
+    struct VoteHandler {
+        pub ctx: Context,
+        pub msg: Message,
+        pub user_reactions: Map<String, Set<UserId>>,
+
+        pub panel: Message,
+    }
+
+    impl VoteHandler {
+        fn new(ctx: Context, msg: Message, panel: Message, choices: &[(String, String)]) -> Self {
+            VoteHandler {
+                ctx,
+                msg,
+                user_reactions: choices
+                    .iter()
+                    .map(|(v, _)| (v.clone(), Set::new()))
+                    .collect(),
+                panel,
+            }
+        }
+    }
+
+    impl ReactionHandler for VoteHandler {
+        fn handle_reaction(&mut self, reaction: &Reaction, is_add: bool) -> CommandResult {
+            if reaction.message_id != self.panel.id {
+                return Ok(());
+            }
+            if reaction.user(&self.ctx)?.bot {
+                return Ok(());
+            }
+            let users = if let ReactionType::Unicode(ref s) = reaction.emoji {
+                if let Some(users) = self.user_reactions.get_mut(s.as_str()) {
+                    users
+                } else {
+                    return Ok(());
+                }
+            } else {
+                return Ok(());
+            };
+            if is_add {
+                users.insert(reaction.user_id);
+            } else {
+                users.remove(&reaction.user_id);
+            }
+            Ok(())
+        }
+    }
 
     ctx.data
         .get_cloned::<ReactionWatcher>()
         .handle_reactions_timed(
-            |reaction: &Reaction, is_add| {
-                if reaction.message_id != panel.id {
-                    return Ok(());
-                }
-                if reaction.user(&ctx)?.bot {
-                    return Ok(());
-                }
-                let choice = if let ReactionType::Unicode(ref s) = reaction.emoji {
-                    if let Some(choice) = reaction_to_choice.get(s.as_str()) {
-                        choice
-                    } else {
-                        return Ok(());
-                    }
-                } else {
-                    return Ok(());
-                };
-                if is_add {
-                    user_reactions
-                        .entry(reaction.user_id)
-                        .or_default()
-                        .push(choice);
-                } else {
-                    user_reactions.entry(reaction.user_id).and_modify(|v| {
-                        v.retain(|f| &f != choice);
-                    });
-                }
-                Ok(())
-            },
+            VoteHandler::new(ctx.clone(), msg.clone(), panel, &choices),
             *duration,
-        )?;
-    let result: Vec<(&str, Vec<UserId>)> = {
-        let mut res: Map<&str, Vec<UserId>> = Map::new();
-        for (u, r) in user_reactions {
-            for t in r {
-                res.entry(t).or_default().push(u);
-            }
-        }
-        res.into_iter().collect()
-    };
+            move |vh| {
+                let (ctx, msg, user_reactions, panel) =
+                    (vh.ctx, vh.msg, vh.user_reactions, vh.panel);
+                let result: Vec<(String, Vec<UserId>)> = user_reactions
+                    .into_iter()
+                    .filter(|(_, users)| !users.is_empty())
+                    .map(|(choice, users)| (choice, users.into_iter().collect()))
+                    .collect();
 
-    if result.len() == 0 {
-        msg.reply(
-            &ctx,
-            MessageBuilder::new()
-                .push("no one answer your question ")
-                .push_bold_safe(&question)
-                .push(", sorry 😭")
-                .build(),
-        )?;
-    } else {
-        channel.send_message(&ctx, |c| {
-            c.content({
-                let mut content = MessageBuilder::new();
-                content
-                    .push("@here, ")
-                    .push(author.mention())
-                    .push(" previously asked ")
-                    .push_bold_safe(&question)
-                    .push(", and here are the results!");
-                result.iter().for_each(|(choice, votes)| {
-                    content
-                        .push("\n - ")
-                        .push_bold(format!("{}", votes.len()))
-                        .push(" voted for ")
-                        .push_bold_safe(choice)
-                        .push(": ")
-                        .push(
-                            votes
-                                .iter()
-                                .map(|v| v.mention())
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                        );
-                });
-                content.build()
-            })
-        })?;
-    }
-    panel.delete(&ctx)?;
+                if result.len() == 0 {
+                    msg.reply(
+                        &ctx,
+                        MessageBuilder::new()
+                            .push("no one answer your question ")
+                            .push_bold_safe(&question)
+                            .push(", sorry 😭")
+                            .build(),
+                    )
+                    .ok();
+                } else {
+                    channel
+                        .send_message(&ctx, |c| {
+                            c.content({
+                                let mut content = MessageBuilder::new();
+                                content
+                                    .push("@here, ")
+                                    .push(author.mention())
+                                    .push(" previously asked ")
+                                    .push_bold_safe(&question)
+                                    .push(", and here are the results!");
+                                result.iter().for_each(|(choice, votes)| {
+                                    content
+                                        .push("\n - ")
+                                        .push_bold(format!("{}", votes.len()))
+                                        .push(" voted for ")
+                                        .push_bold_safe(choice)
+                                        .push(": ")
+                                        .push(
+                                            votes
+                                                .iter()
+                                                .map(|v| v.mention())
+                                                .collect::<Vec<_>>()
+                                                .join(", "),
+                                        );
+                                });
+                                content.build()
+                            })
+                        })
+                        .ok();
+                }
+                panel.delete(&ctx).ok();
+            },
+        );
 
     Ok(())
     // unimplemented!();
 }
 
 // Pick a set of random n reactions!
-fn pick_n_reactions(n: usize) -> Result<Vec<&'static str>, Error> {
+fn pick_n_reactions(n: usize) -> Result<Vec<String>, Error> {
     use rand::seq::SliceRandom;
     if n > MAX_CHOICES {
         Err(Error::from("Too many options"))
@@ -191,7 +217,7 @@ fn pick_n_reactions(n: usize) -> Result<Vec<&'static str>, Error> {
         let mut rand = rand::thread_rng();
         Ok(REACTIONS
             .choose_multiple(&mut rand, n)
-            .map(|v| *v)
+            .map(|v| (*v).to_owned())
             .collect())
     }
 }

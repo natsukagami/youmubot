@@ -3,8 +3,10 @@ use dotenv::var;
 use serenity::{
     framework::standard::{DispatchError, StandardFramework},
     model::{
-        channel::{Message, Reaction},
+        channel::{Channel, Message, Reaction},
         gateway,
+        id::{ChannelId, GuildId, UserId},
+        permissions::Permissions,
     },
 };
 use youmubot_prelude::*;
@@ -38,6 +40,19 @@ impl EventHandler for Handler {
         ctx.data
             .get_cloned::<ReactionWatcher>()
             .send(reaction, false);
+    }
+}
+
+/// Returns whether the user has "MANAGE_MESSAGES" permission in the channel.
+fn is_channel_mod(ctx: &mut Context, _: Option<GuildId>, ch: ChannelId, u: UserId) -> bool {
+    match ch.to_channel(&ctx) {
+        Ok(Channel::Guild(gc)) => {
+            let gc = gc.read();
+            gc.permissions_for_user(&ctx, u)
+                .map(|perms| perms.contains(Permissions::MANAGE_MESSAGES))
+                .unwrap_or(false)
+        }
+        _ => false,
     }
 }
 
@@ -167,11 +182,11 @@ fn setup_framework(client: &Client) -> StandardFramework {
                 // println!("Message is not a command '{}'", message.content);
             })
             .bucket("voting", |c| {
-                c.delay(120 /* 2 minutes */).time_span(120).limit(1)
+                c.check(|ctx, g, ch, u| !is_channel_mod(ctx, g, ch, u)).delay(120 /* 2 minutes */).time_span(120).limit(1)
             })
             .bucket("images", |c| c.time_span(60).limit(2))
             .bucket("community", |c| {
-                c.delay(30).time_span(30).limit(1)
+                c.check(|ctx, g, ch, u| !is_channel_mod(ctx, g, ch, u)).delay(30).time_span(30).limit(1)
             })
             .group(&prelude_commands::PRELUDE_GROUP);
     // groups here

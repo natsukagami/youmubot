@@ -17,7 +17,7 @@ impl ReactionWatcher {
     /// Takes a copy of Context (which you can `clone`), a pager (see "Pagination") and a target channel id.
     /// Pagination will handle all events on adding/removing an "arrow" emoji (⬅️ and ➡️).
     /// This is a blocking call - it will block the thread until duration is over.
-    pub fn paginate<T: Pagination>(
+    pub fn paginate<T: Pagination + Send + 'static>(
         &self,
         ctx: Context,
         channel: ChannelId,
@@ -25,7 +25,8 @@ impl ReactionWatcher {
         duration: std::time::Duration,
     ) -> CommandResult {
         let handler = PaginationHandler::new(pager, ctx, channel)?;
-        self.handle_reactions(handler, duration)
+        self.handle_reactions(handler, duration, |_| {});
+        Ok(())
     }
 
     /// A version of `paginate` that compiles for closures.
@@ -39,7 +40,9 @@ impl ReactionWatcher {
         duration: std::time::Duration,
     ) -> CommandResult
     where
-        T: for<'a> FnMut(u8, &'a mut EditMessage) -> (&'a mut EditMessage, CommandResult),
+        T: for<'a> FnMut(u8, &'a mut EditMessage) -> (&'a mut EditMessage, CommandResult)
+            + Send
+            + 'static,
     {
         self.paginate(ctx, channel, pager, duration)
     }
