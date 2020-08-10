@@ -131,6 +131,7 @@ impl Difficulty {
             _ => true,
         };
         let three_lines = is_not_ranked;
+        let bpm = (self.bpm * 100.0).round() / 100.0;
         MessageBuilder::new()
             .push(format!(
                 "[[Link]]({}) (`{}`)",
@@ -161,7 +162,7 @@ impl Difficulty {
             .push_bold(format!("{:.1}", self.od))
             .push(", HP")
             .push_bold(format!("{:.1}", self.hp))
-            .push(format!(", BPM**{}**", self.bpm))
+            .push(format!(", BPM**{}**", bpm))
             .push(", ⌛ ")
             .push_bold(format!("{}", YoumuDuration(self.drain_length)))
             .build()
