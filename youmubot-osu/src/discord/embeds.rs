@@ -7,14 +7,6 @@ use chrono::Utc;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use youmubot_prelude::*;
 
-fn format_mode(actual: Mode, original: Mode) -> String {
-    if actual == original {
-        format!("{}", actual)
-    } else {
-        format!("{} (converted)", actual)
-    }
-}
-
 pub fn beatmap_embed<'a>(
     b: &'_ Beatmap,
     m: Mode,
@@ -45,18 +37,8 @@ pub fn beatmap_embed<'a>(
             .icon_url(format!("https://a.ppy.sh/{}", b.creator_id))
     })
     .url(b.link())
-    .thumbnail(format!("https://b.ppy.sh/thumb/{}l.jpg", b.beatmapset_id))
     .image(b.cover_url())
     .color(0xffb6c1)
-    .field(
-        "Star Difficulty",
-        format!(
-            "{:.2}⭐",
-            info.map(|v| v.stars as f64).unwrap_or(b.difficulty.stars)
-        ),
-        true,
-    )
-    .fields(Some(("Mods", mods, true)).filter(|_| mods != Mods::NOMOD))
     .fields(info.map(|info| {
         (
             "Calculated pp",
@@ -67,23 +49,8 @@ pub fn beatmap_embed<'a>(
             false,
         )
     }))
-    .field(
-        "Length",
-        MessageBuilder::new()
-            .push_bold_safe(Duration(diff.total_length))
-            .push(" (")
-            .push_bold_safe(Duration(diff.drain_length))
-            .push(" drain)")
-            .build(),
-        false,
-    )
-    .field("Circle Size", format!("{:.1}", diff.cs), true)
-    .field("Approach Rate", format!("{:.1}", diff.ar), true)
-    .field("Overall Difficulty", format!("{:.1}", diff.od), true)
-    .field("HP Drain", format!("{:.1}", diff.hp), true)
-    .field("BPM", diff.bpm.round(), true)
+    .field("Information", diff.format_info(m, mods, b), false)
     .fields(b.difficulty.max_combo.map(|v| ("Max combo", v, true)))
-    .field("Mode", format_mode(m, b.mode), true)
     .fields(b.source.as_ref().map(|v| ("Source", v, true)))
     .field(
         "Tags",
@@ -153,7 +120,6 @@ pub fn beatmapset_embed<'a>(
         "https://osu.ppy.sh/beatmapsets/{}",
         b.beatmapset_id,
     ))
-    // .thumbnail(format!("https://b.ppy.sh/thumb/{}l.jpg", b.beatmapset_id))
     .image(format!(
         "https://assets.ppy.sh/beatmaps/{}/covers/cover.jpg",
         b.beatmapset_id
@@ -178,14 +144,6 @@ pub fn beatmapset_embed<'a>(
             .push_bold(&b.genre)
             .build(),
     )
-    .field(
-        "Length",
-        MessageBuilder::new()
-            .push_bold_safe(Duration(b.difficulty.total_length))
-            .build(),
-        true,
-    )
-    .field("BPM", b.difficulty.bpm.round(), true)
     .fields(b.source.as_ref().map(|v| ("Source", v, false)))
     .field(
         "Tags",
@@ -212,27 +170,7 @@ pub fn beatmapset_embed<'a>(
     .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
         (
             format!("[{}]", b.difficulty_name),
-            MessageBuilder::new()
-                .push(format!(
-                    "[[Link]]({}) (`{}`)",
-                    b.link(),
-                    b.short_link(m, None)
-                ))
-                .push(", ")
-                .push_bold(format!("{:.2}⭐", b.difficulty.stars))
-                .push(", ")
-                .push_bold_line(format_mode(m.unwrap_or(b.mode), b.mode))
-                .push("CS")
-                .push_bold(format!("{:.1}", b.difficulty.cs))
-                .push(", AR")
-                .push_bold(format!("{:.1}", b.difficulty.ar))
-                .push(", OD")
-                .push_bold(format!("{:.1}", b.difficulty.od))
-                .push(", HP")
-                .push_bold(format!("{:.1}", b.difficulty.hp))
-                .push(", ⌛ ")
-                .push_bold(format!("{}", Duration(b.difficulty.drain_length)))
-                .build(),
+            b.difficulty.format_info(m.unwrap_or(b.mode), Mods::NOMOD, b),
             false,
         )
     }))

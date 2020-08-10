@@ -2,12 +2,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
+use youmubot_prelude::Duration as YoumuDuration;
 
 pub mod mods;
 pub mod parse;
 pub(crate) mod raw;
 
 pub use mods::Mods;
+use serenity::utils::MessageBuilder;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ApprovalStatus {
@@ -117,6 +119,40 @@ impl Difficulty {
         }
 
         diff
+    }
+
+    /// Format the difficulty info into a short summary.
+    pub fn format_info(&self, mode: Mode, mods: Mods, original_beatmap: &Beatmap) -> String {
+        MessageBuilder::new()
+            .push(format!(
+                "[[Link]]({}) (`{}`)",
+                original_beatmap.link(),
+                original_beatmap.short_link(Some(mode), Some(mods))
+            ))
+            .push(", ")
+            .push_bold(format!("{:.2}⭐", self.stars))
+            .push(", ")
+            .push_bold_line(format_mode(mode, original_beatmap.mode))
+            .push("CS")
+            .push_bold(format!("{:.1}", self.cs))
+            .push(", AR")
+            .push_bold(format!("{:.1}", self.ar))
+            .push(", OD")
+            .push_bold(format!("{:.1}", self.od))
+            .push(", HP")
+            .push_bold(format!("{:.1}", self.hp))
+            .push(format!(", BPM**{}**", self.bpm))
+            .push(", ⌛ ")
+            .push_bold(format!("{}", YoumuDuration(self.drain_length)))
+            .build()
+    }
+}
+
+fn format_mode(actual: Mode, original: Mode) -> String {
+    if actual == original {
+        format!("{}", actual)
+    } else {
+        format!("{} (converted)", actual)
     }
 }
 
