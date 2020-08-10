@@ -126,13 +126,18 @@ impl Difficulty {
 
     /// Format the difficulty info into a short summary.
     pub fn format_info(&self, mode: Mode, mods: Mods, original_beatmap: &Beatmap) -> String {
+        let is_not_ranked = match original_beatmap.approval {
+            ApprovalStatus::Ranked(_) => false,
+            _ => true,
+        };
+        let three_lines = is_not_ranked;
         MessageBuilder::new()
             .push(format!(
                 "[[Link]]({}) (`{}`)",
                 original_beatmap.link(),
                 original_beatmap.short_link(Some(mode), Some(mods))
             ))
-            .push(", ")
+            .push(if three_lines { "\n" } else { ", " })
             .push_bold(format!("{:.2}⭐", self.stars))
             .push(", ")
             .push(
@@ -142,6 +147,11 @@ impl Difficulty {
                     .map(|c| format!("max **{}x**, ", c))
                     .unwrap_or_else(|| "".to_owned()),
             )
+            .push(if is_not_ranked {
+                format!("status **{}**, mode ", original_beatmap.approval)
+            } else {
+                "".to_owned()
+            })
             .push_bold_line(format_mode(mode, original_beatmap.mode))
             .push("CS")
             .push_bold(format!("{:.1}", self.cs))

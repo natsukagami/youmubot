@@ -259,7 +259,6 @@ pub(crate) fn score_embed<'a>(
             s.date.format("%F %T"),
         ))
         .image(b.cover_url())
-        .field("Map stats", diff.format_info(mode, s.mods, b), false)
         .field(
             "Score stats",
             format!(
@@ -278,6 +277,7 @@ pub(crate) fn score_embed<'a>(
             ),
             true,
         )
+        .field("Map stats", diff.format_info(mode, s.mods, b), false)
         .timestamp(&s.date);
     if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
         m.footer(|f| f.text("Star difficulty does not reflect game mods."));
