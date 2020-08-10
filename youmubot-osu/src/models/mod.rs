@@ -94,8 +94,11 @@ impl Difficulty {
     }
     /// Apply mods to the given difficulty.
     /// Note that `stars`, `aim` and `speed` cannot be calculated from this alone.
-    pub fn apply_mods(&self, mods: Mods) -> Difficulty {
-        let mut diff = self.clone();
+    pub fn apply_mods(&self, mods: Mods, updated_stars: Option<f64>) -> Difficulty {
+        let mut diff = Difficulty {
+            stars: updated_stars.unwrap_or(self.stars),
+            ..self.clone()
+        };
 
         // Apply mods one by one
         if mods.contains(Mods::EZ) {
@@ -132,6 +135,13 @@ impl Difficulty {
             .push(", ")
             .push_bold(format!("{:.2}⭐", self.stars))
             .push(", ")
+            .push(
+                original_beatmap
+                    .difficulty
+                    .max_combo
+                    .map(|c| format!("max **{}x**, ", c))
+                    .unwrap_or_else(|| "".to_owned()),
+            )
             .push_bold_line(format_mode(mode, original_beatmap.mode))
             .push("CS")
             .push_bold(format!("{:.1}", self.cs))
@@ -311,6 +321,18 @@ impl Beatmap {
             "https://osu.ppy.sh/beatmapsets/{}#{}/{}",
             self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize], self.beatmap_id
         )
+    }
+
+    /// Returns a direct download link. If `bloodcat` is true, return the bloodcat download link.
+    pub fn download_link(&self, bloodcat: bool) -> String {
+        if bloodcat {
+            format!("https://bloodcat.com/osu/s/{}", self.beatmapset_id)
+        } else {
+            format!(
+                "https://osu.ppy.sh/beatmapsets/{}/download",
+                self.beatmapset_id
+            )
+        }
     }
 
     /// Return a parsable short link.

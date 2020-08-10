@@ -7,6 +7,55 @@ use chrono::Utc;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use youmubot_prelude::*;
 
+/// Writes a number grouped in groups of 3.
+fn grouped_number(num: u64) -> String {
+    let s = num.to_string();
+    let mut b = MessageBuilder::new();
+    let mut i = if s.len() % 3 == 0 { 3 } else { s.len() % 3 };
+    b.push(&s[..i]);
+    while i < s.len() {
+        b.push(",").push(&s[i..i + 3]);
+        i += 3;
+    }
+    b.build()
+}
+
+fn beatmap_description(b: &Beatmap) -> String {
+    MessageBuilder::new()
+        .push_bold_line(&b.approval)
+        .push({
+            let link = b.download_link(false);
+            format!(
+                "Download: [[Link]]({}) [[No Video]]({}?noVideo=1) [[Bloodcat]]({})",
+                link,
+                link,
+                b.download_link(true),
+            )
+        })
+        .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
+        .push("Language: ")
+        .push_bold(&b.language)
+        .push(" | Genre: ")
+        .push_bold_line(&b.genre)
+        .push(
+            b.source
+                .as_ref()
+                .map(|v| format!("Source: **{}**\n", v))
+                .unwrap_or_else(|| "".to_owned()),
+        )
+        .push("Tags: ")
+        .push_line(
+            b.tags
+                .iter()
+                .map(|v| MessageBuilder::new().push_mono_safe(v).build())
+                .take(10)
+                .chain(std::iter::once("...".to_owned()))
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+        .build()
+}
+
 pub fn beatmap_embed<'a>(
     b: &'_ Beatmap,
     m: Mode,
@@ -19,7 +68,7 @@ pub fn beatmap_embed<'a>(
     } else {
         format!(" {}", mods)
     };
-    let diff = b.difficulty.apply_mods(mods);
+    let diff = b.difficulty.apply_mods(mods, info.map(|v| v.stars as f64));
     c.title(
         MessageBuilder::new()
             .push_bold_safe(&b.artist)
@@ -50,43 +99,7 @@ pub fn beatmap_embed<'a>(
         )
     }))
     .field("Information", diff.format_info(m, mods, b), false)
-    .fields(b.difficulty.max_combo.map(|v| ("Max combo", v, true)))
-    .fields(b.source.as_ref().map(|v| ("Source", v, true)))
-    .field(
-        "Tags",
-        b.tags
-            .iter()
-            .map(|v| MessageBuilder::new().push_mono_safe(v).build())
-            .take(10)
-            .chain(std::iter::once("...".to_owned()))
-            .collect::<Vec<_>>()
-            .join(" "),
-        false,
-    )
-    .description(
-        MessageBuilder::new()
-            .push({
-                let link = format!(
-                    "https://osu.ppy.sh/beatmapsets/{}/download",
-                    b.beatmapset_id
-                );
-                format!(
-                    "Download: [[Link]]({}) [[No Video]]({}?noVideo=1)",
-                    link, link
-                )
-            })
-            .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
-            .push_line(format!(
-                "Short link: `{}`",
-                b.short_link(Some(m), Some(mods))
-            ))
-            .push_bold_line(&b.approval)
-            .push("Language: ")
-            .push_bold(&b.language)
-            .push(" | Genre: ")
-            .push_bold(&b.genre)
-            .build(),
-    )
+    .description(beatmap_description(b))
     .footer(|f| {
         if info.is_none() && mods != Mods::NOMOD {
             f.text("Star difficulty not reflecting mods applied.");
@@ -125,37 +138,7 @@ pub fn beatmapset_embed<'a>(
         b.beatmapset_id
     ))
     .color(0xffb6c1)
-    .description(
-        MessageBuilder::new()
-            .push_line({
-                let link = format!(
-                    "https://osu.ppy.sh/beatmapsets/{}/download",
-                    b.beatmapset_id
-                );
-                format!(
-                    "Download: [[Link]]({}) [[No Video]]({}?noVideo=1)",
-                    link, link
-                )
-            })
-            .push_line(&b.approval)
-            .push("Language: ")
-            .push_bold(&b.language)
-            .push(" | Genre: ")
-            .push_bold(&b.genre)
-            .build(),
-    )
-    .fields(b.source.as_ref().map(|v| ("Source", v, false)))
-    .field(
-        "Tags",
-        b.tags
-            .iter()
-            .map(|v| MessageBuilder::new().push_mono_safe(v).build())
-            .take(10)
-            .chain(std::iter::once("...".to_owned()))
-            .collect::<Vec<_>>()
-            .join(" "),
-        false,
-    )
+    .description(beatmap_description(b))
     .footer(|f| {
         if too_many_diffs {
             f.text(format!(
@@ -170,7 +153,8 @@ pub fn beatmapset_embed<'a>(
     .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
         (
             format!("[{}]", b.difficulty_name),
-            b.difficulty.format_info(m.unwrap_or(b.mode), Mods::NOMOD, b),
+            b.difficulty
+                .format_info(m.unwrap_or(b.mode), Mods::NOMOD, b),
             false,
         )
     }))
@@ -238,10 +222,15 @@ pub(crate) fn score_embed<'a>(
     let score_line = pp
         .map(|pp| format!("{} | {}", &score_line, pp))
         .unwrap_or(score_line);
+    let max_combo = b
+        .difficulty
+        .max_combo
+        .map(|max| format!("**{}x**/{}x", s.max_combo, max))
+        .unwrap_or_else(|| format!("**{}x**", s.max_combo));
     let top_record = top_record
         .map(|v| format!("| #{} top record!", v))
         .unwrap_or("".to_owned());
-    let diff = b.difficulty.apply_mods(s.mods);
+    let diff = b.difficulty.apply_mods(s.mods, Some(stars));
     m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
         .color(0xffb6c1)
         .title(format!(
@@ -256,60 +245,40 @@ pub(crate) fn score_embed<'a>(
             score_line,
             top_record
         ))
-        .description(format!("[[Beatmap]]({})", b.link()))
+        .description(format!(
+            r#"**Beatmap**: {} - {} [{}]**{} **
+**Links**: [[Listing]]({}) [[Download]]({}) [[Bloodcat]]({})
+**Played on**: {}"#,
+            b.artist,
+            b.title,
+            b.difficulty_name,
+            s.mods,
+            b.link(),
+            b.download_link(false),
+            b.download_link(true),
+            s.date.format("%F %T"),
+        ))
         .image(b.cover_url())
+        .field("Map stats", diff.format_info(mode, s.mods, b), false)
         .field(
-            "Beatmap",
-            format!("{} - {} [{}]", b.artist, b.title, b.difficulty_name),
-            false,
-        )
-        .field("Rank", &score_line, false)
-        .field(
-            "300s / 100s / 50s / misses",
+            "Score stats",
             format!(
-                "**{}** ({}) / **{}** ({}) / **{}** / **{}**",
+                "**{}** | {} | **{:.2}%**",
+                grouped_number(s.score),
+                max_combo,
+                accuracy
+            ),
+            true,
+        )
+        .field(
+            "300s | 100s | 50s | misses",
+            format!(
+                "**{}** ({}) | **{}** ({}) | **{}** | **{}**",
                 s.count_300, s.count_geki, s.count_100, s.count_katu, s.count_50, s.count_miss
             ),
             true,
         )
-        .fields(s.pp.map(|pp| ("pp gained", format!("{:.2}pp", pp), true)))
-        .field("Mode", mode.to_string(), true)
-        .field(
-            "Map stats",
-            MessageBuilder::new()
-                .push(format!(
-                    "[[Link]]({}) (`{}`)",
-                    b.link(),
-                    b.short_link(Some(mode), Some(s.mods))
-                ))
-                .push(", ")
-                .push_bold(format!("{:.2}⭐", stars))
-                .push(", ")
-                .push_bold_line(
-                    b.mode.to_string()
-                        + if bm.is_converted() {
-                            " (Converted)"
-                        } else {
-                            ""
-                        },
-                )
-                .push("CS")
-                .push_bold(format!("{:.1}", diff.cs))
-                .push(", AR")
-                .push_bold(format!("{:.1}", diff.ar))
-                .push(", OD")
-                .push_bold(format!("{:.1}", diff.od))
-                .push(", HP")
-                .push_bold(format!("{:.1}", diff.hp))
-                .push(", BPM ")
-                .push_bold(format!("{}", diff.bpm.round()))
-                .push(", ⌛ ")
-                .push_bold(format!("{}", Duration(diff.drain_length)))
-                .build(),
-            false,
-        )
-        .timestamp(&s.date)
-        .field("Played on", s.date.format("%F %T"), false);
+        .timestamp(&s.date);
     if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
         m.footer(|f| f.text("Star difficulty does not reflect game mods."));
     }
