@@ -301,31 +301,40 @@ pub(crate) fn user_embed<'a>(
                 .unwrap_or("Inactive".to_owned()),
             false,
         )
-        .field("World Rank", format!("#{}", u.rank), true)
+        .field("World Rank", format!("#{}", grouped_number(u.rank)), true)
         .field(
             "Country Rank",
-            format!(":flag_{}: #{}", u.country.to_lowercase(), u.country_rank),
+            format!(":flag_{}: #{}", u.country.to_lowercase(), grouped_number(u.country_rank)),
             true,
         )
         .field("Accuracy", format!("{:.2}%", u.accuracy), true)
         .field(
-            "Play count",
-            format!("{} (play time: {})", u.play_count, Duration(u.played_time)),
+            "Play count / Play time",
+            format!(
+                "{} ({})",
+                grouped_number(u.play_count),
+                Duration(u.played_time)
+            ),
             false,
         )
         .field(
             "Ranks",
             format!(
-                "{} SSH | {} SS | {} SH | {} S | {} A",
-                u.count_ssh, u.count_ss, u.count_sh, u.count_s, u.count_a
+                "**{}** SSH | **{}** SS | **{}** SH | **{}** S | **{}** A",
+                grouped_number(u.count_ssh),
+                grouped_number(u.count_ss),
+                grouped_number(u.count_sh),
+                grouped_number(u.count_s),
+                grouped_number(u.count_a)
             ),
             false,
         )
         .field(
-            "Level",
+            format!("Level {:.0}", u.level),
             format!(
-                "Level **{:.0}**: {} total score, {} ranked score",
-                u.level, u.total_score, u.ranked_score
+                "**{}** total score, **{}** ranked score",
+                grouped_number(u.total_score),
+                grouped_number(u.ranked_score)
             ),
             false,
         )
@@ -348,13 +357,14 @@ pub(crate) fn user_embed<'a>(
                         )
                     ))
                     .push("on ")
-                    .push(format!(
-                        "[{} - {}]({})",
+                    .push_line(format!(
+                        "[{} - {} [{}]]({})**{} **",
                         MessageBuilder::new().push_bold_safe(&map.artist).build(),
                         MessageBuilder::new().push_bold_safe(&map.title).build(),
-                        map.link()
+                        map.difficulty_name,
+                        map.link(),
+                        v.mods
                     ))
-                    .push_line(format!(" [{}]", map.difficulty_name))
                     .push(format!(
                         "{:.1}⭐ | `{}`",
                         info.map(|i| i.stars as f64).unwrap_or(map.difficulty.stars),
