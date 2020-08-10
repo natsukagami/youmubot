@@ -122,11 +122,6 @@ pub fn mania(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 pub(crate) struct BeatmapWithMode(pub Beatmap, pub Mode);
 
 impl BeatmapWithMode {
-    /// Whether this beatmap-with-mode is a converted beatmap.
-    fn is_converted(&self) -> bool {
-        self.0.mode != self.1
-    }
-
     fn mode(&self) -> Mode {
         self.1
     }
