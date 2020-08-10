@@ -223,7 +223,7 @@ pub(crate) fn score_embed<'a>(
         top_record
             .map(|top| {
                 let after_pp = u.pp.unwrap();
-                let effective_pp = full_pp * (0.95f64).powi(top as i32);
+                let effective_pp = full_pp * (0.95f64).powi(top as i32 - 1);
                 let before_pp = after_pp - effective_pp;
                 format!(
                     "**pp gained**: **{:.2}**pp (+**{:.2}**pp | {:.2}pp \\➡️ {:.2}pp)",
