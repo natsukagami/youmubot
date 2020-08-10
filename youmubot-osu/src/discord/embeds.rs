@@ -219,6 +219,19 @@ pub(crate) fn score_embed<'a>(
     } else {
         pp.map(|v| v.1)
     };
+    let pp_gained = s.pp.map(|full_pp| {
+        top_record
+            .map(|top| {
+                let after_pp = u.pp.unwrap();
+                let effective_pp = full_pp * (0.95f64).powi(top as i32);
+                let before_pp = after_pp - effective_pp;
+                format!(
+                    "**pp gained**: **{:.2}**pp (+**{:.2}**pp | {:.2}pp \\➡️ {:.2}pp)",
+                    full_pp, effective_pp, before_pp, after_pp
+                )
+            })
+            .unwrap_or_else(|| format!("**pp gained**: **{:.2}**pp", full_pp))
+    });
     let score_line = pp
         .map(|pp| format!("{} | {}", &score_line, pp))
         .unwrap_or(score_line);
@@ -248,7 +261,8 @@ pub(crate) fn score_embed<'a>(
         .description(format!(
             r#"**Beatmap**: {} - {} [{}]**{} **
 **Links**: [[Listing]]({}) [[Download]]({}) [[Bloodcat]]({})
-**Played on**: {}"#,
+**Played on**: {}
+{}"#,
             b.artist,
             b.title,
             b.difficulty_name,
@@ -257,6 +271,7 @@ pub(crate) fn score_embed<'a>(
             b.download_link(false),
             b.download_link(true),
             s.date.format("%F %T"),
+            pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
         ))
         .image(b.cover_url())
         .field(
@@ -304,7 +319,11 @@ pub(crate) fn user_embed<'a>(
         .field("World Rank", format!("#{}", grouped_number(u.rank)), true)
         .field(
             "Country Rank",
-            format!(":flag_{}: #{}", u.country.to_lowercase(), grouped_number(u.country_rank)),
+            format!(
+                ":flag_{}: #{}",
+                u.country.to_lowercase(),
+                grouped_number(u.country_rank)
+            ),
             true,
         )
         .field("Accuracy", format!("{:.2}%", u.accuracy), true)
