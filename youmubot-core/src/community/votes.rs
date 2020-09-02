@@ -65,7 +65,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let fields: Vec<_> = {
         choices
             .iter()
-            .map(|(choice, reaction)| {
+            .map(|(reaction, choice)| {
                 (
                     MessageBuilder::new().push_bold_safe(choice).build(),
                     format!("React with {}", reaction),
@@ -94,7 +94,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     // React on all the choices
     choices
         .iter()
-        .try_for_each(|(v, _)| panel.react(&ctx, v.clone()))?;
+        .try_for_each(|(emote, _)| panel.react(&ctx, &emote[..]))?;
 
     // A handler for votes.
     struct VoteHandler {
@@ -112,7 +112,7 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                 msg,
                 user_reactions: choices
                     .iter()
-                    .map(|(v, _)| (v.clone(), Set::new()))
+                    .map(|(emote, _)| (emote.clone(), Set::new()))
                     .collect(),
                 panel,
             }
@@ -153,10 +153,11 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             move |vh| {
                 let (ctx, msg, user_reactions, panel) =
                     (vh.ctx, vh.msg, vh.user_reactions, vh.panel);
+                let choice_map = choices.into_iter().collect::<Map<_, _>>();
                 let result: Vec<(String, Vec<UserId>)> = user_reactions
                     .into_iter()
                     .filter(|(_, users)| !users.is_empty())
-                    .map(|(choice, users)| (choice, users.into_iter().collect()))
+                    .map(|(emote, users)| (emote, users.into_iter().collect()))
                     .collect();
 
                 if result.len() == 0 {
@@ -180,16 +181,18 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                                     .push(" previously asked ")
                                     .push_bold_safe(&question)
                                     .push(", and here are the results!");
-                                result.iter().for_each(|(choice, votes)| {
+                                result.into_iter().for_each(|(emote, votes)| {
                                     content
                                         .push("\n - ")
                                         .push_bold(format!("{}", votes.len()))
                                         .push(" voted for ")
-                                        .push_bold_safe(choice)
+                                        .push(&emote)
+                                        .push(" ")
+                                        .push_bold_safe(choice_map.get(&emote).unwrap())
                                         .push(": ")
                                         .push(
                                             votes
-                                                .iter()
+                                                .into_iter()
                                                 .map(|v| v.mention())
                                                 .collect::<Vec<_>>()
                                                 .join(", "),
