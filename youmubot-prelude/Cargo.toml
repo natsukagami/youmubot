@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = "0.8"
+serenity = "0.9.0-rc.0"
 youmubot-db = { path = "../youmubot-db" }
 crossbeam-channel = "0.4"
 reqwest = "0.10"
