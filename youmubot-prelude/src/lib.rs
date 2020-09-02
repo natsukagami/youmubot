@@ -12,6 +12,9 @@ pub use args::{Duration, UsernameArg};
 pub use pagination::Pagination;
 pub use reaction_watch::{ReactionHandler, ReactionWatcher};
 
+/// Re-export the anyhow errors
+pub use anyhow::{Error, Result};
+
 /// The global app data.
 pub type AppData = Arc<RwLock<TypeMap>>;
 
