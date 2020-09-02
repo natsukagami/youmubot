@@ -1,6 +1,9 @@
-use rustbreak::{deser::Yaml, FileDatabase};
+use rustbreak::{deser::Yaml, FileDatabase, RustbreakError as DBError};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serenity::{framework::standard::CommandError as Error, model::id::GuildId, prelude::*};
+use serenity::{
+    model::id::GuildId,
+    prelude::{TypeMap, TypeMapKey},
+};
 use std::{collections::HashMap, path::Path};
 
 /// GuildMap defines the guild-map type.
@@ -12,7 +15,7 @@ pub struct DB<T>(std::marker::PhantomData<T>);
 /// A short type abbreviation for a FileDatabase.
 type Database<T> = FileDatabase<T, Yaml>;
 
-impl<T: std::any::Any + Send + Sync> serenity::prelude::TypeMapKey for DB<T> {
+impl<T: std::any::Any + Send + Sync> TypeMapKey for DB<T> {
     type Value = Database<T>;
 }
 
@@ -21,7 +24,7 @@ where
     for<'de> T: Deserialize<'de>,
 {
     /// Insert into a ShareMap.
-    pub fn insert_into(data: &mut TypeMap, path: impl AsRef<Path>) -> Result<(), Error> {
+    pub fn insert_into(data: &mut TypeMap, path: impl AsRef<Path>) -> Result<(), DBError> {
         let db = Database::<T>::load_from_path_or_default(path)?;
         data.insert::<DB<T>>(db);
         Ok(())
@@ -61,13 +64,11 @@ where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
     /// Borrows the FileDatabase.
-    pub fn borrow(&'a self) -> Result<std::sync::RwLockReadGuard<T>, rustbreak::RustbreakError> {
+    pub fn borrow(&'a self) -> Result<std::sync::RwLockReadGuard<T>, DBError> {
         self.db.borrow_data()
     }
     /// Borrows the FileDatabase for writing.
-    pub fn borrow_mut(
-        &'a mut self,
-    ) -> Result<std::sync::RwLockWriteGuard<T>, rustbreak::RustbreakError> {
+    pub fn borrow_mut(&'a mut self) -> Result<std::sync::RwLockWriteGuard<T>, DBError> {
         self.needs_save = true;
         self.db.borrow_data_mut()
     }
