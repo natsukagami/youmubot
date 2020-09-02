@@ -13,42 +13,13 @@ pub use pagination::Pagination;
 pub use reaction_watch::{ReactionHandler, ReactionWatcher};
 
 /// The global app data.
-pub type AppData = Arc<RwLock<ShareMap>>;
+pub type AppData = Arc<RwLock<TypeMap>>;
 
 /// The HTTP client.
 pub struct HTTPClient;
 
 impl TypeMapKey for HTTPClient {
-    type Value = reqwest::blocking::Client;
-}
-
-/// The TypeMap trait that allows TypeMaps to quickly get a clonable item.
-pub trait GetCloned {
-    /// Gets an item from the store, cloned.
-    fn get_cloned<T>(&self) -> T::Value
-    where
-        T: TypeMapKey,
-        T::Value: Clone + Send + Sync;
-}
-
-impl GetCloned for ShareMap {
-    fn get_cloned<T>(&self) -> T::Value
-    where
-        T: TypeMapKey,
-        T::Value: Clone + Send + Sync,
-    {
-        self.get::<T>().cloned().expect("Should be there")
-    }
-}
-
-impl GetCloned for AppData {
-    fn get_cloned<T>(&self) -> T::Value
-    where
-        T: TypeMapKey,
-        T::Value: Clone + Send + Sync,
-    {
-        self.read().get::<T>().cloned().expect("Should be there")
-    }
+    type Value = reqwest::Client;
 }
 
 pub mod prelude_commands {
