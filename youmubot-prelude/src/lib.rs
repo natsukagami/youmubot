@@ -41,8 +41,8 @@ pub mod prelude_commands {
 
     #[command]
     #[description = "pong!"]
-    fn ping(ctx: &mut Context, m: &Message) -> CommandResult {
-        m.reply(&ctx, "Pong!")?;
+    async fn ping(ctx: &Context, m: &Message) -> CommandResult {
+        m.reply(&ctx, "Pong!").await?;
         Ok(())
     }
 }
