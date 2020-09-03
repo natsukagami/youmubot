@@ -187,8 +187,9 @@ pub async fn announcer_of(
 #[only_in(guilds)]
 pub async fn list_announcers(ctx: &Context, m: &Message, _: Args) -> CommandResult {
     let guild_id = m.guild_id.unwrap();
-    let announcers = AnnouncerChannels::open(&*ctx.data.read().await);
-    let channels = ctx.data.read().await.get::<AnnouncerHandler>().unwrap();
+    let data = &*ctx.data.read().await;
+    let announcers = AnnouncerChannels::open(data);
+    let channels = data.get::<AnnouncerHandler>().unwrap();
     let channels = channels
         .iter()
         .filter_map(|&key| {
@@ -221,8 +222,9 @@ pub async fn list_announcers(ctx: &Context, m: &Message, _: Args) -> CommandResu
 #[only_in(guilds)]
 #[num_args(1)]
 pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+    let data = ctx.data.read().await;
     let key = args.single::<String>()?;
-    let keys = ctx.data.read().await.get::<AnnouncerHandler>().unwrap();
+    let keys = data.get::<AnnouncerHandler>().unwrap();
     if !keys.contains(&&key[..]) {
         m.reply(
             &ctx,
@@ -236,7 +238,7 @@ pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> C
     }
     let guild = m.guild(&ctx).await.expect("Guild-only command");
     let channel = m.channel_id.to_channel(&ctx).await?;
-    AnnouncerChannels::open(&*ctx.data.read().await)
+    AnnouncerChannels::open(&*data)
         .borrow_mut()?
         .entry(key.clone())
         .or_default()
@@ -263,8 +265,9 @@ pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> C
 #[only_in(guilds)]
 #[num_args(1)]
 pub async fn remove_announcer(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+    let data = ctx.data.read().await;
     let key = args.single::<String>()?;
-    let keys = ctx.data.read().await.get::<AnnouncerHandler>().unwrap();
+    let keys = data.get::<AnnouncerHandler>().unwrap();
     if !keys.contains(&key.as_str()) {
         m.reply(
             &ctx,
@@ -277,7 +280,7 @@ pub async fn remove_announcer(ctx: &Context, m: &Message, mut args: Args) -> Com
         return Ok(());
     }
     let guild = m.guild(&ctx).await.expect("Guild-only command");
-    AnnouncerChannels::open(&*ctx.data.read().await)
+    AnnouncerChannels::open(&*data)
         .borrow_mut()?
         .entry(key.clone())
         .and_modify(|m| {
