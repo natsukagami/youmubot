@@ -64,11 +64,11 @@ where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
     /// Borrows the FileDatabase.
-    pub fn borrow(&'a self) -> Result<std::sync::RwLockReadGuard<T>, DBError> {
+    pub fn borrow(&self) -> Result<std::sync::RwLockReadGuard<T>, DBError> {
         self.db.borrow_data()
     }
     /// Borrows the FileDatabase for writing.
-    pub fn borrow_mut(&'a mut self) -> Result<std::sync::RwLockWriteGuard<T>, DBError> {
+    pub fn borrow_mut(&mut self) -> Result<std::sync::RwLockWriteGuard<T>, DBError> {
         self.needs_save = true;
         self.db.borrow_data_mut()
     }
