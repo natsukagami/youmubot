@@ -1,13 +1,15 @@
 use crate::db::{ServerSoftBans, SoftBans};
 use chrono::offset::Utc;
+use futures_util::{stream, TryStreamExt};
 use serenity::{
-    framework::standard::{macros::command, Args, CommandError as Error, CommandResult},
+    framework::standard::{macros::command, Args, CommandResult},
     model::{
         channel::Message,
-        id::{RoleId, UserId},
+        id::{GuildId, RoleId, UserId},
     },
+    CacheAndHttp,
 };
-use std::cmp::max;
+use std::sync::Arc;
 use youmubot_prelude::*;
 
 #[command]
@@ -18,57 +20,56 @@ use youmubot_prelude::*;
 #[min_args(1)]
 #[max_args(2)]
 #[only_in("guilds")]
-pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let user = args.single::<UserId>()?.to_user(&ctx)?;
+pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let user = args.single::<UserId>()?.to_user(&ctx).await?;
+    let data = ctx.data.read().await;
     let duration = if args.is_empty() {
         None
     } else {
-        Some(
-            args.single::<args::Duration>()
-                .map_err(|e| Error::from(&format!("{:?}", e)))?,
-        )
+        Some(args.single::<args::Duration>()?)
     };
-    let guild = msg.guild_id.ok_or(Error::from("Command is guild only"))?;
+    let guild = msg.guild_id.ok_or(Error::msg("Command is guild only"))?;
 
-    let db = SoftBans::open(&*ctx.data.read());
-    let mut db = db.borrow_mut()?;
-    let mut server_ban = db.get_mut(&guild).and_then(|v| match v {
-        ServerSoftBans::Unimplemented => None,
-        ServerSoftBans::Implemented(ref mut v) => Some(v),
-    });
-
-    match server_ban {
+    let db = SoftBans::open(&*data);
+    let val = db
+        .borrow()?
+        .get(&guild)
+        .map(|v| (v.role, v.periodical_bans.get(&user.id).cloned()));
+    let (role, current_ban_deadline) = match val {
         None => {
-            println!("get here");
-            msg.reply(&ctx, format!("⚠ This server has not enabled the soft-ban feature. Check out `y!a soft-ban-init`."))?;
+            msg.reply(&ctx, format!("⚠ This server has not enabled the soft-ban feature. Check out `y!a soft-ban-init`.")).await?;
+            return Ok(());
         }
-        Some(ref mut server_ban) => {
-            let mut member = guild.member(&ctx, &user)?;
-            match duration {
-                None if member.roles.contains(&server_ban.role) => {
-                    msg.reply(&ctx, format!("⛓ Lifting soft-ban for user {}.", user.tag()))?;
-                    member.remove_role(&ctx, server_ban.role)?;
-                    return Ok(());
-                }
-                None => {
-                    msg.reply(&ctx, format!("⛓ Soft-banning user {}.", user.tag()))?;
-                }
-                Some(v) => {
-                    let until = Utc::now() + chrono::Duration::from_std(v.0)?;
-                    let until = server_ban
-                        .periodical_bans
-                        .entry(user.id)
-                        .and_modify(|v| *v = max(*v, until))
-                        .or_insert(until);
-                    msg.reply(
-                        &ctx,
-                        format!("⛓ Soft-banning user {} until {}.", user.tag(), until),
-                    )?;
-                }
-            }
-            member.add_role(&ctx, server_ban.role)?;
+        Some(v) => v,
+    };
+
+    let mut member = guild.member(&ctx, &user).await?;
+    match duration {
+        None if member.roles.contains(&role) => {
+            msg.reply(&ctx, format!("⛓ Lifting soft-ban for user {}.", user.tag()))
+                .await?;
+            member.remove_role(&ctx, role).await?;
+            return Ok(());
+        }
+        None => {
+            msg.reply(&ctx, format!("⛓ Soft-banning user {}.", user.tag()))
+                .await?;
+        }
+        Some(v) => {
+            // Add the duration into the ban timeout.
+            let until =
+                current_ban_deadline.unwrap_or(Utc::now()) + chrono::Duration::from_std(v.0)?;
+            msg.reply(
+                &ctx,
+                format!("⛓ Soft-banning user {} until {}.", user.tag(), until),
+            )
+            .await?;
+            db.borrow_mut()?
+                .get_mut(&guild)
+                .map(|v| v.periodical_bans.insert(user.id, until));
         }
     }
+    member.add_role(&ctx, role).await?;
 
     Ok(())
 }
@@ -79,86 +80,89 @@ pub fn soft_ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResu
 #[usage = "{soft_ban_role_id}"]
 #[num_args(1)]
 #[only_in("guilds")]
-pub fn soft_ban_init(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let role_id = args.single::<RoleId>()?;
-    let guild = msg.guild(&ctx).ok_or(Error::from("Guild-only command"))?;
-    let guild = guild.read();
+    let guild = msg.guild(&ctx).await.unwrap();
     // Check whether the role_id is the one we wanted
     if !guild.roles.contains_key(&role_id) {
-        return Err(Error::from(format!(
+        Err(Error::msg(format!(
             "{} is not a role in this server.",
             role_id
-        )));
+        )))?;
     }
     // Check if we already set up
-    let db = SoftBans::open(&*ctx.data.read());
-    let mut db = db.borrow_mut()?;
-    let server = db
-        .get(&guild.id)
-        .map(|v| match v {
-            ServerSoftBans::Unimplemented => false,
-            _ => true,
-        })
-        .unwrap_or(false);
+    let db = SoftBans::open(&*ctx.data.read().await);
+    let set_up = db.borrow()?.contains_key(&guild.id);
 
-    if !server {
-        db.insert(guild.id, ServerSoftBans::new_implemented(role_id));
-        msg.react(&ctx, "👌")?;
-        Ok(())
+    if !set_up {
+        db.borrow_mut()?
+            .insert(guild.id, ServerSoftBans::new(role_id));
+        msg.react(&ctx, '👌').await?;
     } else {
-        Err(Error::from("Server already set up soft-bans."))
+        Err(Error::msg("Server already set up soft-bans."))?
     }
+    Ok(())
 }
 
 // Watch the soft bans.
-pub fn watch_soft_bans(client: &serenity::Client) -> impl FnOnce() -> () + 'static {
-    let cache_http = {
-        let cache_http = client.cache_and_http.clone();
-        let cache: serenity::cache::CacheRwLock = cache_http.cache.clone().into();
-        (cache, cache_http.http.clone())
-    };
-    let data = client.data.clone();
-    return move || {
-        let cache_http = (&cache_http.0, &*cache_http.1);
-        loop {
-            // Scope so that locks are released
-            {
-                // Poll the data for any changes.
-                let db = data.read();
-                let db = SoftBans::open(&*db);
-                let mut db = db.borrow_mut().expect("Borrowable");
-                let now = Utc::now();
-                for (server_id, soft_bans) in db.iter_mut() {
-                    let server_name: String = match server_id.to_partial_guild(cache_http) {
-                        Err(_) => continue,
-                        Ok(v) => v.name,
-                    };
-                    if let ServerSoftBans::Implemented(ref mut bans) = soft_bans {
-                        let to_remove: Vec<_> = bans
-                            .periodical_bans
-                            .iter()
-                            .filter_map(|(user, time)| if time <= &now { Some(user) } else { None })
-                            .cloned()
-                            .collect();
-                        for user_id in to_remove {
-                            server_id
-                                .member(cache_http, user_id)
-                                .and_then(|mut m| {
-                                    println!(
-                                        "Soft-ban for `{}` in server `{}` unlifted.",
-                                        m.user.read().name,
-                                        server_name
-                                    );
-                                    m.remove_role(cache_http, bans.role)
-                                })
-                                .unwrap_or(());
-                            bans.periodical_bans.remove(&user_id);
-                        }
-                    }
+pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
+    loop {
+        // Scope so that locks are released
+        {
+            // Poll the data for any changes.
+            let db = data.read().await;
+            let db = SoftBans::open(&*db);
+            let mut db = db.borrow().unwrap().clone();
+            let now = Utc::now();
+            for (server_id, bans) in db.iter_mut() {
+                let server_name: String = match server_id.to_partial_guild(&*cache_http.http).await
+                {
+                    Err(_) => continue,
+                    Ok(v) => v.name,
+                };
+                let to_remove: Vec<_> = bans
+                    .periodical_bans
+                    .iter()
+                    .filter_map(|(user, time)| if time <= &now { Some(user) } else { None })
+                    .cloned()
+                    .collect();
+                if let Err(e) = to_remove
+                    .into_iter()
+                    .map(|user_id| {
+                        bans.periodical_bans.remove(&user_id);
+                        lift_soft_ban_for(
+                            &*cache_http,
+                            *server_id,
+                            &server_name[..],
+                            bans.role,
+                            user_id,
+                        )
+                    })
+                    .collect::<stream::FuturesUnordered<_>>()
+                    .try_collect::<()>()
+                    .await
+                {
+                    eprintln!("Error while scanning soft-bans list: {}", e)
                 }
             }
-            // Sleep the thread for a minute
-            std::thread::sleep(std::time::Duration::from_secs(60))
         }
-    };
+        // Sleep the thread for a minute
+        tokio::time::delay_for(std::time::Duration::from_secs(60)).await
+    }
+}
+
+async fn lift_soft_ban_for(
+    cache_http: &CacheAndHttp,
+    server_id: GuildId,
+    server_name: &str,
+    ban_role: RoleId,
+    user_id: UserId,
+) -> Result<()> {
+    let mut m = server_id.member(cache_http, user_id).await?;
+    println!(
+        "Soft-ban for `{}` in server `{}` unlifted.",
+        m.user.name, server_name
+    );
+    m.remove_role(&cache_http.http, ban_role).await?;
+    Ok(())
 }
