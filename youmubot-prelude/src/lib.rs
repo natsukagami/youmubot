@@ -18,6 +18,9 @@ pub use async_trait::async_trait;
 /// Re-export the anyhow errors
 pub use anyhow::{Error, Result};
 
+/// Re-export useful future and stream utils
+pub use futures_util::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
+
 /// The global app data.
 pub type AppData = Arc<RwLock<TypeMap>>;
 
