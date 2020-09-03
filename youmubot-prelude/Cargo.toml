@@ -7,12 +7,17 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = "0.9.0-rc.0"
 anyhow = "1.0"
 async-trait = "0.1"
 futures-util = "0.3"
+tokio = { version = "0.2", features = ["time"] }
 youmubot-db = { path = "../youmubot-db" }
 crossbeam-channel = "0.4"
 reqwest = "0.10"
 rayon = "1"
 chrono = "0.4"
+
+[dependencies.serenity]
+version = "0.9.0-rc.0"
+default-features = true
+features = ["collector"]

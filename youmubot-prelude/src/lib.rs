@@ -4,13 +4,11 @@ use std::sync::Arc;
 pub mod announcer;
 pub mod args;
 pub mod pagination;
-pub mod reaction_watch;
 pub mod setup;
 
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
-pub use pagination::Pagination;
-pub use reaction_watch::{ReactionHandler, ReactionWatcher};
+pub use pagination::paginate;
 
 /// Re-export the anyhow errors
 pub use anyhow::{Error, Result};
