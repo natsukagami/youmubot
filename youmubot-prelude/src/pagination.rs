@@ -22,10 +22,10 @@ pub async fn paginate<'a, T, F>(
     timeout: std::time::Duration,
 ) -> Result<()>
 where
-    T: FnMut(u8, &Context, &Message) -> F,
+    T: for<'m> FnMut(u8, &'a Context, &'m mut Message) -> F,
     F: Future<Output = Result<bool>>,
 {
-    let message = channel
+    let mut message = channel
         .send_message(&ctx, |e| e.content("Youmu is loading the first page..."))
         .await?;
     // React to the message
@@ -45,7 +45,7 @@ where
             Err(_) => break Ok(()),
             Ok(None) => break Ok(()),
             Ok(Some(reaction)) => {
-                page = match handle_reaction(page, &mut pager, ctx, &message, &reaction).await {
+                page = match handle_reaction(page, &mut pager, ctx, &mut message, &reaction).await {
                     Ok(v) => v,
                     Err(e) => break Err(e),
                 };
@@ -63,11 +63,11 @@ async fn handle_reaction<'a, T, F>(
     page: u8,
     pager: &mut T,
     ctx: &'a Context,
-    message: &'_ Message,
+    message: &'_ mut Message,
     reaction: &ReactionAction,
 ) -> Result<u8>
 where
-    T: for<'n, 'm> FnMut(u8, &'n Context, &'m Message) -> F,
+    T: for<'m> FnMut(u8, &'a Context, &'m mut Message) -> F,
     F: Future<Output = Result<bool>>,
 {
     let reaction = match reaction {
