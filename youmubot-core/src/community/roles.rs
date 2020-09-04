@@ -1,6 +1,6 @@
 use crate::db::Roles as DB;
 use serenity::{
-    framework::standard::{macros::command, Args, CommandError as Error, CommandResult},
+    framework::standard::{macros::command, Args, CommandResult},
     model::{channel::Message, guild::Role, id::RoleId},
     utils::MessageBuilder,
 };
@@ -10,18 +10,22 @@ use youmubot_prelude::*;
 #[description = "List all available roles in the server."]
 #[num_args(0)]
 #[only_in(guilds)]
-fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
+async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
     let guild_id = m.guild_id.unwrap(); // only_in(guilds)
+    let data = ctx.data.read().await;
 
-    let db = DB::open(&*ctx.data.read());
-    let db = db.borrow()?;
-    let roles = db.get(&guild_id).filter(|v| !v.is_empty()).cloned();
+    let db = DB::open(&*data);
+    let roles = db
+        .borrow()?
+        .get(&guild_id)
+        .filter(|v| !v.is_empty())
+        .cloned();
     match roles {
         None => {
-            m.reply(&ctx, "No roles available for assigning.")?;
+            m.reply(&ctx, "No roles available for assigning.").await?;
         }
         Some(v) => {
-            let roles = guild_id.to_partial_guild(&ctx)?.roles;
+            let roles = guild_id.to_partial_guild(&ctx).await?.roles;
             let roles: Vec<_> = v
                 .into_iter()
                 .filter_map(|(_, role)| roles.get(&role.id).cloned().map(|r| (r, role.description)))
@@ -29,16 +33,13 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
             const ROLES_PER_PAGE: usize = 8;
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
-            let watcher = ctx.data.get_cloned::<ReactionWatcher>();
-            watcher.paginate_fn(
-                ctx.clone(),
-                m.channel_id,
-                move |page, e| {
+            paginate(
+                |page, ctx, msg| async move {
                     let page = page as usize;
                     let start = page * ROLES_PER_PAGE;
                     let end = roles.len().min(start + ROLES_PER_PAGE);
                     if end <= start {
-                        return (e, Err(Error::from("No more roles to display")));
+                        return Ok(false);
                     }
                     let roles = &roles[start..end];
                     let nw = roles // name width
@@ -91,46 +92,54 @@ fn list(ctx: &mut Context, m: &Message, _: Args) -> CommandResult {
                     m.push_line("```");
                     m.push(format!("Page **{}/{}**", page + 1, pages));
 
-                    (e.content(m.build()), Ok(()))
+                    msg.edit(ctx, |f| f.content(m.to_string())).await?;
+                    Ok(true)
                 },
+                ctx,
+                m.channel_id,
                 std::time::Duration::from_secs(60 * 10),
-            )?;
+            )
+            .await?;
         }
     };
     Ok(())
 }
+
+// async fn list_pager(
 
 #[command("role")]
 #[description = "Toggle a role by its name or ID."]
 #[example = "\"IELTS / TOEFL\""]
 #[num_args(1)]
 #[only_in(guilds)]
-fn toggle(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
+async fn toggle(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let role = args.single_quoted::<String>()?;
     let guild_id = m.guild_id.unwrap();
-    let roles = guild_id.to_partial_guild(&ctx)?.roles;
+    let roles = guild_id.to_partial_guild(&ctx).await?.roles;
     let role = role_from_string(&role, &roles);
     match role {
         None => {
-            m.reply(&ctx, "No such role exists")?;
+            m.reply(&ctx, "No such role exists").await?;
         }
         Some(role)
-            if !DB::open(&*ctx.data.read())
+            if !DB::open(&*ctx.data.read().await)
                 .borrow()?
                 .get(&guild_id)
                 .map(|g| g.contains_key(&role.id))
                 .unwrap_or(false) =>
         {
-            m.reply(&ctx, "This role is not self-assignable. Check the `listroles` command to see which role can be assigned.")?;
+            m.reply(&ctx, "This role is not self-assignable. Check the `listroles` command to see which role can be assigned.").await?;
         }
         Some(role) => {
-            let mut member = m.member(&ctx).ok_or(Error::from("Cannot find member"))?;
+            let mut member = m.member(&ctx).await.unwrap();
             if member.roles.contains(&role.id) {
-                member.remove_role(&ctx, &role)?;
-                m.reply(&ctx, format!("Role `{}` has been removed.", role.name))?;
+                member.remove_role(&ctx, &role).await?;
+                m.reply(&ctx, format!("Role `{}` has been removed.", role.name))
+                    .await?;
             } else {
-                member.add_role(&ctx, &role)?;
-                m.reply(&ctx, format!("Role `{}` has been assigned.", role.name))?;
+                member.add_role(&ctx, &role).await?;
+                m.reply(&ctx, format!("Role `{}` has been assigned.", role.name))
+                    .await?;
             }
         }
     };
@@ -144,27 +153,28 @@ fn toggle(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
 #[num_args(2)]
 #[required_permissions(MANAGE_ROLES)]
 #[only_in(guilds)]
-fn add(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
+async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let role = args.single_quoted::<String>()?;
     let description = args.single::<String>()?;
     let guild_id = m.guild_id.unwrap();
-    let roles = guild_id.to_partial_guild(&ctx)?.roles;
+    let roles = guild_id.to_partial_guild(&ctx).await?.roles;
     let role = role_from_string(&role, &roles);
     match role {
         None => {
-            m.reply(&ctx, "No such role exists")?;
+            m.reply(&ctx, "No such role exists").await?;
         }
         Some(role)
-            if DB::open(&*ctx.data.read())
+            if DB::open(&*ctx.data.read().await)
                 .borrow()?
                 .get(&guild_id)
                 .map(|g| g.contains_key(&role.id))
                 .unwrap_or(false) =>
         {
-            m.reply(&ctx, "This role already exists in the database.")?;
+            m.reply(&ctx, "This role already exists in the database.")
+                .await?;
         }
         Some(role) => {
-            DB::open(&*ctx.data.read())
+            DB::open(&*ctx.data.read().await)
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
@@ -175,7 +185,7 @@ fn add(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
                         description,
                     },
                 );
-            m.react(&ctx, "👌🏼")?;
+            m.react(&ctx, '👌').await?;
         }
     };
     Ok(())
@@ -188,31 +198,32 @@ fn add(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
 #[num_args(1)]
 #[required_permissions(MANAGE_ROLES)]
 #[only_in(guilds)]
-fn remove(ctx: &mut Context, m: &Message, mut args: Args) -> CommandResult {
+async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let role = args.single_quoted::<String>()?;
     let guild_id = m.guild_id.unwrap();
-    let roles = guild_id.to_partial_guild(&ctx)?.roles;
+    let roles = guild_id.to_partial_guild(&ctx).await?.roles;
     let role = role_from_string(&role, &roles);
     match role {
         None => {
-            m.reply(&ctx, "No such role exists")?;
+            m.reply(&ctx, "No such role exists").await?;
         }
         Some(role)
-            if !DB::open(&*ctx.data.read())
+            if !DB::open(&*ctx.data.read().await)
                 .borrow()?
                 .get(&guild_id)
                 .map(|g| g.contains_key(&role.id))
                 .unwrap_or(false) =>
         {
-            m.reply(&ctx, "This role does not exist in the assignable list.")?;
+            m.reply(&ctx, "This role does not exist in the assignable list.")
+                .await?;
         }
         Some(role) => {
-            DB::open(&*ctx.data.read())
+            DB::open(&*ctx.data.read().await)
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
                 .remove(&role.id);
-            m.react(&ctx, "👌🏼")?;
+            m.react(&ctx, '👌').await?;
         }
     };
     Ok(())
