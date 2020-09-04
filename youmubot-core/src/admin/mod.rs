@@ -53,7 +53,7 @@ async fn clean(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     };
     msg.react(&ctx, '🌋').await?;
     if let Channel::Guild(_) = &channel {
-        tokio::time::delay_for(Duration::from_secs(2)).await;
+        tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
         msg.delete(&ctx).await;
     }
 
