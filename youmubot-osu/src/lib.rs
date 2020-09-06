@@ -8,15 +8,14 @@ mod test;
 use models::*;
 use request::builders::*;
 use request::*;
-use reqwest::blocking::{Client as HTTPClient, RequestBuilder, Response};
-use serenity::framework::standard::CommandError as Error;
-use std::{convert::TryInto, sync::Arc};
+use reqwest::{Client as HTTPClient, RequestBuilder, Response};
+use std::convert::TryInto;
+use youmubot_prelude::*;
 
 /// Client is the client that will perform calls to the osu! api server.
-/// It's cheap to clone, so do it.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Client {
-    key: Arc<String>,
+    key: String,
     client: HTTPClient,
 }
 
@@ -34,48 +33,60 @@ impl Client {
     /// Create a new client from the given API key.
     pub fn new(http_client: HTTPClient, key: String) -> Client {
         Client {
-            key: Arc::new(key),
+            key,
             client: http_client,
         }
     }
 
-    fn build_request(&self, r: RequestBuilder) -> Result<Response, Error> {
+    async fn build_request(&self, r: RequestBuilder) -> Result<Response> {
         let v = r.query(&[("k", &*self.key)]).build()?;
         // dbg!(v.url());
-        Ok(self.client.execute(v)?)
+        Ok(self.client.execute(v).await?)
     }
 
-    pub fn beatmaps(
+    pub async fn beatmaps(
         &self,
         kind: BeatmapRequestKind,
         f: impl FnOnce(&mut BeatmapRequestBuilder) -> &mut BeatmapRequestBuilder,
-    ) -> Result<Vec<Beatmap>, Error> {
+    ) -> Result<Vec<Beatmap>> {
         let mut r = BeatmapRequestBuilder::new(kind);
         f(&mut r);
-        let res: Vec<raw::Beatmap> = self.build_request(r.build(&self.client))?.json()?;
+        let res: Vec<raw::Beatmap> = self
+            .build_request(r.build(&self.client))
+            .await?
+            .json()
+            .await?;
         Ok(vec_try_into(res)?)
     }
 
-    pub fn user(
+    pub async fn user(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserRequestBuilder) -> &mut UserRequestBuilder,
     ) -> Result<Option<User>, Error> {
         let mut r = UserRequestBuilder::new(user);
         f(&mut r);
-        let res: Vec<raw::User> = self.build_request(r.build(&self.client))?.json()?;
+        let res: Vec<raw::User> = self
+            .build_request(r.build(&self.client))
+            .await?
+            .json()
+            .await?;
         let res = vec_try_into(res)?;
         Ok(res.into_iter().next())
     }
 
-    pub fn scores(
+    pub async fn scores(
         &self,
         beatmap_id: u64,
         f: impl FnOnce(&mut ScoreRequestBuilder) -> &mut ScoreRequestBuilder,
     ) -> Result<Vec<Score>, Error> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
-        let res: Vec<raw::Score> = self.build_request(r.build(&self.client))?.json()?;
+        let res: Vec<raw::Score> = self
+            .build_request(r.build(&self.client))
+            .await?
+            .json()
+            .await?;
         let mut res: Vec<Score> = vec_try_into(res)?;
 
         // with a scores request you need to fill the beatmap ids yourself
@@ -85,23 +96,23 @@ impl Client {
         Ok(res)
     }
 
-    pub fn user_best(
+    pub async fn user_best(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
     ) -> Result<Vec<Score>, Error> {
-        self.user_scores(UserScoreType::Best, user, f)
+        self.user_scores(UserScoreType::Best, user, f).await
     }
 
-    pub fn user_recent(
+    pub async fn user_recent(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
     ) -> Result<Vec<Score>, Error> {
-        self.user_scores(UserScoreType::Recent, user, f)
+        self.user_scores(UserScoreType::Recent, user, f).await
     }
 
-    fn user_scores(
+    async fn user_scores(
         &self,
         u: UserScoreType,
         user: UserID,
@@ -109,7 +120,11 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
-        let res: Vec<raw::Score> = self.build_request(r.build(&self.client))?.json()?;
+        let res: Vec<raw::Score> = self
+            .build_request(r.build(&self.client))
+            .await?
+            .json()
+            .await?;
         let res = vec_try_into(res)?;
         Ok(res)
     }

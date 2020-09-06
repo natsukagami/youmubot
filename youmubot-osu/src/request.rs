@@ -1,6 +1,6 @@
 use crate::models::{Mode, Mods};
 use chrono::{DateTime, Utc};
-use reqwest::blocking::{Client, RequestBuilder};
+use reqwest::{Client, RequestBuilder};
 
 trait ToQuery {
     fn to_query(&self) -> Vec<(&'static str, String)>;
