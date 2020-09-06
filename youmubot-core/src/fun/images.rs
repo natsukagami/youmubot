@@ -15,24 +15,24 @@ use youmubot_prelude::*;
 #[description = "🖼️ Find an image with a given tag on Danbooru[nsfw]!"]
 #[min_args(1)]
 #[bucket("images")]
-pub fn nsfw(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    message_command(ctx, msg, args, Rating::Explicit)
+pub async fn nsfw(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    message_command(ctx, msg, args, Rating::Explicit).await
 }
 
 #[command]
 #[description = "🖼️ Find an image with a given tag on Danbooru[safe]!"]
 #[min_args(1)]
 #[bucket("images")]
-pub fn image(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    message_command(ctx, msg, args, Rating::Safe)
+pub async fn image(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    message_command(ctx, msg, args, Rating::Safe).await
 }
 
 #[check]
 #[name = "nsfw"]
-fn nsfw_check(ctx: &mut Context, msg: &Message, _: &mut Args, _: &CommandOptions) -> CheckResult {
-    let channel = msg.channel_id.to_channel(&ctx).unwrap();
+async fn nsfw_check(ctx: &Context, msg: &Message, _: &mut Args, _: &CommandOptions) -> CheckResult {
+    let channel = msg.channel_id.to_channel(&ctx).await.unwrap();
     if !(match channel {
-        Channel::Guild(guild_channel) => guild_channel.read().nsfw,
+        Channel::Guild(guild_channel) => guild_channel.nsfw,
         _ => true,
     }) {
         CheckResult::Failure(Reason::User("😣 YOU FREAKING PERVERT!!!".to_owned()))
@@ -41,22 +41,31 @@ fn nsfw_check(ctx: &mut Context, msg: &Message, _: &mut Args, _: &CommandOptions
     }
 }
 
-fn message_command(ctx: &mut Context, msg: &Message, args: Args, rating: Rating) -> CommandResult {
+async fn message_command(
+    ctx: &Context,
+    msg: &Message,
+    args: Args,
+    rating: Rating,
+) -> CommandResult {
     let tags = args.remains().unwrap_or("touhou");
-    let http = ctx.data.get_cloned::<HTTPClient>();
-    let image = get_image(&http, rating, tags)?;
+    let image = get_image(
+        ctx.data.read().await.get::<HTTPClient>().unwrap(),
+        rating,
+        tags,
+    )
+    .await?;
     match image {
-        None => msg.reply(&ctx, "🖼️ No image found...\n💡 Tip: In danbooru, character names follow Japanese standards (last name before first name), so **Hakurei Reimu** might give you an image while **Reimu Hakurei** won't."),
+        None => msg.reply(&ctx, "🖼️ No image found...\n💡 Tip: In danbooru, character names follow Japanese standards (last name before first name), so **Hakurei Reimu** might give you an image while **Reimu Hakurei** won't.").await,
         Some(url) => msg.reply(
             &ctx,
             format!("🖼️ Here's the image you requested!\n\n{}", url),
-        ),
+        ).await,
     }?;
     Ok(())
 }
 
 // Gets an image URL.
-fn get_image(
+async fn get_image(
     client: &<HTTPClient as TypeMapKey>::Value,
     rating: Rating,
     tags: &str,
@@ -72,7 +81,7 @@ fn get_image(
         .query(&[("limit", "1"), ("random", "true")])
         .build()?;
     println!("{:?}", req.url());
-    let response: Vec<PostResponse> = client.execute(req)?.json()?;
+    let response: Vec<PostResponse> = client.execute(req).await?.json().await?;
     Ok(response
         .into_iter()
         .next()
