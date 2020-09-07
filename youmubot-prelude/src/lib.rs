@@ -1,3 +1,5 @@
+/// Module `prelude` provides a sane set of default imports that can be used inside
+/// a Youmubot source file.
 pub use serenity::prelude::*;
 use std::sync::Arc;
 
@@ -9,6 +11,9 @@ pub mod setup;
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
 pub use pagination::paginate;
+
+/// Re-exporting async_trait helps with implementing Announcer.
+pub use async_trait::async_trait;
 
 /// Re-export the anyhow errors
 pub use anyhow::{Error, Result};
