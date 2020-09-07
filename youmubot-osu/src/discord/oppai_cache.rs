@@ -89,7 +89,7 @@ impl BeatmapCache {
     pub async fn get_beatmap<'a>(
         &'a self,
         id: u64,
-    ) -> Result<impl std::ops::Deref<Target = BeatmapContent> + 'a, CommandError> {
+    ) -> Result<impl std::ops::Deref<Target = BeatmapContent> + 'a> {
         if !self.cache.contains_key(&id) {
             self.cache.insert(id, self.download_beatmap(id).await?);
         }
