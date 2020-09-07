@@ -1,14 +1,18 @@
 use serenity::framework::standard::CommandError as Error;
 use serenity::{
+    collector::ReactionAction,
     framework::standard::{macros::command, Args, CommandResult},
     model::{
-        channel::{Message, Reaction, ReactionType},
+        channel::{Message, ReactionType},
         id::UserId,
     },
     utils::MessageBuilder,
 };
-use std::collections::{HashMap as Map, HashSet as Set};
 use std::time::Duration;
+use std::{
+    collections::{HashMap as Map, HashSet as Set},
+    convert::TryFrom,
+};
 use youmubot_prelude::{Duration as ParseDuration, *};
 
 #[command]
@@ -19,13 +23,13 @@ use youmubot_prelude::{Duration as ParseDuration, *};
 #[only_in(guilds)]
 #[min_args(2)]
 #[owner_privilege]
-pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     // Parse stuff first
     let args = args.quoted();
     let _duration = args.single::<ParseDuration>()?;
     let duration = &_duration.0;
     if *duration < Duration::from_secs(2 * 60) || *duration > Duration::from_secs(60 * 60 * 24) {
-        msg.reply(ctx, format!("😒 Invalid duration ({}). The voting time should be between **2 minutes** and **1 day**.", _duration))?;
+        msg.reply(ctx, format!("😒 Invalid duration ({}). The voting time should be between **2 minutes** and **1 day**.", _duration)).await?;
         return Ok(());
     }
     let question = args.single::<String>()?;
@@ -41,7 +45,8 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             msg.reply(
                 ctx,
                 "😒 Can't have a nice voting session if you only have one choice.",
-            )?;
+            )
+            .await?;
             return Ok(());
         }
         if choices.len() > MAX_CHOICES {
@@ -52,7 +57,8 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                     "😵 Too many choices... We only support {} choices at the moment!",
                     MAX_CHOICES
                 ),
-            )?;
+            )
+            .await?;
             return Ok(());
         }
 
@@ -89,123 +95,111 @@ pub fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             .description(MessageBuilder::new().push_bold_line_safe(&question).push("\nThis question was asked by ").push(author.mention()))
             .fields(fields.into_iter())
         })
-    })?;
-    msg.delete(&ctx)?;
+    }).await?;
+    msg.delete(&ctx).await?;
     // React on all the choices
     choices
         .iter()
-        .try_for_each(|(emote, _)| panel.react(&ctx, &emote[..]))?;
+        .map(|(emote, _)| {
+            panel
+                .react(&ctx, ReactionType::try_from(&emote[..]).unwrap())
+                .map_ok(|_| ())
+        })
+        .collect::<stream::FuturesUnordered<_>>()
+        .try_collect::<()>()
+        .await?;
 
     // A handler for votes.
-    struct VoteHandler {
-        pub ctx: Context,
-        pub msg: Message,
-        pub user_reactions: Map<String, Set<UserId>>,
+    let mut user_reactions: Map<String, Set<UserId>> = choices
+        .iter()
+        .map(|(emote, _)| (emote.clone(), Set::new()))
+        .collect();
 
-        pub panel: Message,
-    }
-
-    impl VoteHandler {
-        fn new(ctx: Context, msg: Message, panel: Message, choices: &[(String, String)]) -> Self {
-            VoteHandler {
-                ctx,
-                msg,
-                user_reactions: choices
-                    .iter()
-                    .map(|(emote, _)| (emote.clone(), Set::new()))
-                    .collect(),
-                panel,
-            }
-        }
-    }
-
-    impl ReactionHandler for VoteHandler {
-        fn handle_reaction(&mut self, reaction: &Reaction, is_add: bool) -> CommandResult {
-            if reaction.message_id != self.panel.id {
-                return Ok(());
-            }
-            if reaction.user(&self.ctx)?.bot {
-                return Ok(());
-            }
+    // Collect reactions...
+    msg.await_reactions(&ctx)
+        .timeout(*duration)
+        .await
+        .scan(user_reactions, |set, reaction| async move {
+            let (reaction, is_add) = match &*reaction {
+                ReactionAction::Added(r) => (r, true),
+                ReactionAction::Removed(r) => (r, false),
+            };
             let users = if let ReactionType::Unicode(ref s) = reaction.emoji {
-                if let Some(users) = self.user_reactions.get_mut(s.as_str()) {
+                if let Some(users) = set.get_mut(s.as_str()) {
                     users
                 } else {
-                    return Ok(());
+                    return None;
                 }
             } else {
-                return Ok(());
+                return None;
+            };
+            let user_id = match reaction.user_id {
+                Some(v) => v,
+                None => return None,
             };
             if is_add {
-                users.insert(reaction.user_id);
+                users.insert(user_id);
             } else {
-                users.remove(&reaction.user_id);
+                users.remove(&user_id);
             }
-            Ok(())
-        }
+            Some(())
+        })
+        .collect::<()>()
+        .await;
+
+    // Handle choices
+    let choice_map = choices.into_iter().collect::<Map<_, _>>();
+    let result: Vec<(String, Vec<UserId>)> = user_reactions
+        .into_iter()
+        .filter(|(_, users)| !users.is_empty())
+        .map(|(emote, users)| (emote, users.into_iter().collect()))
+        .collect();
+
+    if result.len() == 0 {
+        msg.reply(
+            &ctx,
+            MessageBuilder::new()
+                .push("no one answer your question ")
+                .push_bold_safe(&question)
+                .push(", sorry 😭")
+                .build(),
+        )
+        .await?;
+        return Ok(());
     }
 
-    ctx.data
-        .get_cloned::<ReactionWatcher>()
-        .handle_reactions_timed(
-            VoteHandler::new(ctx.clone(), msg.clone(), panel, &choices),
-            *duration,
-            move |vh| {
-                let (ctx, msg, user_reactions, panel) =
-                    (vh.ctx, vh.msg, vh.user_reactions, vh.panel);
-                let choice_map = choices.into_iter().collect::<Map<_, _>>();
-                let result: Vec<(String, Vec<UserId>)> = user_reactions
-                    .into_iter()
-                    .filter(|(_, users)| !users.is_empty())
-                    .map(|(emote, users)| (emote, users.into_iter().collect()))
-                    .collect();
-
-                if result.len() == 0 {
-                    msg.reply(
-                        &ctx,
-                        MessageBuilder::new()
-                            .push("no one answer your question ")
-                            .push_bold_safe(&question)
-                            .push(", sorry 😭")
-                            .build(),
-                    )
-                    .ok();
-                } else {
-                    channel
-                        .send_message(&ctx, |c| {
-                            c.content({
-                                let mut content = MessageBuilder::new();
-                                content
-                                    .push("@here, ")
-                                    .push(author.mention())
-                                    .push(" previously asked ")
-                                    .push_bold_safe(&question)
-                                    .push(", and here are the results!");
-                                result.into_iter().for_each(|(emote, votes)| {
-                                    content
-                                        .push("\n - ")
-                                        .push_bold(format!("{}", votes.len()))
-                                        .push(" voted for ")
-                                        .push(&emote)
-                                        .push(" ")
-                                        .push_bold_safe(choice_map.get(&emote).unwrap())
-                                        .push(": ")
-                                        .push(
-                                            votes
-                                                .into_iter()
-                                                .map(|v| v.mention())
-                                                .collect::<Vec<_>>()
-                                                .join(", "),
-                                        );
-                                });
-                                content.build()
-                            })
-                        })
-                        .ok();
-                }
-                panel.delete(&ctx).ok();
-            },
-        );
+    channel
+        .send_message(&ctx, |c| {
+            c.content({
+                let mut content = MessageBuilder::new();
+                content
+                    .push("@here, ")
+                    .push(author.mention())
+                    .push(" previously asked ")
+                    .push_bold_safe(&question)
+                    .push(", and here are the results!");
+                result.into_iter().for_each(|(emote, votes)| {
+                    content
+                        .push("\n - ")
+                        .push_bold(format!("{}", votes.len()))
+                        .push(" voted for ")
+                        .push(&emote)
+                        .push(" ")
+                        .push_bold_safe(choice_map.get(&emote).unwrap())
+                        .push(": ")
+                        .push(
+                            votes
+                                .into_iter()
+                                .map(|v| v.mention())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        );
+                });
+                content.build()
+            })
+        })
+        .await?;
+    panel.delete(&ctx).await?;
 
     Ok(())
     // unimplemented!();
