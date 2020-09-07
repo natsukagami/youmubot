@@ -1,12 +1,12 @@
 use serenity::framework::standard::CommandError;
-use std::{ffi::CString, sync::Arc};
-use youmubot_prelude::TypeMapKey;
+use std::ffi::CString;
+use youmubot_prelude::*;
 
 /// the information collected from a download/Oppai request.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BeatmapContent {
     id: u64,
-    content: Arc<CString>,
+    content: CString,
 }
 
 /// the output of "one" oppai run.
@@ -56,39 +56,44 @@ impl BeatmapContent {
 }
 
 /// A central cache for the beatmaps.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BeatmapCache {
-    client: reqwest::blocking::Client,
-    cache: Arc<dashmap::DashMap<u64, BeatmapContent>>,
+    client: reqwest::Client,
+    cache: dashmap::DashMap<u64, BeatmapContent>,
 }
 
 impl BeatmapCache {
     /// Create a new cache.
-    pub fn new(client: reqwest::blocking::Client) -> Self {
+    pub fn new(client: reqwest::Client) -> Self {
         BeatmapCache {
             client,
-            cache: Arc::new(dashmap::DashMap::new()),
+            cache: dashmap::DashMap::new(),
         }
     }
 
-    fn download_beatmap(&self, id: u64) -> Result<BeatmapContent, CommandError> {
+    async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
         let content = self
             .client
             .get(&format!("https://osu.ppy.sh/osu/{}", id))
-            .send()?
-            .bytes()?;
+            .send()
+            .await?
+            .bytes()
+            .await?;
         Ok(BeatmapContent {
             id,
-            content: Arc::new(CString::new(content.into_iter().collect::<Vec<_>>())?),
+            content: CString::new(content.into_iter().collect::<Vec<_>>())?,
         })
     }
 
     /// Get a beatmap from the cache.
-    pub fn get_beatmap(&self, id: u64) -> Result<BeatmapContent, CommandError> {
-        self.cache
-            .entry(id)
-            .or_try_insert_with(|| self.download_beatmap(id))
-            .map(|v| v.clone())
+    pub async fn get_beatmap<'a>(
+        &'a self,
+        id: u64,
+    ) -> Result<impl std::ops::Deref<Target = BeatmapContent> + 'a, CommandError> {
+        if !self.cache.contains_key(&id) {
+            self.cache.insert(id, self.download_beatmap(id).await?);
+        }
+        Ok(self.cache.get(&id).unwrap())
     }
 }
 

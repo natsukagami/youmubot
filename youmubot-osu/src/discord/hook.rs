@@ -128,12 +128,14 @@ fn handle_old_links<'a>(
                         .map(|v| Mods::from_str(v.as_str()).ok())
                         .flatten()
                         .unwrap_or(Mods::NOMOD);
-                    let info = mode.unwrap_or(b.mode).to_oppai_mode().and_then(|mode| {
-                        cache
+                    let info = match mode.unwrap_or(b.mode).to_oppai_mode() {
+                        Some(mode) => cache
                             .get_beatmap(b.beatmap_id)
+                            .await
                             .and_then(|b| b.get_info_with(Some(mode), mods))
-                            .ok()
-                    });
+                            .ok(),
+                        None => None,
+                    };
                     Some(ToPrint {
                         embed: EmbedType::Beatmap(b, info, mods),
                         link: capture.get(0).unwrap().as_str(),
@@ -198,15 +200,14 @@ fn handle_new_links<'a>(
                         .name("mods")
                         .and_then(|v| Mods::from_str(v.as_str()).ok())
                         .unwrap_or(Mods::NOMOD);
-                    let info = mode
-                        .unwrap_or(beatmap.mode)
-                        .to_oppai_mode()
-                        .and_then(|mode| {
-                            cache
-                                .get_beatmap(beatmap.beatmap_id)
-                                .and_then(|b| b.get_info_with(Some(mode), mods))
-                                .ok()
-                        });
+                    let info = match mode.unwrap_or(beatmap.mode).to_oppai_mode() {
+                        Some(mode) => cache
+                            .get_beatmap(beatmap.beatmap_id)
+                            .await
+                            .and_then(|b| b.get_info_with(Some(mode), mods))
+                            .ok(),
+                        None => None,
+                    };
                     Some(ToPrint {
                         embed: EmbedType::Beatmap(beatmap, info, mods),
                         link,
@@ -265,15 +266,14 @@ fn handle_short_links<'a>(
                 .name("mods")
                 .and_then(|v| Mods::from_str(v.as_str()).ok())
                 .unwrap_or(Mods::NOMOD);
-            let info = mode
-                .unwrap_or(beatmap.mode)
-                .to_oppai_mode()
-                .and_then(|mode| {
-                    cache
-                        .get_beatmap(beatmap.beatmap_id)
-                        .and_then(|b| b.get_info_with(Some(mode), mods))
-                        .ok()
-                });
+            let info = match mode.unwrap_or(beatmap.mode).to_oppai_mode() {
+                Some(mode) => cache
+                    .get_beatmap(beatmap.beatmap_id)
+                    .await
+                    .and_then(|b| b.get_info_with(Some(mode), mods))
+                    .ok(),
+                None => None,
+            };
             let r: Result<_> = Ok(ToPrint {
                 embed: EmbedType::Beatmap(beatmap, info, mods),
                 link: capture.get(0).unwrap().as_str(),
