@@ -12,8 +12,10 @@ osu = ["youmubot-osu"]
 codeforces = ["youmubot-cf"]
 
 [dependencies]
-serenity = "0.8"
+serenity = "0.9.0-rc.0"
+tokio = "0.2"
 dotenv = "0.15"
+env_logger = "0.7"
 youmubot-db = { path = "../youmubot-db" }
 youmubot-prelude = { path = "../youmubot-prelude" }
 youmubot-core = { path = "../youmubot-core" }
