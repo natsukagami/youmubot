@@ -9,10 +9,9 @@ pub(crate) fn save_beatmap(
     channel_id: ChannelId,
     bm: &BeatmapWithMode,
 ) -> Result<()> {
-    let db = OsuLastBeatmap::open(data);
-    let mut db = db.borrow_mut()?;
-
-    db.insert(channel_id, (bm.0.clone(), bm.mode()));
+    OsuLastBeatmap::open(data)
+        .borrow_mut()?
+        .insert(channel_id, (bm.0.clone(), bm.mode()));
 
     Ok(())
 }

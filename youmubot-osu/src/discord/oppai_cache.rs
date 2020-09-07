@@ -1,4 +1,3 @@
-use serenity::framework::standard::CommandError;
 use std::ffi::CString;
 use youmubot_prelude::*;
 
@@ -24,7 +23,7 @@ impl BeatmapContent {
         accuracy: f32,
         mode: Option<oppai_rs::Mode>,
         mods: impl Into<oppai_rs::Mods>,
-    ) -> Result<f32, CommandError> {
+    ) -> Result<f32> {
         let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
         oppai.combo(combo)?.accuracy(accuracy)?.mods(mods.into());
         if let Some(mode) = mode {
@@ -38,7 +37,7 @@ impl BeatmapContent {
         &self,
         mode: Option<oppai_rs::Mode>,
         mods: impl Into<oppai_rs::Mods>,
-    ) -> Result<BeatmapInfo, CommandError> {
+    ) -> Result<BeatmapInfo> {
         let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
         if let Some(mode) = mode {
             oppai.mode(mode)?;

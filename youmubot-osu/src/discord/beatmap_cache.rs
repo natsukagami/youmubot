@@ -3,13 +3,13 @@ use crate::{
     Client,
 };
 use dashmap::DashMap;
+use std::sync::Arc;
 use youmubot_prelude::*;
 
 /// BeatmapMetaCache intercepts beatmap-by-id requests and caches them for later recalling.
 /// Does not cache non-Ranked beatmaps.
-#[derive(Debug)]
 pub struct BeatmapMetaCache {
-    client: Client,
+    client: Arc<Client>,
     cache: DashMap<(u64, Mode), Beatmap>,
 }
 
@@ -19,7 +19,7 @@ impl TypeMapKey for BeatmapMetaCache {
 
 impl BeatmapMetaCache {
     /// Create a new beatmap cache.
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Arc<Client>) -> Self {
         BeatmapMetaCache {
             client,
             cache: DashMap::new(),
