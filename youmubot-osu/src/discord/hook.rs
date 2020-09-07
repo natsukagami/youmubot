@@ -25,49 +25,54 @@ lazy_static! {
     ).unwrap();
 }
 
-pub async fn hook(ctx: &Context, msg: &Message) -> Result<()> {
-    if msg.author.bot {
-        return Ok(());
-    }
-    let (old_links, new_links, short_links) = (
-        handle_old_links(ctx, &msg.content),
-        handle_new_links(ctx, &msg.content),
-        handle_short_links(ctx, &msg, &msg.content),
-    );
-    let last_beatmap = stream::select(old_links, stream::select(new_links, short_links))
-        .then(|l| async move {
-            let mut bm: Option<super::BeatmapWithMode> = None;
-            msg.channel_id
-                .send_message(&ctx, |m| match l.embed {
-                    EmbedType::Beatmap(b, info, mods) => {
-                        let t = handle_beatmap(&b, info, l.link, l.mode, mods, m);
-                        let mode = l.mode.unwrap_or(b.mode);
-                        bm = Some(super::BeatmapWithMode(b, mode));
-                        t
+pub fn hook<'a>(
+    ctx: &'a Context,
+    msg: &'a Message,
+) -> std::pin::Pin<Box<dyn future::Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        if msg.author.bot {
+            return Ok(());
+        }
+        let (old_links, new_links, short_links) = (
+            handle_old_links(ctx, &msg.content),
+            handle_new_links(ctx, &msg.content),
+            handle_short_links(ctx, &msg, &msg.content),
+        );
+        let last_beatmap = stream::select(old_links, stream::select(new_links, short_links))
+            .then(|l| async move {
+                let mut bm: Option<super::BeatmapWithMode> = None;
+                msg.channel_id
+                    .send_message(&ctx, |m| match l.embed {
+                        EmbedType::Beatmap(b, info, mods) => {
+                            let t = handle_beatmap(&b, info, l.link, l.mode, mods, m);
+                            let mode = l.mode.unwrap_or(b.mode);
+                            bm = Some(super::BeatmapWithMode(b, mode));
+                            t
+                        }
+                        EmbedType::Beatmapset(b) => handle_beatmapset(b, l.link, l.mode, m),
+                    })
+                    .await?;
+                let r: Result<_> = Ok(bm);
+                r
+            })
+            .filter_map(|v| async move {
+                match v {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        None
                     }
-                    EmbedType::Beatmapset(b) => handle_beatmapset(b, l.link, l.mode, m),
-                })
-                .await?;
-            let r: Result<_> = Ok(bm);
-            r
-        })
-        .filter_map(|v| async move {
-            match v {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{}", e);
-                    None
                 }
-            }
-        })
-        .fold(None, |_, v| async move { Some(v) })
-        .await;
+            })
+            .fold(None, |_, v| async move { Some(v) })
+            .await;
 
-    // Save the beatmap for query later.
-    if let Some(t) = last_beatmap {
-        super::cache::save_beatmap(&*ctx.data.read().await, msg.channel_id, &t)?;
-    }
-    Ok(())
+        // Save the beatmap for query later.
+        if let Some(t) = last_beatmap {
+            super::cache::save_beatmap(&*ctx.data.read().await, msg.channel_id, &t)?;
+        }
+        Ok(())
+    })
 }
 
 enum EmbedType {

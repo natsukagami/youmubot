@@ -13,12 +13,16 @@ use serenity::{
 use youmubot_prelude::*;
 
 struct Handler {
-    hooks: Vec<fn(&mut Context, &Message) -> ()>,
+    hooks: Vec<RwLock<Box<dyn Hook>>>,
 }
 
 impl Handler {
     fn new() -> Handler {
         Handler { hooks: vec![] }
+    }
+
+    fn push_hook<T: Hook + 'static>(&mut self, f: T) {
+        self.hooks.push(RwLock::new(Box::new(f)));
     }
 }
 
@@ -28,8 +32,22 @@ impl EventHandler for Handler {
         println!("{} is connected!", ready.user.name);
     }
 
-    async fn message(&self, mut ctx: Context, message: Message) {
-        self.hooks.iter().for_each(|f| f(&mut ctx, &message));
+    async fn message(&self, ctx: Context, message: Message) {
+        self.hooks
+            .iter()
+            .map(|hook| {
+                let ctx = ctx.clone();
+                let message = message.clone();
+                hook.write()
+                    .then(|mut h| async move { h.call(&ctx, &message).await })
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .for_each(|v| async move {
+                if let Err(e) = v {
+                    eprintln!("{}", e)
+                }
+            })
+            .await;
     }
 }
 
@@ -53,12 +71,12 @@ async fn main() {
         println!("Loaded dotenv from {:?}", path);
     }
 
-    let handler = Handler::new();
+    let mut handler = Handler::new();
     // Set up hooks
     #[cfg(feature = "osu")]
-    handler.hooks.push(youmubot_osu::discord::hook);
+    handler.push_hook(youmubot_osu::discord::hook);
     #[cfg(feature = "codeforces")]
-    handler.hooks.push(youmubot_cf::codeforces_info_hook);
+    handler.push_hook(youmubot_cf::codeforces_info_hook);
 
     // Collect the token
     let token = var("TOKEN").expect("Please set TOKEN as the Discord Bot's token to be used.");

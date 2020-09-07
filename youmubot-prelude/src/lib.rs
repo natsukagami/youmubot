@@ -5,11 +5,13 @@ use std::sync::Arc;
 
 pub mod announcer;
 pub mod args;
+pub mod hook;
 pub mod pagination;
 pub mod setup;
 
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
+pub use hook::Hook;
 pub use pagination::paginate;
 
 /// Re-exporting async_trait helps with implementing Announcer.

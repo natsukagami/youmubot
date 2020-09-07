@@ -49,7 +49,7 @@ impl TypeMapKey for OsuClient {
 ///  - Commands on the "osu" prefix
 ///  - Hooks. Hooks are completely opt-in.
 ///  
-pub async fn setup(
+pub fn setup(
     path: &std::path::Path,
     data: &mut TypeMap,
     announcers: &mut AnnouncerHandler,
