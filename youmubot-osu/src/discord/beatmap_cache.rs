@@ -3,16 +3,14 @@ use crate::{
     Client,
 };
 use dashmap::DashMap;
-use serenity::framework::standard::CommandError;
-use std::sync::Arc;
-use youmubot_prelude::TypeMapKey;
+use youmubot_prelude::*;
 
 /// BeatmapMetaCache intercepts beatmap-by-id requests and caches them for later recalling.
 /// Does not cache non-Ranked beatmaps.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BeatmapMetaCache {
     client: Client,
-    cache: Arc<DashMap<(u64, Mode), Beatmap>>,
+    cache: DashMap<(u64, Mode), Beatmap>,
 }
 
 impl TypeMapKey for BeatmapMetaCache {
@@ -24,10 +22,10 @@ impl BeatmapMetaCache {
     pub fn new(client: Client) -> Self {
         BeatmapMetaCache {
             client,
-            cache: Arc::new(DashMap::new()),
+            cache: DashMap::new(),
         }
     }
-    fn insert_if_possible(&self, id: u64, mode: Option<Mode>) -> Result<Beatmap, CommandError> {
+    async fn insert_if_possible(&self, id: u64, mode: Option<Mode>) -> Result<Beatmap> {
         let beatmap = self
             .client
             .beatmaps(crate::BeatmapRequestKind::Beatmap(id), |f| {
@@ -36,35 +34,37 @@ impl BeatmapMetaCache {
                 }
                 f
             })
-            .and_then(|v| {
-                v.into_iter()
-                    .next()
-                    .ok_or(CommandError::from("beatmap not found"))
-            })?;
+            .await
+            .and_then(|v| v.into_iter().next().ok_or(Error::msg("beatmap not found")))?;
         if let ApprovalStatus::Ranked(_) = beatmap.approval {
             self.cache.insert((id, beatmap.mode), beatmap.clone());
         };
         Ok(beatmap)
     }
     /// Get the given beatmap
-    pub fn get_beatmap(&self, id: u64, mode: Mode) -> Result<Beatmap, CommandError> {
-        self.cache
-            .get(&(id, mode))
-            .map(|b| Ok(b.clone()))
-            .unwrap_or_else(|| self.insert_if_possible(id, Some(mode)))
+    pub async fn get_beatmap(&self, id: u64, mode: Mode) -> Result<Beatmap> {
+        match self.cache.get(&(id, mode)).map(|v| v.clone()) {
+            Some(v) => Ok(v),
+            None => self.insert_if_possible(id, Some(mode)).await,
+        }
     }
 
     /// Get a beatmap without a mode...
-    pub fn get_beatmap_default(&self, id: u64) -> Result<Beatmap, CommandError> {
-        (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
-            .iter()
-            .filter_map(|&mode| {
-                self.cache
-                    .get(&(id, mode))
-                    .filter(|b| b.mode == mode)
-                    .map(|b| Ok(b.clone()))
-            })
-            .next()
-            .unwrap_or_else(|| self.insert_if_possible(id, None))
+    pub async fn get_beatmap_default(&self, id: u64) -> Result<Beatmap> {
+        Ok(
+            match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
+                .iter()
+                .filter_map(|&mode| {
+                    self.cache
+                        .get(&(id, mode))
+                        .filter(|b| b.mode == mode)
+                        .map(|b| b.clone())
+                })
+                .next()
+            {
+                Some(v) => v,
+                None => self.insert_if_possible(id, None).await?,
+            },
+        )
     }
 }
