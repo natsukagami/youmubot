@@ -2,3 +2,4 @@ target
 .env
 *.yaml
 cargo-remote
+.vscode
