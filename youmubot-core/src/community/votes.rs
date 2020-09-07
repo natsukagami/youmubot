@@ -28,7 +28,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let args = args.quoted();
     let _duration = args.single::<ParseDuration>()?;
     let duration = &_duration.0;
-    if *duration < Duration::from_secs(2 * 60) || *duration > Duration::from_secs(60 * 60 * 24) {
+    if *duration < Duration::from_secs(2) || *duration > Duration::from_secs(60 * 60 * 24) {
         msg.reply(ctx, format!("😒 Invalid duration ({}). The voting time should be between **2 minutes** and **1 day**.", _duration)).await?;
         return Ok(());
     }
@@ -97,6 +97,8 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         })
     }).await?;
     msg.delete(&ctx).await?;
+    drop(msg);
+
     // React on all the choices
     choices
         .iter()
@@ -110,16 +112,18 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .await?;
 
     // A handler for votes.
-    let mut user_reactions: Map<String, Set<UserId>> = choices
+    let user_reactions: Map<String, Set<UserId>> = choices
         .iter()
         .map(|(emote, _)| (emote.clone(), Set::new()))
         .collect();
 
     // Collect reactions...
-    msg.await_reactions(&ctx)
+    let user_reactions = panel
+        .await_reactions(&ctx)
+        .removed(true)
         .timeout(*duration)
         .await
-        .scan(user_reactions, |set, reaction| async move {
+        .fold(user_reactions, |mut set, reaction| async move {
             let (reaction, is_add) = match &*reaction {
                 ReactionAction::Added(r) => (r, true),
                 ReactionAction::Removed(r) => (r, false),
@@ -128,23 +132,22 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 if let Some(users) = set.get_mut(s.as_str()) {
                     users
                 } else {
-                    return None;
+                    return set;
                 }
             } else {
-                return None;
+                return set;
             };
             let user_id = match reaction.user_id {
                 Some(v) => v,
-                None => return None,
+                None => return set,
             };
             if is_add {
                 users.insert(user_id);
             } else {
                 users.remove(&user_id);
             }
-            Some(())
+            set
         })
-        .collect::<()>()
         .await;
 
     // Handle choices
@@ -232,4 +235,5 @@ const REACTIONS: [&'static str; 90] = [
 ];
 
 // Assertions
+static_assertions::const_assert!(MAX_CHOICES <= REACTIONS.len());
 static_assertions::const_assert!(MAX_CHOICES <= REACTIONS.len());

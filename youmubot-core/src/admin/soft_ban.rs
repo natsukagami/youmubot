@@ -30,7 +30,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
     };
     let guild = msg.guild_id.ok_or(Error::msg("Command is guild only"))?;
 
-    let db = SoftBans::open(&*data);
+    let mut db = SoftBans::open(&*data);
     let val = db
         .borrow()?
         .get(&guild)
@@ -82,6 +82,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
 #[only_in("guilds")]
 pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let role_id = args.single::<RoleId>()?;
+    let data = ctx.data.read().await;
     let guild = msg.guild(&ctx).await.unwrap();
     // Check whether the role_id is the one we wanted
     if !guild.roles.contains_key(&role_id) {
@@ -91,7 +92,7 @@ pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> Comm
         )))?;
     }
     // Check if we already set up
-    let db = SoftBans::open(&*ctx.data.read().await);
+    let mut db = SoftBans::open(&*data);
     let set_up = db.borrow()?.contains_key(&guild.id);
 
     if !set_up {
@@ -104,7 +105,7 @@ pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> Comm
     Ok(())
 }
 
-// Watch the soft bans.
+// Watch the soft bans. Blocks forever.
 pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
     loop {
         // Scope so that locks are released

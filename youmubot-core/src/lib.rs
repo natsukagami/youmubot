@@ -20,26 +20,30 @@ pub use fun::FUN_GROUP;
 pub fn setup(
     path: &std::path::Path,
     client: &serenity::client::Client,
-    data: &mut youmubot_prelude::ShareMap,
+    data: &mut TypeMap,
 ) -> serenity::framework::standard::CommandResult {
     db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
     db::Roles::insert_into(&mut *data, &path.join("roles.yaml"))?;
 
     // Create handler threads
-    std::thread::spawn(admin::watch_soft_bans(client));
+    tokio::spawn(admin::watch_soft_bans(
+        client.cache_and_http.clone(),
+        client.data.clone(),
+    ));
 
     Ok(())
 }
 
 // A help command
 #[help]
-pub fn help(
-    context: &mut Context,
+pub async fn help(
+    context: &Context,
     msg: &Message,
     args: Args,
     help_options: &'static HelpOptions,
     groups: &[&'static CommandGroup],
     owners: HashSet<UserId>,
 ) -> CommandResult {
-    help_commands::with_embeds(context, msg, args, help_options, groups, owners)
+    help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
+    Ok(())
 }

@@ -40,7 +40,7 @@ async fn clean(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             messages
                 .into_iter()
                 .filter(|v| v.author.id == self_id)
-                .map(|m| m.delete(&ctx))
+                .map(|m| async move { m.delete(&ctx).await })
                 .collect::<stream::FuturesUnordered<_>>()
                 .try_collect::<()>()
                 .await?;
@@ -54,7 +54,7 @@ async fn clean(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     msg.react(&ctx, '🌋').await?;
     if let Channel::Guild(_) = &channel {
         tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
-        msg.delete(&ctx).await;
+        msg.delete(&ctx).await.ok();
     }
 
     Ok(())

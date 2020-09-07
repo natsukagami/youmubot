@@ -41,10 +41,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
     } else {
         args.single::<String>()?
     };
-    let role = match args.single::<RoleId>().ok() {
-        Some(v) => v.to_role_cached(&ctx).await,
-        None => None,
-    };
+    let role = args.single::<RoleId>().ok();
 
     let users: Result<Vec<_>, Error> = {
         let guild = m.guild(&ctx).await.unwrap();
@@ -68,16 +65,21 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                 })
                 .map(|mem| future::ready(mem))
                 .collect::<stream::FuturesUnordered<_>>()
-                .filter(|member| async {
+                .filter_map(|member| async move {
                     // Filter by role if provided
                     if let Some(role) = role {
-                        member
+                        if member
                             .roles(&ctx)
                             .await
-                            .map(|roles| roles.into_iter().any(|r| role.id == r.id))
+                            .map(|roles| roles.into_iter().any(|r| role == r.id))
                             .unwrap_or(false)
+                        {
+                            Some(member)
+                        } else {
+                            None
+                        }
                     } else {
-                        true
+                        Some(member)
                     }
                 })
                 .collect()

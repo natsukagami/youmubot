@@ -1,6 +1,5 @@
 use crate::{AppData, Result};
 use async_trait::async_trait;
-use crossbeam_channel::after;
 use futures_util::{
     future::{join_all, ready, FutureExt},
     stream::{FuturesUnordered, StreamExt},
@@ -78,7 +77,7 @@ impl MemberToChannels {
 pub struct AnnouncerHandler {
     cache_http: Arc<CacheAndHttp>,
     data: AppData,
-    announcers: HashMap<&'static str, RwLock<Box<dyn Announcer>>>,
+    announcers: HashMap<&'static str, RwLock<Box<dyn Announcer + Send + Sync>>>,
 }
 
 // Querying for the AnnouncerHandler in the internal data returns a vec of keys.
@@ -100,7 +99,11 @@ impl AnnouncerHandler {
     /// Insert a new announcer into the handler.
     ///
     /// The handler must take an unique key. If a duplicate is found, this method panics.
-    pub fn add(&mut self, key: &'static str, announcer: impl Announcer + 'static) -> &mut Self {
+    pub fn add(
+        &mut self,
+        key: &'static str,
+        announcer: impl Announcer + Send + Sync + 'static,
+    ) -> &mut Self {
         if let Some(_) = self
             .announcers
             .insert(key, RwLock::new(Box::new(announcer)))
@@ -132,7 +135,7 @@ impl AnnouncerHandler {
         data: AppData,
         cache_http: Arc<CacheAndHttp>,
         key: &'static str,
-        announcer: &'_ RwLock<Box<dyn Announcer>>,
+        announcer: &'_ RwLock<Box<dyn Announcer + Send + Sync>>,
     ) -> Result<()> {
         let channels = MemberToChannels(Self::get_guilds(&data, key).await?);
         announcer
@@ -151,7 +154,8 @@ impl AnnouncerHandler {
         self.data.write().await.insert::<Self>(keys.clone());
         loop {
             eprintln!("{}: announcer started scanning", chrono::Utc::now());
-            let after_timer = after(cooldown);
+            // let after_timer = after(cooldown);
+            let after = tokio::time::delay_for(cooldown);
             join_all(self.announcers.iter().map(|(key, announcer)| {
                 eprintln!(" - scanning key `{}`", key);
                 Self::announce(self.data.clone(), self.cache_http.clone(), *key, announcer).map(
@@ -164,7 +168,7 @@ impl AnnouncerHandler {
             }))
             .await;
             eprintln!("{}: announcer finished scanning", chrono::Utc::now());
-            after_timer.recv().ok();
+            after.await;
         }
     }
 }

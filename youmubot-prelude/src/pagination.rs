@@ -13,18 +13,39 @@ use tokio::time as tokio_time;
 const ARROW_RIGHT: &'static str = "➡️";
 const ARROW_LEFT: &'static str = "⬅️";
 
-/// Paginate! with a pager function.
+#[async_trait::async_trait]
+pub trait Paginate {
+    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
+}
+
+#[async_trait::async_trait]
+impl<T> Paginate for T
+where
+    T: for<'m> FnMut(
+            u8,
+            &'m Context,
+            &'m mut Message,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
+        + Send,
+{
+    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool> {
+        self(page, ctx, m).await
+    }
+}
+
+// Paginate! with a pager function.
 /// If awaited, will block until everything is done.
-pub async fn paginate<'a, T, F>(
-    mut pager: T,
-    ctx: &'a Context,
+pub async fn paginate(
+    mut pager: impl for<'m> FnMut(
+            u8,
+            &'m Context,
+            &'m mut Message,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
+        + Send,
+    ctx: &Context,
     channel: ChannelId,
     timeout: std::time::Duration,
-) -> Result<()>
-where
-    T: for<'m> FnMut(u8, &'a Context, &'m mut Message) -> F,
-    F: Future<Output = Result<bool>>,
-{
+) -> Result<()> {
     let mut message = channel
         .send_message(&ctx, |e| e.content("Youmu is loading the first page..."))
         .await?;
@@ -35,8 +56,9 @@ where
     message
         .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
         .await?;
+    pager(0, ctx, &mut message).await?;
     // Build a reaction collector
-    let mut reaction_collector = message.await_reactions(&ctx).await;
+    let mut reaction_collector = message.await_reactions(&ctx).removed(true).await;
     let mut page = 0;
 
     // Loop the handler function.
@@ -59,29 +81,25 @@ where
 }
 
 // Handle the reaction and return a new page number.
-async fn handle_reaction<'a, T, F>(
+async fn handle_reaction(
     page: u8,
-    pager: &mut T,
-    ctx: &'a Context,
-    message: &'_ mut Message,
+    pager: &mut impl Paginate,
+    ctx: &Context,
+    message: &mut Message,
     reaction: &ReactionAction,
-) -> Result<u8>
-where
-    T: for<'m> FnMut(u8, &'a Context, &'m mut Message) -> F,
-    F: Future<Output = Result<bool>>,
-{
+) -> Result<u8> {
     let reaction = match reaction {
         ReactionAction::Added(v) | ReactionAction::Removed(v) => v,
     };
     match &reaction.emoji {
         ReactionType::Unicode(ref s) => match s.as_str() {
             ARROW_LEFT if page == 0 => Ok(page),
-            ARROW_LEFT => Ok(if pager(page - 1, ctx, message).await? {
+            ARROW_LEFT => Ok(if pager.render(page - 1, ctx, message).await? {
                 page - 1
             } else {
                 page
             }),
-            ARROW_RIGHT => Ok(if pager(page + 1, ctx, message).await? {
+            ARROW_RIGHT => Ok(if pager.render(page + 1, ctx, message).await? {
                 page + 1
             } else {
                 page

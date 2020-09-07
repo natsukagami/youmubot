@@ -34,66 +34,69 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
             paginate(
-                |page, ctx, msg| async move {
-                    let page = page as usize;
-                    let start = page * ROLES_PER_PAGE;
-                    let end = roles.len().min(start + ROLES_PER_PAGE);
-                    if end <= start {
-                        return Ok(false);
-                    }
-                    let roles = &roles[start..end];
-                    let nw = roles // name width
-                        .iter()
-                        .map(|(r, _)| r.name.len())
-                        .max()
-                        .unwrap()
-                        .max(6);
-                    let idw = roles[0].0.id.to_string().len();
-                    let dw = roles
-                        .iter()
-                        .map(|v| v.1.len())
-                        .max()
-                        .unwrap()
-                        .max(" Description ".len());
-                    let mut m = MessageBuilder::new();
-                    m.push_line("```");
+                |page, ctx, msg| {
+                    let roles = roles.clone();
+                    Box::pin(async move {
+                        let page = page as usize;
+                        let start = page * ROLES_PER_PAGE;
+                        let end = roles.len().min(start + ROLES_PER_PAGE);
+                        if end <= start {
+                            return Ok(false);
+                        }
+                        let roles = &roles[start..end];
+                        let nw = roles // name width
+                            .iter()
+                            .map(|(r, _)| r.name.len())
+                            .max()
+                            .unwrap()
+                            .max(6);
+                        let idw = roles[0].0.id.to_string().len();
+                        let dw = roles
+                            .iter()
+                            .map(|v| v.1.len())
+                            .max()
+                            .unwrap()
+                            .max(" Description ".len());
+                        let mut m = MessageBuilder::new();
+                        m.push_line("```");
 
-                    // Table header
-                    m.push_line(format!(
-                        "{:nw$} | {:idw$} | {:dw$}",
-                        "Name",
-                        "ID",
-                        "Description",
-                        nw = nw,
-                        idw = idw,
-                        dw = dw,
-                    ));
-                    m.push_line(format!(
-                        "{:->nw$}---{:->idw$}---{:->dw$}",
-                        "",
-                        "",
-                        "",
-                        nw = nw,
-                        idw = idw,
-                        dw = dw,
-                    ));
-
-                    for (role, description) in roles.iter() {
+                        // Table header
                         m.push_line(format!(
                             "{:nw$} | {:idw$} | {:dw$}",
-                            role.name,
-                            role.id,
-                            description,
+                            "Name",
+                            "ID",
+                            "Description",
                             nw = nw,
                             idw = idw,
                             dw = dw,
                         ));
-                    }
-                    m.push_line("```");
-                    m.push(format!("Page **{}/{}**", page + 1, pages));
+                        m.push_line(format!(
+                            "{:->nw$}---{:->idw$}---{:->dw$}",
+                            "",
+                            "",
+                            "",
+                            nw = nw,
+                            idw = idw,
+                            dw = dw,
+                        ));
 
-                    msg.edit(ctx, |f| f.content(m.to_string())).await?;
-                    Ok(true)
+                        for (role, description) in roles.iter() {
+                            m.push_line(format!(
+                                "{:nw$} | {:idw$} | {:dw$}",
+                                role.name,
+                                role.id,
+                                description,
+                                nw = nw,
+                                idw = idw,
+                                dw = dw,
+                            ));
+                        }
+                        m.push_line("```");
+                        m.push(format!("Page **{}/{}**", page + 1, pages));
+
+                        msg.edit(ctx, |f| f.content(m.to_string())).await?;
+                        Ok(true)
+                    })
                 },
                 ctx,
                 m.channel_id,
@@ -155,6 +158,7 @@ async fn toggle(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
 #[only_in(guilds)]
 async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let role = args.single_quoted::<String>()?;
+    let data = ctx.data.read().await;
     let description = args.single::<String>()?;
     let guild_id = m.guild_id.unwrap();
     let roles = guild_id.to_partial_guild(&ctx).await?.roles;
@@ -164,7 +168,7 @@ async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             m.reply(&ctx, "No such role exists").await?;
         }
         Some(role)
-            if DB::open(&*ctx.data.read().await)
+            if DB::open(&*data)
                 .borrow()?
                 .get(&guild_id)
                 .map(|g| g.contains_key(&role.id))
@@ -174,7 +178,7 @@ async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
                 .await?;
         }
         Some(role) => {
-            DB::open(&*ctx.data.read().await)
+            DB::open(&*data)
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
@@ -200,6 +204,7 @@ async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
 #[only_in(guilds)]
 async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let role = args.single_quoted::<String>()?;
+    let data = ctx.data.read().await;
     let guild_id = m.guild_id.unwrap();
     let roles = guild_id.to_partial_guild(&ctx).await?.roles;
     let role = role_from_string(&role, &roles);
@@ -208,7 +213,7 @@ async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             m.reply(&ctx, "No such role exists").await?;
         }
         Some(role)
-            if !DB::open(&*ctx.data.read().await)
+            if !DB::open(&*data)
                 .borrow()?
                 .get(&guild_id)
                 .map(|g| g.contains_key(&role.id))
@@ -218,7 +223,7 @@ async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
                 .await?;
         }
         Some(role) => {
-            DB::open(&*ctx.data.read().await)
+            DB::open(&*data)
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
