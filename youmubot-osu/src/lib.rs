@@ -14,7 +14,7 @@ use tower;
 use youmubot_prelude::*;
 
 /// The number of requests per minute to the osu! server.
-const REQUESTS_PER_MINUTE: u64 = 50;
+const REQUESTS_PER_MINUTE: u64 = 200;
 
 type BoxedResp =
     std::pin::Pin<Box<dyn future::Future<Output = Result<Response, reqwest::Error>> + Send>>;
@@ -64,7 +64,9 @@ impl Client {
 
     async fn build_request(&self, r: RequestBuilder) -> Result<Response> {
         let v = r.query(&[("k", &*self.key)]).build()?;
-        Ok(self.http_client.write().await.call(v).await?)
+        let mut client = self.http_client.write().await;
+        future::poll_fn(|ctx| client.poll_ready(ctx)).await?;
+        Ok(client.call(v).await?)
     }
 
     pub async fn beatmaps(

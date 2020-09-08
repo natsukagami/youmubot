@@ -21,7 +21,7 @@ lazy_static! {
         r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:\+(?P<mods>[A-Z]+))?"
     ).unwrap();
     static ref SHORT_LINK_REGEX: Regex = Regex::new(
-        r"(?:^|\s)/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>[A-Z]+))?"
+        r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>[A-Z]+))?)"
     ).unwrap();
 }
 
@@ -281,7 +281,7 @@ fn handle_short_links<'a>(
             };
             let r: Result<_> = Ok(ToPrint {
                 embed: EmbedType::Beatmap(beatmap, info, mods),
-                link: capture.get(0).unwrap().as_str(),
+                link: capture.name("main").unwrap().as_str(),
                 mode,
             });
             r

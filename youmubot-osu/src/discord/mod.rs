@@ -2,7 +2,7 @@ use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
     discord::oppai_cache::BeatmapCache,
     models::{Beatmap, Mode, Mods, Score, User},
-    request::{BeatmapRequestKind, UserID},
+    request::UserID,
     Client as OsuHttpClient,
 };
 use serenity::{
@@ -527,8 +527,9 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .unwrap_or(Mode::Std);
 
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
-
+    let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
     let osu = data.get::<OsuClient>().unwrap();
+
     let oppai = data.get::<BeatmapCache>().unwrap();
     let user = osu
         .user(user, |f| f.mode(mode))
@@ -547,14 +548,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .into_iter()
                 .last()
                 .ok_or(Error::from("No such play"))?;
-            let beatmap = osu
-                .beatmaps(BeatmapRequestKind::Beatmap(top_play.beatmap_id), |f| {
-                    f.mode(mode, true)
-                })
-                .await?
-                .into_iter()
-                .next()
-                .unwrap();
+            let beatmap = meta_cache.get_beatmap(top_play.beatmap_id, mode).await?;
             let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, mode);
 
