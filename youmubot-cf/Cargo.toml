@@ -10,7 +10,7 @@ serde = { version = "1", features = ["derive"] }
 reqwest = "0.10.1"
 serenity = "0.8"
 Inflector = "0.11"
-codeforces = { git = "https://github.com/natsukagami/rust-codeforces-api" }
+codeforces = "0.2"
 regex = "1"
 lazy_static = "1"
 rayon = "1"
