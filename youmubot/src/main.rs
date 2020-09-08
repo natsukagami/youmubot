@@ -223,8 +223,8 @@ async fn on_dispatch_error(ctx: &Context, msg: &Message, error: DispatchError) {
         &ctx,
         &match error {
             DispatchError::Ratelimited(seconds) => format!(
-                "⏳ You are being rate-limited! Try this again in **{} seconds**.",
-                seconds
+                "⏳ You are being rate-limited! Try this again in **{}**.",
+                youmubot_prelude::Duration(seconds),
             ),
             DispatchError::NotEnoughArguments { min, given } => {
                 format!(
