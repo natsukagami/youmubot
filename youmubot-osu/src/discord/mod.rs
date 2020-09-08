@@ -248,6 +248,7 @@ async fn list_plays<'a>(
                     return Ok(false);
                 }
 
+                let hourglass = msg.react(ctx, '⌛').await?;
                 let plays = &plays[start..end];
                 let beatmaps = plays
                     .iter()
@@ -364,6 +365,7 @@ async fn list_plays<'a>(
                     m.push_line("[?] means pp was predicted by oppai-rs.");
                 }
                 msg.edit(ctx, |f| f.content(m.to_string())).await?;
+                hourglass.delete(ctx).await?;
                 Ok(true)
             })
         },
