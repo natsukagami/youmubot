@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 reqwest = "0.10.1"
-serenity = "0.8"
+serenity = "0.9.0-rc.0"
 Inflector = "0.11"
 codeforces = "0.2"
 regex = "1"
@@ -16,6 +16,8 @@ lazy_static = "1"
 rayon = "1"
 chrono = { version = "0.4", features = ["serde"] }
 crossbeam-channel = "0.4"
+dashmap = "3.11.4"
+
 
 youmubot-prelude = { path = "../youmubot-prelude" }
 youmubot-db = { path = "../youmubot-db" }
