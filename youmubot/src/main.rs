@@ -76,7 +76,7 @@ async fn main() {
     #[cfg(feature = "osu")]
     handler.push_hook(youmubot_osu::discord::hook);
     #[cfg(feature = "codeforces")]
-    handler.push_hook(youmubot_cf::codeforces_info_hook);
+    handler.push_hook(youmubot_cf::InfoHook);
 
     // Collect the token
     let token = var("TOKEN").expect("Please set TOKEN as the Discord Bot's token to be used.");
@@ -123,7 +123,7 @@ async fn main() {
             .expect("osu! is initialized");
         // codeforces
         #[cfg(feature = "codeforces")]
-        youmubot_cf::setup(&db_path, &mut data, &mut announcers);
+        youmubot_cf::setup(&db_path, &mut data, &mut announcers).await;
     }
 
     #[cfg(feature = "core")]
