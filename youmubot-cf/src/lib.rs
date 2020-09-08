@@ -7,7 +7,7 @@ use serenity::{
     model::channel::Message,
     utils::MessageBuilder,
 };
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use youmubot_prelude::*;
 
 mod announcer;
@@ -18,15 +18,25 @@ mod hook;
 /// Live-commentating a Codeforces round.
 mod live;
 
+/// The TypeMapKey holding the Client.
+struct CFClient;
+
+impl TypeMapKey for CFClient {
+    type Value = Arc<codeforces::Client>;
+}
+
 use db::{CfSavedUsers, CfUser};
 
 pub use hook::codeforces_info_hook;
 
 /// Sets up the CF databases.
-pub fn setup(path: &std::path::Path, data: &mut ShareMap, announcers: &mut AnnouncerHandler) {
+pub async fn setup(path: &std::path::Path, data: &mut TypeMap, announcers: &mut AnnouncerHandler) {
     CfSavedUsers::insert_into(data, path.join("cf_saved_users.yaml"))
         .expect("Must be able to set up DB");
-    data.insert::<hook::ContestCache>(hook::ContestCache::default());
+    let http = data.get::<HTTPClient>().unwrap();
+    let client = Arc::new(codeforces::Client::new(http.clone()));
+    data.insert::<hook::ContestCache>(hook::ContestCache::new(client.clone()).await.unwrap());
+    data.insert::<CFClient>(client);
     announcers.add("codeforces", announcer::updates);
 }
 
