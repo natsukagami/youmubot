@@ -1,9 +1,7 @@
-use crate::CFClient;
 use chrono::{TimeZone, Utc};
 use codeforces::{Client, Contest, Problem};
 use dashmap::DashMap as HashMap;
 use lazy_static::lazy_static;
-use rayon::{iter::Either, prelude::*};
 use regex::{Captures, Regex};
 use serenity::{
     builder::CreateEmbed, framework::standard::CommandError, model::channel::Message,
@@ -104,7 +102,6 @@ impl Hook for InfoHook {
             return Ok(());
         }
         let data = ctx.data.read().await;
-        let http = data.get::<CFClient>().unwrap();
         let contest_cache = data.get::<ContestCache>().unwrap();
         let matches = parse(&m.content[..], contest_cache)
             .collect::<Vec<_>>()
@@ -138,11 +135,24 @@ fn print_info_message<'a>(
     info: &[(ContestOrProblem, &str)],
     e: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
-    let (mut problems, contests): (Vec<_>, Vec<_>) =
-        info.par_iter().partition_map(|(v, l)| match v {
-            ContestOrProblem::Problem(p) => Either::Left((p, l)),
-            ContestOrProblem::Contest(c, p) => Either::Right((c, p, l)),
-        });
+    let (problems, contests): (Vec<_>, Vec<_>) = info.iter().partition(|(v, _)| match v {
+        ContestOrProblem::Problem(_) => true,
+        ContestOrProblem::Contest(_, _) => false,
+    });
+    let mut problems = problems
+        .into_iter()
+        .map(|(v, l)| match v {
+            ContestOrProblem::Problem(p) => (p, l),
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
+    let contests = contests
+        .into_iter()
+        .map(|(v, l)| match v {
+            ContestOrProblem::Contest(c, p) => (c, p, l),
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
     problems.sort_by(|(a, _), (b, _)| a.rating.unwrap_or(1500).cmp(&b.rating.unwrap_or(1500)));
     let mut m = MessageBuilder::new();
     if !problems.is_empty() {

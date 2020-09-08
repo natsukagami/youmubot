@@ -9,8 +9,6 @@ use serenity::{http::CacheHttp, model::id::UserId, CacheAndHttp};
 use std::sync::Arc;
 use youmubot_prelude::*;
 
-type Reqwest = <HTTPClient as TypeMapKey>::Value;
-
 /// Updates the rating and rating changes of the users.
 pub struct Announcer;
 
