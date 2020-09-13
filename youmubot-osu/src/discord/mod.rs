@@ -250,7 +250,7 @@ fn list_plays(plays: Vec<Score>, mode: Mode, ctx: Context, m: &Message) -> Comma
             }
 
             let plays = &plays[start..end];
-            let beatmaps = {
+            let beatmaps: Vec<&mut String> = {
                 let b = &mut beatmaps[start..end];
                 b.par_iter_mut()
                     .enumerate()
@@ -453,7 +453,8 @@ pub fn last(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 
 #[command]
 #[aliases("c", "chk")]
-#[description = "Check your own or someone else's best record on the last beatmap."]
+#[usage = "[username or tag = yourself]"]
+#[description = "Check your own or someone else's best record on the last beatmap. Also stores the result if possible."]
 #[max_args(1)]
 pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let bm = cache::get_beatmap(&*ctx.data.read(), msg.channel_id)?;
@@ -465,7 +466,13 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
         Some(bm) => {
             let b = &bm.0;
             let m = bm.1;
-            let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*ctx.data.read(), msg)?;
+            let username_arg = args.single::<UsernameArg>().ok();
+            let user_id = match username_arg.as_ref() {
+                Some(UsernameArg::Tagged(v)) => Some(v.clone()),
+                None => Some(msg.author.id),
+                _ => None,
+            };
+            let user = to_user_id_query(username_arg, &*ctx.data.read(), msg)?;
 
             let osu = ctx.data.get_cloned::<OsuClient>();
             let oppai = ctx.data.get_cloned::<BeatmapCache>();
@@ -481,10 +488,19 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
                 msg.reply(&ctx, "No scores found")?;
             }
 
-            for score in scores.into_iter() {
+            for score in scores.iter() {
                 msg.channel_id.send_message(&ctx, |c| {
-                    c.embed(|m| score_embed(&score, &bm, &content, &user, None, m))
+                    c.embed(|m| score_embed(score, &bm, &content, &user, None, m))
                 })?;
+            }
+
+            if let Some(user_id) = user_id {
+                // Save to database
+                OsuUserBests::open(&*ctx.data.read())
+                    .borrow_mut()?
+                    .entry((bm.0.beatmap_id, bm.1))
+                    .or_default()
+                    .insert(user_id, scores);
             }
         }
     }
@@ -494,7 +510,7 @@ pub fn check(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult 
 
 #[command]
 #[description = "Get the n-th top record of an user."]
-#[usage = "#[n-th = --all] / [mode (std, taiko, catch, mania) = std / [username or user_id = your saved user id]"]
+#[usage = "#[n-th = --all] / [mode (std, taiko, catch, mania)] = std / [username or user_id = your saved user id]"]
 #[example = "#2 / taiko / natsukagami"]
 #[max_args(3)]
 pub fn top(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {

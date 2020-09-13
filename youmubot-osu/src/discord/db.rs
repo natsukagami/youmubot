@@ -13,7 +13,8 @@ pub type OsuSavedUsers = DB<HashMap<UserId, OsuUser>>;
 pub type OsuLastBeatmap = DB<HashMap<ChannelId, (Beatmap, Mode)>>;
 
 /// Save each beatmap's plays by user.
-pub type OsuUserBests = DB<HashMap<u64 /* Beatmap ID */, HashMap<UserId, Vec<Score>>>>;
+pub type OsuUserBests =
+    DB<HashMap<(u64, Mode) /* Beatmap ID and Mode */, HashMap<UserId, Vec<Score>>>>;
 
 /// An osu! saved user.
 #[derive(Serialize, Deserialize, Debug, Clone)]
