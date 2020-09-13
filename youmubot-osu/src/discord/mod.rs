@@ -27,7 +27,7 @@ pub(crate) mod oppai_cache;
 mod server_rank;
 
 use db::OsuUser;
-use db::{OsuLastBeatmap, OsuSavedUsers};
+use db::{OsuLastBeatmap, OsuSavedUsers, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
 use server_rank::SERVER_RANK_COMMAND;
@@ -58,6 +58,7 @@ pub fn setup(
     // Databases
     OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
     OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
+    OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
 
     // API client
     let http_client = data.get_cloned::<HTTPClient>();
