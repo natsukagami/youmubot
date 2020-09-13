@@ -30,7 +30,7 @@ use db::OsuUser;
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
-use server_rank::SERVER_RANK_COMMAND;
+use server_rank::{LEADERBOARD_COMMAND, SERVER_RANK_COMMAND};
 
 /// The osu! client.
 pub(crate) struct OsuClient;
@@ -80,7 +80,19 @@ pub fn setup(
 #[group]
 #[prefix = "osu"]
 #[description = "osu! related commands."]
-#[commands(std, taiko, catch, mania, save, recent, last, check, top, server_rank)]
+#[commands(
+    std,
+    taiko,
+    catch,
+    mania,
+    save,
+    recent,
+    last,
+    check,
+    top,
+    server_rank,
+    leaderboard
+)]
 #[default_command(std)]
 struct Osu;
 
