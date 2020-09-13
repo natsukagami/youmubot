@@ -136,7 +136,7 @@ pub fn leaderboard(ctx: &mut Context, m: &Message, mut _args: Args) -> CommandRe
             .filter_map(|(user, score)| score.pp.map(|v| (v, user, score)))
             .collect::<Vec<_>>();
         scores
-            .sort_by(|(a, _, _), (b, _, _)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            .sort_by(|(a, _, _), (b, _, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
         scores
     };
 
