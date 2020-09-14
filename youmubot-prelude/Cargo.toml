@@ -14,6 +14,7 @@ tokio = { version = "0.2", features = ["time"] }
 youmubot-db = { path = "../youmubot-db" }
 reqwest = "0.10"
 chrono = "0.4"
+flume = "0.9"
 
 [dependencies.serenity]
 version = "0.9.0-rc.0"

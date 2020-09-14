@@ -8,6 +8,7 @@ pub mod args;
 pub mod hook;
 pub mod pagination;
 pub mod setup;
+pub mod ratelimit;
 
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
