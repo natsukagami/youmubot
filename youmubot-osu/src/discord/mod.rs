@@ -26,10 +26,10 @@ pub(crate) mod oppai_cache;
 mod server_rank;
 
 use db::OsuUser;
-use db::{OsuLastBeatmap, OsuSavedUsers};
+use db::{OsuLastBeatmap, OsuSavedUsers, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
-use server_rank::SERVER_RANK_COMMAND;
+use server_rank::{LEADERBOARD_COMMAND, SERVER_RANK_COMMAND};
 
 /// The osu! client.
 pub(crate) struct OsuClient;
@@ -57,6 +57,7 @@ pub fn setup(
     // Databases
     OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
     OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
+    OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
 
     // API client
     let http_client = data.get::<HTTPClient>().unwrap().clone();
@@ -77,7 +78,19 @@ pub fn setup(
 #[group]
 #[prefix = "osu"]
 #[description = "osu! related commands."]
-#[commands(std, taiko, catch, mania, save, recent, last, check, top, server_rank)]
+#[commands(
+    std,
+    taiko,
+    catch,
+    mania,
+    save,
+    recent,
+    last,
+    check,
+    top,
+    server_rank,
+    leaderboard
+)]
 #[default_command(std)]
 struct Osu;
 
@@ -469,7 +482,8 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
 #[command]
 #[aliases("c", "chk")]
-#[description = "Check your own or someone else's best record on the last beatmap."]
+#[usage = "[username or tag = yourself]"]
+#[description = "Check your own or someone else's best record on the last beatmap. Also stores the result if possible."]
 #[max_args(1)]
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
@@ -483,7 +497,13 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         Some(bm) => {
             let b = &bm.0;
             let m = bm.1;
-            let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
+            let username_arg = args.single::<UsernameArg>().ok();
+            let user_id = match username_arg.as_ref() {
+                Some(UsernameArg::Tagged(v)) => Some(v.clone()),
+                None => Some(msg.author.id),
+                _ => None,
+            };
+            let user = to_user_id_query(username_arg, &*data, msg)?;
 
             let osu = data.get::<OsuClient>().unwrap();
             let oppai = data.get::<BeatmapCache>().unwrap();
@@ -502,12 +522,21 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 msg.reply(&ctx, "No scores found").await?;
             }
 
-            for score in scores.into_iter() {
+            for score in scores.iter() {
                 msg.channel_id
                     .send_message(&ctx, |c| {
                         c.embed(|m| score_embed(&score, &bm, &content, &user, None, m))
                     })
                     .await?;
+            }
+
+            if let Some(user_id) = user_id {
+                // Save to database
+                OsuUserBests::open(&*data)
+                    .borrow_mut()?
+                    .entry((bm.0.beatmap_id, bm.1))
+                    .or_default()
+                    .insert(user_id, scores);
             }
         }
     }
