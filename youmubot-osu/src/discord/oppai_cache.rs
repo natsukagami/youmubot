@@ -56,15 +56,14 @@ impl BeatmapContent {
 
 /// A central cache for the beatmaps.
 pub struct BeatmapCache {
-    client: ratelimit::Ratelimit<surf::Client>,
+    client: ratelimit::Ratelimit<reqwest::Client>,
     cache: dashmap::DashMap<u64, Arc<BeatmapContent>>,
 }
 
 impl BeatmapCache {
     /// Create a new cache.
-    pub fn new() -> Self {
-        let client =
-            ratelimit::Ratelimit::new(surf::Client::new(), 5, std::time::Duration::from_secs(1));
+    pub fn new(client: reqwest::Client) -> Self {
+        let client = ratelimit::Ratelimit::new(client, 5, std::time::Duration::from_secs(1));
         BeatmapCache {
             client,
             cache: dashmap::DashMap::new(),
@@ -78,14 +77,12 @@ impl BeatmapCache {
             .await?
             .get(&format!("https://osu.ppy.sh/osu/{}", id))
             .send()
-            .await
-            .map_err(|e| Error::msg(format!("{}", e)))?
-            .body_bytes()
-            .await
-            .map_err(|e| Error::msg(format!("{}", e)))?;
+            .await?
+            .bytes()
+            .await?;
         Ok(BeatmapContent {
             id,
-            content: CString::new(content)?,
+            content: CString::new(content.into_iter().collect::<Vec<_>>())?,
         })
     }
 

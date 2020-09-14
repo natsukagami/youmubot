@@ -8,12 +8,12 @@ mod test;
 use models::*;
 use request::builders::*;
 use request::*;
-use reqwest::{Client as HTTPClient, RequestBuilder, Response};
-use std::{convert::TryInto, sync::Arc};
-use youmubot_prelude::{self::*, ratelimit::Ratelimit};
+use reqwest::Client as HTTPClient;
+use std::convert::TryInto;
+use youmubot_prelude::{ratelimit::Ratelimit, *};
 
 /// The number of requests per minute to the osu! server.
-const REQUESTS_PER_MINUTE: u64 = 200;
+const REQUESTS_PER_MINUTE: usize = 200;
 
 /// Client is the client that will perform calls to the osu! api server.
 pub struct Client {
@@ -39,15 +39,16 @@ impl Client {
             REQUESTS_PER_MINUTE,
             std::time::Duration::from_secs(60),
         );
-        Client {
-            key,
-            client: http_client,
-        }
+        Client { key, client }
     }
 
-    async fn build_request(&self, r: RequestBuilder) -> Result<Response> {
-        let v = r.query(&[("k", &*self.key)]).build()?;
-        Ok(self.client.borrow().await?.execute(v).await?)
+    pub(crate) async fn build_request(&self, url: &str) -> Result<reqwest::RequestBuilder> {
+        Ok(self
+            .client
+            .borrow()
+            .await?
+            .get(url)
+            .query(&[("k", &*self.key)]))
     }
 
     pub async fn beatmaps(
@@ -57,11 +58,7 @@ impl Client {
     ) -> Result<Vec<Beatmap>> {
         let mut r = BeatmapRequestBuilder::new(kind);
         f(&mut r);
-        let res: Vec<raw::Beatmap> = self
-            .build_request(r.build(&self.client))
-            .await?
-            .json()
-            .await?;
+        let res: Vec<raw::Beatmap> = r.build(&self).await?.json().await?;
         Ok(vec_try_into(res)?)
     }
 
@@ -72,11 +69,7 @@ impl Client {
     ) -> Result<Option<User>, Error> {
         let mut r = UserRequestBuilder::new(user);
         f(&mut r);
-        let res: Vec<raw::User> = self
-            .build_request(r.build(&self.client))
-            .await?
-            .json()
-            .await?;
+        let res: Vec<raw::User> = r.build(&self).await?.json().await?;
         let res = vec_try_into(res)?;
         Ok(res.into_iter().next())
     }
@@ -88,11 +81,7 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
-        let res: Vec<raw::Score> = self
-            .build_request(r.build(&self.client))
-            .await?
-            .json()
-            .await?;
+        let res: Vec<raw::Score> = r.build(&self).await?.json().await?;
         let mut res: Vec<Score> = vec_try_into(res)?;
 
         // with a scores request you need to fill the beatmap ids yourself
@@ -126,11 +115,7 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
-        let res: Vec<raw::Score> = self
-            .build_request(r.build(&self.client))
-            .await?
-            .json()
-            .await?;
+        let res: Vec<raw::Score> = r.build(&self).await?.json().await?;
         let res = vec_try_into(res)?;
         Ok(res)
     }
