@@ -10,28 +10,14 @@ use request::builders::*;
 use request::*;
 use reqwest::{Client as HTTPClient, RequestBuilder, Response};
 use std::{convert::TryInto, sync::Arc};
-use tower;
-use youmubot_prelude::*;
+use youmubot_prelude::{self::*, ratelimit::Ratelimit};
 
 /// The number of requests per minute to the osu! server.
 const REQUESTS_PER_MINUTE: u64 = 200;
 
-type BoxedResp =
-    std::pin::Pin<Box<dyn future::Future<Output = Result<Response, reqwest::Error>> + Send>>;
 /// Client is the client that will perform calls to the osu! api server.
 pub struct Client {
-    http_client: RwLock<
-        Box<
-            dyn tower::Service<
-                    reqwest::Request,
-                    Response = Response,
-                    Error = reqwest::Error,
-                    Future = BoxedResp,
-                > + Send
-                + Sync,
-        >,
-    >,
-    client: Arc<HTTPClient>,
+    client: Ratelimit<HTTPClient>,
     key: String,
 }
 
@@ -48,25 +34,20 @@ fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::
 impl Client {
     /// Create a new client from the given API key.
     pub fn new(key: String) -> Client {
-        let http_client = Arc::new(HTTPClient::new());
-        let _http = http_client.clone();
-        let srv = tower::ServiceBuilder::new()
-            .rate_limit(REQUESTS_PER_MINUTE, std::time::Duration::from_secs(60))
-            .service(tower::service_fn(move |req| -> BoxedResp {
-                Box::pin(_http.execute(req))
-            }));
+        let client = Ratelimit::new(
+            HTTPClient::new(),
+            REQUESTS_PER_MINUTE,
+            std::time::Duration::from_secs(60),
+        );
         Client {
             key,
-            http_client: RwLock::new(Box::new(srv)),
             client: http_client,
         }
     }
 
     async fn build_request(&self, r: RequestBuilder) -> Result<Response> {
         let v = r.query(&[("k", &*self.key)]).build()?;
-        let mut client = self.http_client.write().await;
-        future::poll_fn(|ctx| client.poll_ready(ctx)).await?;
-        Ok(client.call(v).await?)
+        Ok(self.client.borrow().await?.execute(v).await?)
     }
 
     pub async fn beatmaps(
