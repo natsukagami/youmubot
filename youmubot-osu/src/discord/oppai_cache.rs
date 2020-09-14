@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::{ffi::CString, sync::Arc};
 use youmubot_prelude::*;
 
 /// the information collected from a download/Oppai request.
@@ -55,15 +55,16 @@ impl BeatmapContent {
 }
 
 /// A central cache for the beatmaps.
-#[derive(Debug)]
 pub struct BeatmapCache {
-    client: reqwest::Client,
-    cache: dashmap::DashMap<u64, BeatmapContent>,
+    client: ratelimit::Ratelimit<surf::Client>,
+    cache: dashmap::DashMap<u64, Arc<BeatmapContent>>,
 }
 
 impl BeatmapCache {
     /// Create a new cache.
-    pub fn new(client: reqwest::Client) -> Self {
+    pub fn new() -> Self {
+        let client =
+            ratelimit::Ratelimit::new(surf::Client::new(), 5, std::time::Duration::from_secs(1));
         BeatmapCache {
             client,
             cache: dashmap::DashMap::new(),
@@ -73,26 +74,31 @@ impl BeatmapCache {
     async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
         let content = self
             .client
+            .borrow()
+            .await?
             .get(&format!("https://osu.ppy.sh/osu/{}", id))
             .send()
-            .await?
-            .bytes()
-            .await?;
+            .await
+            .map_err(|e| Error::msg(format!("{}", e)))?
+            .body_bytes()
+            .await
+            .map_err(|e| Error::msg(format!("{}", e)))?;
         Ok(BeatmapContent {
             id,
-            content: CString::new(content.into_iter().collect::<Vec<_>>())?,
+            content: CString::new(content)?,
         })
     }
 
     /// Get a beatmap from the cache.
-    pub async fn get_beatmap<'a>(
-        &'a self,
+    pub async fn get_beatmap(
+        &self,
         id: u64,
-    ) -> Result<impl std::ops::Deref<Target = BeatmapContent> + 'a> {
+    ) -> Result<impl std::ops::Deref<Target = BeatmapContent>> {
         if !self.cache.contains_key(&id) {
-            self.cache.insert(id, self.download_beatmap(id).await?);
+            self.cache
+                .insert(id, Arc::new(self.download_beatmap(id).await?));
         }
-        Ok(self.cache.get(&id).unwrap())
+        Ok(self.cache.get(&id).unwrap().clone())
     }
 }
 
