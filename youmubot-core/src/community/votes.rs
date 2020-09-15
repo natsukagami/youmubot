@@ -152,11 +152,13 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     // Handle choices
     let choice_map = choices.into_iter().collect::<Map<_, _>>();
-    let result: Vec<(String, Vec<UserId>)> = user_reactions
+    let mut result: Vec<(String, Vec<UserId>)> = user_reactions
         .into_iter()
         .filter(|(_, users)| !users.is_empty())
         .map(|(emote, users)| (emote, users.into_iter().collect()))
         .collect();
+
+    result.sort_unstable_by(|(_, v), (_, w)| w.len().cmp(&v.len()));
 
     if result.len() == 0 {
         msg.reply(
