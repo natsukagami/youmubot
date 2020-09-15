@@ -24,6 +24,9 @@ pub use anyhow::{Error, Result};
 /// Re-export useful future and stream utils
 pub use futures_util::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 
+/// Re-export the spawn function
+pub use tokio::spawn as spawn_future;
+
 /// The global app data.
 pub type AppData = Arc<RwLock<TypeMap>>;
 
