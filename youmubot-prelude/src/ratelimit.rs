@@ -40,7 +40,6 @@ impl<T> Ratelimit<T> {
     /// The clock counts from the moment the ref is dropped.
     pub async fn borrow<'a>(&'a self) -> Result<impl Deref<Target = T> + 'a> {
         self.recv.recv_async().await?;
-        eprintln!("lock accquired! {} left", self.recv.len());
         Ok(RatelimitGuard {
             inner: &self.inner,
             send: &self.send,
@@ -62,9 +61,7 @@ impl<'a, T> Drop for RatelimitGuard<'a, T> {
         let wait_time = self.wait_time.clone();
         tokio::spawn(async move {
             tokio::time::delay_for(wait_time).await;
-            eprintln!("lock lifting!");
             send.send_async(()).await.ok();
-            eprintln!("lock lifted!");
         });
     }
 }
