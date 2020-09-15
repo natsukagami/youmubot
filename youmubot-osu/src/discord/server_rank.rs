@@ -1,9 +1,12 @@
 use super::{
     cache::get_beatmap,
     db::{OsuSavedUsers, OsuUserBests},
-    ModeArg,
+    ModeArg, OsuClient,
 };
-use crate::models::{Mode, Score};
+use crate::{
+    models::{Mode, Score},
+    request::UserID,
+};
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
@@ -105,6 +108,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
 #[only_in(guilds)]
 pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
     let data = ctx.data.read().await;
+    let mut osu_user_bests = OsuUserBests::open(&*data);
     let bm = match get_beatmap(&*data, m.channel_id)? {
         Some(bm) => bm,
         None => {
@@ -113,13 +117,36 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
         }
     };
 
+    // Run a check on the user once too!
+    {
+        let osu_users = OsuSavedUsers::open(&*data);
+        let user = osu_users.borrow()?.get(&m.author.id).map(|v| v.id);
+        if let Some(id) = user {
+            let osu = data.get::<OsuClient>().unwrap();
+            if let Ok(scores) = osu
+                .scores(bm.0.beatmap_id, |f| f.user(UserID::ID(id)))
+                .await
+            {
+                if !scores.is_empty() {
+                    osu_user_bests
+                        .borrow_mut()?
+                        .entry((bm.0.beatmap_id, bm.1))
+                        .or_default()
+                        .insert(m.author.id, scores);
+                }
+            }
+        }
+    }
+
     let guild = m.guild_id.expect("Guild-only command");
     let scores = {
         const NO_SCORES: &'static str =
             "No scores have been recorded for this beatmap. Run `osu check` to scan for yours!";
 
-        let users = OsuUserBests::open(&*data);
-        let users = users.borrow()?.get(&(bm.0.beatmap_id, bm.1)).cloned();
+        let users = osu_user_bests
+            .borrow()?
+            .get(&(bm.0.beatmap_id, bm.1))
+            .cloned();
         let users = match users {
             None => {
                 m.reply(&ctx, NO_SCORES).await?;
