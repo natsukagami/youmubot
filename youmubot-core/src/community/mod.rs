@@ -31,17 +31,17 @@ struct Community;
 #[command]
 #[description = r"👑 Randomly choose an active member and mention them!
 Note that only online/idle users in the channel are chosen from."]
-#[usage = "[title = the chosen one] / [limited roles = everyone online]"]
+#[usage = "[limited roles = everyone online] / [title = the chosen one]"]
 #[example = "the strongest in Gensokyo"]
 #[bucket = "community"]
 #[max_args(2)]
 pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+    let role = args.find::<RoleId>().ok();
     let title = if args.is_empty() {
         "the chosen one".to_owned()
     } else {
         args.single::<String>()?
     };
-    let role = args.single::<RoleId>().ok();
 
     let users: Result<Vec<_>, Error> = {
         let guild = m.guild(&ctx).await.unwrap();
