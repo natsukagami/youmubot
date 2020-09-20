@@ -118,8 +118,8 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
 async fn toggle(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let role = args.single_quoted::<String>()?;
     let guild_id = m.guild_id.unwrap();
-    let roles = guild_id.to_partial_guild(&ctx).await?.roles;
-    let role = role_from_string(&role, &roles);
+    let guild = guild_id.to_partial_guild(&ctx).await?;
+    let role = role_from_string(&role, &guild.roles);
     match role {
         None => {
             m.reply(&ctx, "No such role exists").await?;
@@ -134,7 +134,7 @@ async fn toggle(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             m.reply(&ctx, "This role is not self-assignable. Check the `listroles` command to see which role can be assigned.").await?;
         }
         Some(role) => {
-            let mut member = m.member(&ctx).await.unwrap();
+            let mut member = guild.member(&ctx, m.author.id).await.unwrap();
             if member.roles.contains(&role.id) {
                 member.remove_role(&ctx, &role).await?;
                 m.reply(&ctx, format!("Role `{}` has been removed.", role.name))

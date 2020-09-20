@@ -67,25 +67,16 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                 .collect::<stream::FuturesUnordered<_>>()
                 .filter_map(|member| async move {
                     // Filter by role if provided
-                    if let Some(role) = role {
-                        if member
-                            .roles(&ctx)
-                            .await
-                            .map(|roles| roles.into_iter().any(|r| role == r.id))
-                            .unwrap_or(false)
-                        {
-                            Some(member)
-                        } else {
-                            None
-                        }
-                    } else {
-                        Some(member)
+                    match role {
+                        Some(role) if member.roles.iter().any(|r| role == *r) => Some(member),
+                        None => Some(member),
+                        _ => None,
                     }
                 })
                 .collect()
                 .await)
         } else {
-            panic!()
+            unreachable!()
         }
     };
     let users = users?;
