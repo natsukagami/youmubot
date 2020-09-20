@@ -9,101 +9,159 @@ use crate::{
     Client as Osu,
 };
 use announcer::MemberToChannels;
-use rayon::prelude::*;
 use serenity::{
-    framework::standard::{CommandError as Error, CommandResult},
     http::CacheHttp,
     model::id::{ChannelId, UserId},
     CacheAndHttp,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use youmubot_prelude::*;
 
 /// osu! announcer's unique announcer key.
 pub const ANNOUNCER_KEY: &'static str = "osu";
 
-/// Announce osu! top scores.
-pub fn updates(c: Arc<CacheAndHttp>, d: AppData, channels: MemberToChannels) -> CommandResult {
-    let osu = d.get_cloned::<OsuClient>();
-    let cache = d.get_cloned::<BeatmapMetaCache>();
-    let oppai = d.get_cloned::<BeatmapCache>();
-    // For each user...
-    let mut data = OsuSavedUsers::open(&*d.read()).borrow()?.clone();
-    for (user_id, osu_user) in data.iter_mut() {
-        let channels = channels.channels_of(c.clone(), *user_id);
-        if channels.is_empty() {
-            continue; // We don't wanna update an user without any active server
-        }
-        osu_user.pp = match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
-            .par_iter()
-            .map(|m| {
-                handle_user_mode(
-                    c.clone(),
-                    &osu,
-                    &cache,
-                    &oppai,
-                    &osu_user,
-                    *user_id,
-                    &channels[..],
-                    *m,
-                    d.clone(),
-                )
+/// The announcer struct implementing youmubot_prelude::Announcer
+pub struct Announcer;
+
+#[async_trait]
+impl youmubot_prelude::Announcer for Announcer {
+    async fn updates(
+        &mut self,
+        c: Arc<CacheAndHttp>,
+        d: AppData,
+        channels: MemberToChannels,
+    ) -> Result<()> {
+        // For each user...
+        let data = OsuSavedUsers::open(&*d.read().await).borrow()?.clone();
+        let data = data
+            .into_iter()
+            .map(|(user_id, osu_user)| {
+                let d = d.clone();
+                let channels = &channels;
+                let c = c.clone();
+                async move {
+                    let channels = channels.channels_of(c.clone(), user_id).await;
+                    if channels.is_empty() {
+                        return (user_id, osu_user); // We don't wanna update an user without any active server
+                    }
+                    let pp = match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
+                        .into_iter()
+                        .map(|m| {
+                            handle_user_mode(
+                                c.clone(),
+                                &osu_user,
+                                user_id,
+                                channels.clone(),
+                                *m,
+                                d.clone(),
+                            )
+                        })
+                        .collect::<stream::FuturesOrdered<_>>()
+                        .try_collect::<Vec<_>>()
+                        .await
+                    {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("osu: Cannot update {}: {}", osu_user.id, e);
+                            return (user_id, osu_user);
+                        }
+                    };
+                    let last_update = chrono::Utc::now();
+                    (
+                        user_id,
+                        OsuUser {
+                            pp,
+                            last_update,
+                            ..osu_user
+                        },
+                    )
+                }
             })
-            .collect::<Result<_, _>>()
-        {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("osu: Cannot update {}: {}", osu_user.id, e.0);
-                continue;
-            }
-        };
-        osu_user.last_update = chrono::Utc::now();
+            .collect::<stream::FuturesUnordered<_>>()
+            .collect::<HashMap<_, _>>()
+            .await;
+        // Update users
+        *OsuSavedUsers::open(&*d.read().await).borrow_mut()? = data;
+        Ok(())
     }
-    // Update users
-    *OsuSavedUsers::open(&*d.read()).borrow_mut()? = data;
-    Ok(())
 }
 
 /// Handles an user/mode scan, announces all possible new scores, return the new pp value.
-fn handle_user_mode(
+async fn handle_user_mode(
     c: Arc<CacheAndHttp>,
-    osu: &Osu,
-    cache: &BeatmapMetaCache,
-    oppai: &BeatmapCache,
     osu_user: &OsuUser,
     user_id: UserId,
-    channels: &[ChannelId],
+    channels: Vec<ChannelId>,
     mode: Mode,
     d: AppData,
 ) -> Result<Option<f64>, Error> {
-    let scores = scan_user(osu, osu_user, mode)?;
-    let user = osu
-        .user(UserID::ID(osu_user.id), |f| f.mode(mode))?
-        .ok_or(Error::from("user not found"))?;
-    scores
-        .into_par_iter()
-        .map(|(rank, score)| -> Result<_, Error> {
-            let beatmap = cache.get_beatmap_default(score.beatmap_id)?;
-            let content = oppai.get_beatmap(beatmap.beatmap_id)?;
-            Ok((rank, score, BeatmapWithMode(beatmap, mode), content))
-        })
-        .filter_map(|v| v.ok())
-        .for_each(|(rank, score, beatmap, content)| {
-            for channel in (&channels).iter() {
-                if let Err(e) = channel.send_message(c.http(), |c| {
-                    c.content(format!("New top record from {}!", user_id.mention()))
-                        .embed(|e| score_embed(&score, &beatmap, &content, &user, Some(rank), e))
-                }) {
-                    dbg!(e);
+    let (scores, user) = {
+        let data = d.read().await;
+        let osu = data.get::<OsuClient>().unwrap();
+        let scores = scan_user(osu, osu_user, mode).await?;
+        let user = osu
+            .user(UserID::ID(osu_user.id), |f| f.mode(mode))
+            .await?
+            .ok_or(Error::msg("user not found"))?;
+        (scores, user)
+    };
+    let pp = user.pp;
+    spawn_future(async move {
+        scores
+            .into_iter()
+            .map(|(rank, score)| {
+                let d = d.clone();
+                async move {
+                    let data = d.read().await;
+                    let cache = data.get::<BeatmapMetaCache>().unwrap();
+                    let oppai = data.get::<BeatmapCache>().unwrap();
+                    let beatmap = cache.get_beatmap_default(score.beatmap_id).await?;
+                    let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
+                    let r: Result<_> = Ok((rank, score, BeatmapWithMode(beatmap, mode), content));
+                    r
                 }
-                save_beatmap(&*d.read(), *channel, &beatmap).ok();
-            }
-        });
-    Ok(user.pp)
+            })
+            .collect::<stream::FuturesOrdered<_>>()
+            .filter_map(|v| future::ready(v.ok()))
+            .for_each(move |(rank, score, beatmap, content)| {
+                let channels = channels.clone();
+                let d = d.clone();
+                let c = c.clone();
+                let user = user.clone();
+                async move {
+                    let data = d.read().await;
+                    for channel in (&channels).iter() {
+                        if let Err(e) = channel
+                            .send_message(c.http(), |c| {
+                                c.content(format!("New top record from {}!", user_id.mention()))
+                                    .embed(|e| {
+                                        score_embed(
+                                            &score,
+                                            &beatmap,
+                                            &content,
+                                            &user,
+                                            Some(rank),
+                                            e,
+                                        )
+                                    })
+                            })
+                            .await
+                        {
+                            dbg!(e);
+                        }
+                        save_beatmap(&*data, *channel, &beatmap).ok();
+                    }
+                }
+            })
+            .await;
+    });
+    Ok(pp)
 }
 
-fn scan_user(osu: &Osu, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
-    let scores = osu.user_best(UserID::ID(u.id), |f| f.mode(mode).limit(25))?;
+async fn scan_user(osu: &Osu, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
+    let scores = osu
+        .user_best(UserID::ID(u.id), |f| f.mode(mode).limit(25))
+        .await?;
     let scores = scores
         .into_iter()
         .enumerate()

@@ -28,7 +28,7 @@ struct Fun;
 #[max_args(2)]
 #[usage = "[max-dice-faces = 6] / [message]"]
 #[example = "100 / What's my score?"]
-fn roll(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn roll(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let dice = if args.is_empty() {
         6
     } else {
@@ -36,7 +36,8 @@ fn roll(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     };
 
     if dice == 0 {
-        msg.reply(&ctx, "Give me a dice with 0 faces, what do you expect 😒")?;
+        msg.reply(&ctx, "Give me a dice with 0 faces, what do you expect 😒")
+            .await?;
         return Ok(());
     }
 
@@ -47,24 +48,30 @@ fn roll(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     };
 
     match args.single_quoted::<String>() {
-        Ok(s) => msg.reply(
-            &ctx,
-            MessageBuilder::new()
-                .push("you asked ")
-                .push_bold_safe(s)
-                .push(format!(
-                    ", so I rolled a 🎲 of **{}** faces, and got **{}**!",
+        Ok(s) => {
+            msg.reply(
+                &ctx,
+                MessageBuilder::new()
+                    .push("you asked ")
+                    .push_bold_safe(s)
+                    .push(format!(
+                        ", so I rolled a 🎲 of **{}** faces, and got **{}**!",
+                        dice, result
+                    ))
+                    .build(),
+            )
+            .await
+        }
+        Err(_) if args.is_empty() => {
+            msg.reply(
+                &ctx,
+                format!(
+                    "I rolled a 🎲 of **{}** faces, and got **{}**!",
                     dice, result
-                ))
-                .build(),
-        ),
-        Err(_) if args.is_empty() => msg.reply(
-            &ctx,
-            format!(
-                "I rolled a 🎲 of **{}** faces, and got **{}**!",
-                dice, result
-            ),
-        ),
+                ),
+            )
+            .await
+        }
         Err(e) => return Err(e.into()),
     }?;
 
@@ -77,7 +84,7 @@ You may prefix the first choice with `?` to make it a question!
 If no choices are given, Youmu defaults to `Yes!` and `No!`"#]
 #[usage = "[?question]/[choice #1]/[choice #2]/..."]
 #[example = "?What for dinner/Pizza/Hamburger"]
-fn pick(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn pick(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let (question, choices) = {
         // Get a list of options.
         let mut choices = args
@@ -114,24 +121,30 @@ fn pick(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     };
 
     match question {
-        None => msg.reply(
-            &ctx,
-            MessageBuilder::new()
-                .push("Youmu picks 👉")
-                .push_bold_safe(choice)
-                .push("👈!")
-                .build(),
-        ),
-        Some(s) => msg.reply(
-            &ctx,
-            MessageBuilder::new()
-                .push("you asked ")
-                .push_bold_safe(s)
-                .push(", and Youmu picks 👉")
-                .push_bold_safe(choice)
-                .push("👈!")
-                .build(),
-        ),
+        None => {
+            msg.reply(
+                &ctx,
+                MessageBuilder::new()
+                    .push("Youmu picks 👉")
+                    .push_bold_safe(choice)
+                    .push("👈!")
+                    .build(),
+            )
+            .await
+        }
+        Some(s) => {
+            msg.reply(
+                &ctx,
+                MessageBuilder::new()
+                    .push("you asked ")
+                    .push_bold_safe(s)
+                    .push(", and Youmu picks 👉")
+                    .push_bold_safe(choice)
+                    .push("👈!")
+                    .build(),
+            )
+            .await
+        }
     }?;
 
     Ok(())
@@ -142,7 +155,7 @@ fn pick(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 #[usage = "[user_mention = yourself]"]
 #[example = "@user#1234"]
 #[max_args(1)]
-fn name(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn name(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let user_id = if args.is_empty() {
         msg.author.id
     } else {
@@ -153,15 +166,15 @@ fn name(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         "your".to_owned()
     } else {
         MessageBuilder::new()
-            .push_bold_safe(user_id.to_user(&ctx)?.tag())
+            .push_bold_safe(user_id.to_user(&ctx).await?.tag())
             .push("'s")
             .build()
     };
 
     // Rule out a couple of cases
-    if user_id == ctx.http.get_current_application_info()?.id {
+    if user_id == ctx.http.get_current_application_info().await?.id {
         // This is my own user_id
-        msg.reply(&ctx, "😠 My name is **Youmu Konpaku**!")?;
+        msg.reply(&ctx, "😠 My name is **Youmu Konpaku**!").await?;
         return Ok(());
     }
 
@@ -173,6 +186,7 @@ fn name(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             "{} Japanese🇯🇵 name is **{} {}**!",
             user_mention, first_name, last_name
         ),
-    )?;
+    )
+    .await?;
     Ok(())
 }

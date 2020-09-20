@@ -1,54 +1,40 @@
+/// Module `prelude` provides a sane set of default imports that can be used inside
+/// a Youmubot source file.
 pub use serenity::prelude::*;
 use std::sync::Arc;
 
 pub mod announcer;
 pub mod args;
+pub mod hook;
 pub mod pagination;
-pub mod reaction_watch;
+pub mod ratelimit;
 pub mod setup;
 
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
-pub use pagination::Pagination;
-pub use reaction_watch::{ReactionHandler, ReactionWatcher};
+pub use hook::Hook;
+pub use pagination::paginate;
+
+/// Re-exporting async_trait helps with implementing Announcer.
+pub use async_trait::async_trait;
+
+/// Re-export the anyhow errors
+pub use anyhow::{Error, Result};
+
+/// Re-export useful future and stream utils
+pub use futures_util::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
+
+/// Re-export the spawn function
+pub use tokio::spawn as spawn_future;
 
 /// The global app data.
-pub type AppData = Arc<RwLock<ShareMap>>;
+pub type AppData = Arc<RwLock<TypeMap>>;
 
 /// The HTTP client.
 pub struct HTTPClient;
 
 impl TypeMapKey for HTTPClient {
-    type Value = reqwest::blocking::Client;
-}
-
-/// The TypeMap trait that allows TypeMaps to quickly get a clonable item.
-pub trait GetCloned {
-    /// Gets an item from the store, cloned.
-    fn get_cloned<T>(&self) -> T::Value
-    where
-        T: TypeMapKey,
-        T::Value: Clone + Send + Sync;
-}
-
-impl GetCloned for ShareMap {
-    fn get_cloned<T>(&self) -> T::Value
-    where
-        T: TypeMapKey,
-        T::Value: Clone + Send + Sync,
-    {
-        self.get::<T>().cloned().expect("Should be there")
-    }
-}
-
-impl GetCloned for AppData {
-    fn get_cloned<T>(&self) -> T::Value
-    where
-        T: TypeMapKey,
-        T::Value: Clone + Send + Sync,
-    {
-        self.read().get::<T>().cloned().expect("Should be there")
-    }
+    type Value = reqwest::Client;
 }
 
 pub mod prelude_commands {
@@ -70,8 +56,8 @@ pub mod prelude_commands {
 
     #[command]
     #[description = "pong!"]
-    fn ping(ctx: &mut Context, m: &Message) -> CommandResult {
-        m.reply(&ctx, "Pong!")?;
+    async fn ping(ctx: &Context, m: &Message) -> CommandResult {
+        m.reply(&ctx, "Pong!").await?;
         Ok(())
     }
 }

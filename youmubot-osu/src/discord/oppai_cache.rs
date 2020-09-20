@@ -1,12 +1,11 @@
-use serenity::framework::standard::CommandError;
 use std::{ffi::CString, sync::Arc};
-use youmubot_prelude::TypeMapKey;
+use youmubot_prelude::*;
 
 /// the information collected from a download/Oppai request.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BeatmapContent {
     id: u64,
-    content: Arc<CString>,
+    content: CString,
 }
 
 /// the output of "one" oppai run.
@@ -24,7 +23,7 @@ impl BeatmapContent {
         accuracy: f32,
         mode: Option<oppai_rs::Mode>,
         mods: impl Into<oppai_rs::Mods>,
-    ) -> Result<f32, CommandError> {
+    ) -> Result<f32> {
         let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
         oppai.combo(combo)?.accuracy(accuracy)?.mods(mods.into());
         if let Some(mode) = mode {
@@ -38,7 +37,7 @@ impl BeatmapContent {
         &self,
         mode: Option<oppai_rs::Mode>,
         mods: impl Into<oppai_rs::Mods>,
-    ) -> Result<BeatmapInfo, CommandError> {
+    ) -> Result<BeatmapInfo> {
         let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
         if let Some(mode) = mode {
             oppai.mode(mode)?;
@@ -56,39 +55,47 @@ impl BeatmapContent {
 }
 
 /// A central cache for the beatmaps.
-#[derive(Clone, Debug)]
 pub struct BeatmapCache {
-    client: reqwest::blocking::Client,
-    cache: Arc<dashmap::DashMap<u64, BeatmapContent>>,
+    client: ratelimit::Ratelimit<reqwest::Client>,
+    cache: dashmap::DashMap<u64, Arc<BeatmapContent>>,
 }
 
 impl BeatmapCache {
     /// Create a new cache.
-    pub fn new(client: reqwest::blocking::Client) -> Self {
+    pub fn new(client: reqwest::Client) -> Self {
+        let client = ratelimit::Ratelimit::new(client, 5, std::time::Duration::from_secs(1));
         BeatmapCache {
             client,
-            cache: Arc::new(dashmap::DashMap::new()),
+            cache: dashmap::DashMap::new(),
         }
     }
 
-    fn download_beatmap(&self, id: u64) -> Result<BeatmapContent, CommandError> {
+    async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
         let content = self
             .client
+            .borrow()
+            .await?
             .get(&format!("https://osu.ppy.sh/osu/{}", id))
-            .send()?
-            .bytes()?;
+            .send()
+            .await?
+            .bytes()
+            .await?;
         Ok(BeatmapContent {
             id,
-            content: Arc::new(CString::new(content.into_iter().collect::<Vec<_>>())?),
+            content: CString::new(content.into_iter().collect::<Vec<_>>())?,
         })
     }
 
     /// Get a beatmap from the cache.
-    pub fn get_beatmap(&self, id: u64) -> Result<BeatmapContent, CommandError> {
-        self.cache
-            .entry(id)
-            .or_try_insert_with(|| self.download_beatmap(id))
-            .map(|v| v.clone())
+    pub async fn get_beatmap(
+        &self,
+        id: u64,
+    ) -> Result<impl std::ops::Deref<Target = BeatmapContent>> {
+        if !self.cache.contains_key(&id) {
+            self.cache
+                .insert(id, Arc::new(self.download_beatmap(id).await?));
+        }
+        Ok(self.cache.get(&id).unwrap().clone())
     }
 }
 

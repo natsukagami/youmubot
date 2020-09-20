@@ -1,6 +1,7 @@
 use crate::models::{Mode, Mods};
+use crate::Client;
 use chrono::{DateTime, Utc};
-use reqwest::blocking::{Client, RequestBuilder};
+use youmubot_prelude::*;
 
 trait ToQuery {
     fn to_query(&self) -> Vec<(&'static str, String)>;
@@ -84,6 +85,8 @@ impl ToQuery for BeatmapRequestKind {
 }
 
 pub mod builders {
+    use reqwest::Response;
+
     use super::*;
     /// A builder for a Beatmap request.
     pub struct BeatmapRequestBuilder {
@@ -110,12 +113,15 @@ pub mod builders {
             self
         }
 
-        pub(crate) fn build(self, client: &Client) -> RequestBuilder {
-            client
-                .get("https://osu.ppy.sh/api/get_beatmaps")
+        pub(crate) async fn build(self, client: &Client) -> Result<Response> {
+            Ok(client
+                .build_request("https://osu.ppy.sh/api/get_beatmaps")
+                .await?
                 .query(&self.kind.to_query())
                 .query(&self.since.map(|v| ("since", v)).to_query())
                 .query(&self.mode.to_query())
+                .send()
+                .await?)
         }
     }
 
@@ -144,9 +150,10 @@ pub mod builders {
             self
         }
 
-        pub(crate) fn build(&self, client: &Client) -> RequestBuilder {
-            client
-                .get("https://osu.ppy.sh/api/get_user")
+        pub(crate) async fn build(&self, client: &Client) -> Result<Response> {
+            Ok(client
+                .build_request("https://osu.ppy.sh/api/get_user")
+                .await?
                 .query(&self.user.to_query())
                 .query(&self.mode.to_query())
                 .query(
@@ -155,6 +162,8 @@ pub mod builders {
                         .map(|v| ("event_days", v.to_string()))
                         .to_query(),
                 )
+                .send()
+                .await?)
         }
     }
 
@@ -197,14 +206,17 @@ pub mod builders {
             self
         }
 
-        pub(crate) fn build(&self, client: &Client) -> RequestBuilder {
-            client
-                .get("https://osu.ppy.sh/api/get_scores")
+        pub(crate) async fn build(&self, client: &Client) -> Result<Response> {
+            Ok(client
+                .build_request("https://osu.ppy.sh/api/get_scores")
+                .await?
                 .query(&[("b", self.beatmap_id)])
                 .query(&self.user.to_query())
                 .query(&self.mode.to_query())
                 .query(&self.mods.to_query())
                 .query(&self.limit.map(|v| ("limit", v.to_string())).to_query())
+                .send()
+                .await?)
         }
     }
 
@@ -240,15 +252,18 @@ pub mod builders {
             self
         }
 
-        pub(crate) fn build(&self, client: &Client) -> RequestBuilder {
-            client
-                .get(match self.score_type {
+        pub(crate) async fn build(&self, client: &Client) -> Result<Response> {
+            Ok(client
+                .build_request(match self.score_type {
                     UserScoreType::Best => "https://osu.ppy.sh/api/get_user_best",
                     UserScoreType::Recent => "https://osu.ppy.sh/api/get_user_recent",
                 })
+                .await?
                 .query(&self.user.to_query())
                 .query(&self.mode.to_query())
                 .query(&self.limit.map(|v| ("limit", v.to_string())).to_query())
+                .send()
+                .await?)
         }
     }
 }

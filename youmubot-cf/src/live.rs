@@ -1,8 +1,6 @@
-use crate::db::CfSavedUsers;
+use crate::{db::CfSavedUsers, CFClient};
 use codeforces::{Contest, ContestPhase, Problem, ProblemResult, ProblemResultType, RanklistRow};
-use rayon::prelude::*;
 use serenity::{
-    framework::standard::{CommandError, CommandResult},
     model::{
         guild::Member,
         id::{ChannelId, GuildId, UserId},
@@ -21,56 +19,64 @@ struct MemberResult {
 /// Watch and commentate a contest.
 ///
 /// Does the thing on a channel, block until the contest ends.
-pub fn watch_contest(
-    ctx: &mut Context,
+pub async fn watch_contest(
+    ctx: &Context,
     guild: GuildId,
     channel: ChannelId,
     contest_id: u64,
-) -> CommandResult {
-    let db = CfSavedUsers::open(&*ctx.data.read()).borrow()?.clone();
+) -> Result<()> {
+    let data = ctx.data.read().await;
+    let db = CfSavedUsers::open(&*data).borrow()?.clone();
     let http = ctx.http.clone();
     // Collect an initial member list.
     // This never changes during the scan.
     let mut member_results: HashMap<UserId, MemberResult> = db
-        .into_par_iter()
-        .filter_map(|(user_id, cfu)| {
-            let member = guild.member(http.clone().as_ref(), user_id).ok();
-            match member {
-                Some(m) => Some((
-                    user_id,
-                    MemberResult {
-                        member: m,
-                        handle: cfu.handle,
-                        row: None,
-                    },
-                )),
-                None => None,
+        .into_iter()
+        .map(|(user_id, cfu)| {
+            let http = http.clone();
+            async move {
+                guild.member(http, user_id).await.map(|m| {
+                    (
+                        user_id,
+                        MemberResult {
+                            member: m,
+                            handle: cfu.handle,
+                            row: None,
+                        },
+                    )
+                })
             }
         })
-        .collect();
+        .collect::<stream::FuturesUnordered<_>>()
+        .filter_map(|v| future::ready(v.ok()))
+        .collect()
+        .await;
 
-    let http = ctx.data.get_cloned::<HTTPClient>();
-    let (mut contest, _, _) = Contest::standings(&http, contest_id, |f| f.limit(1, 1))?;
+    let http = data.get::<CFClient>().unwrap();
+    let (mut contest, _, _) = Contest::standings(&http, contest_id, |f| f.limit(1, 1)).await?;
 
-    channel.send_message(&ctx, |e| {
-        e.content(format!(
-            "Youmu is watching contest **{}**, with the following members:\n{}",
-            contest.name,
-            member_results
-                .iter()
-                .map(|(_, m)| format!("- {} as **{}**", m.member.distinct(), m.handle))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        ))
-    })?;
+    channel
+        .send_message(&ctx, |e| {
+            e.content(format!(
+                "Youmu is watching contest **{}**, with the following members:\n{}",
+                contest.name,
+                member_results
+                    .iter()
+                    .map(|(_, m)| format!("- {} as **{}**", m.member.distinct(), m.handle))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ))
+        })
+        .await?;
 
     loop {
-        if let Ok(messages) = scan_changes(http.clone(), &mut member_results, &mut contest) {
+        if let Ok(messages) = scan_changes(&*http, &mut member_results, &mut contest).await {
             for message in messages {
                 channel
                     .send_message(&ctx, |e| {
                         e.content(format!("**{}**: {}", contest.name, message))
                     })
+                    .await
                     .ok();
             }
         }
@@ -78,7 +84,7 @@ pub fn watch_contest(
             break;
         }
         // Sleep for a minute
-        std::thread::sleep(std::time::Duration::from_secs(60));
+        tokio::time::delay_for(std::time::Duration::from_secs(60)).await;
     }
 
     // Announce the final results
@@ -93,12 +99,14 @@ pub fn watch_contest(
     ranks.sort_by(|(_, a), (_, b)| a.rank.cmp(&b.rank));
 
     if ranks.is_empty() {
-        channel.send_message(&ctx, |e| {
-            e.content(format!(
-                "**{}** has ended, but I can't find anyone in this server on the scoreboard...",
-                contest.name
-            ))
-        })?;
+        channel
+            .send_message(&ctx, |e| {
+                e.content(format!(
+                    "**{}** has ended, but I can't find anyone in this server on the scoreboard...",
+                    contest.name
+                ))
+            })
+            .await?;
         return Ok(());
     }
 
@@ -115,23 +123,23 @@ pub fn watch_contest(
  			row.problem_results.iter().map(|p| format!("{:.0}", p.points)).collect::<Vec<_>>().join("/"),
  			row.successful_hack_count,
  			row.unsuccessful_hack_count,
-            	)).collect::<Vec<_>>().join("\n"))))?;
+            	)).collect::<Vec<_>>().join("\n")))).await?;
 
     Ok(())
 }
 
-fn scan_changes(
-    http: <HTTPClient as TypeMapKey>::Value,
+async fn scan_changes(
+    http: &codeforces::Client,
     members: &mut HashMap<UserId, MemberResult>,
     contest: &mut Contest,
-) -> Result<Vec<String>, CommandError> {
+) -> Result<Vec<String>> {
     let mut messages: Vec<String> = vec![];
     let (updated_contest, problems, ranks) = {
         let handles = members
             .iter()
             .map(|(_, h)| h.handle.clone())
             .collect::<Vec<_>>();
-        Contest::standings(&http, contest.id, |f| f.handles(handles))?
+        Contest::standings(&http, contest.id, |f| f.handles(handles)).await?
     };
     // Change of phase.
     if contest.phase != updated_contest.phase {

@@ -1,30 +1,26 @@
 use super::db::OsuLastBeatmap;
 use super::BeatmapWithMode;
-use serenity::{
-    framework::standard::{CommandError as Error, CommandResult},
-    model::id::ChannelId,
-    prelude::*,
-};
+use serenity::model::id::ChannelId;
+use youmubot_prelude::*;
 
 /// Save the beatmap into the server data storage.
 pub(crate) fn save_beatmap(
-    data: &ShareMap,
+    data: &TypeMap,
     channel_id: ChannelId,
     bm: &BeatmapWithMode,
-) -> CommandResult {
-    let db = OsuLastBeatmap::open(data);
-    let mut db = db.borrow_mut()?;
-
-    db.insert(channel_id, (bm.0.clone(), bm.mode()));
+) -> Result<()> {
+    OsuLastBeatmap::open(data)
+        .borrow_mut()?
+        .insert(channel_id, (bm.0.clone(), bm.mode()));
 
     Ok(())
 }
 
 /// Get the last beatmap requested from this channel.
 pub(crate) fn get_beatmap(
-    data: &ShareMap,
+    data: &TypeMap,
     channel_id: ChannelId,
-) -> Result<Option<BeatmapWithMode>, Error> {
+) -> Result<Option<BeatmapWithMode>> {
     let db = OsuLastBeatmap::open(data);
     let db = db.borrow()?;
 

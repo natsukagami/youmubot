@@ -1,3 +1,4 @@
+use futures_util::{stream, TryStreamExt};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -9,7 +10,6 @@ use serenity::{
     },
 };
 use soft_ban::{SOFT_BAN_COMMAND, SOFT_BAN_INIT_COMMAND};
-use std::{thread::sleep, time::Duration};
 use youmubot_prelude::*;
 
 mod soft_ban;
@@ -27,29 +27,34 @@ struct Admin;
 #[usage = "clean 50"]
 #[min_args(0)]
 #[max_args(1)]
-fn clean(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn clean(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let limit = args.single().unwrap_or(10);
     let messages = msg
         .channel_id
-        .messages(&ctx.http, |b| b.before(msg.id).limit(limit))?;
-    let channel = msg.channel_id.to_channel(&ctx)?;
+        .messages(&ctx.http, |b| b.before(msg.id).limit(limit))
+        .await?;
+    let channel = msg.channel_id.to_channel(&ctx).await?;
     match &channel {
-        Channel::Private(_) | Channel::Group(_) => {
-            let self_id = ctx.http.get_current_application_info()?.id;
+        Channel::Private(_) => {
+            let self_id = ctx.http.get_current_application_info().await?.id;
             messages
                 .into_iter()
                 .filter(|v| v.author.id == self_id)
-                .try_for_each(|m| m.delete(&ctx))?;
+                .map(|m| async move { m.delete(&ctx).await })
+                .collect::<stream::FuturesUnordered<_>>()
+                .try_collect::<()>()
+                .await?;
         }
         _ => {
             msg.channel_id
-                .delete_messages(&ctx.http, messages.into_iter())?;
+                .delete_messages(&ctx.http, messages.into_iter())
+                .await?;
         }
     };
-    msg.react(&ctx, "🌋")?;
+    msg.react(&ctx, '🌋').await?;
     if let Channel::Guild(_) = &channel {
-        sleep(Duration::from_secs(2));
-        msg.delete(&ctx)?;
+        tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+        msg.delete(&ctx).await.ok();
     }
 
     Ok(())
@@ -58,25 +63,36 @@ fn clean(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 #[command]
 #[required_permissions(ADMINISTRATOR)]
 #[description = "Ban an user with a certain reason."]
-#[usage = "@user#1234/spam"]
+#[usage = "tag user/[reason = none]/[days of messages to delete = 0]"]
 #[min_args(1)]
 #[max_args(2)]
 #[only_in("guilds")]
-fn ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let user = args.single::<UserId>()?.to_user(&ctx)?;
-    let reason = args
-        .remains()
-        .map(|v| format!("`{}`", v))
-        .unwrap_or("no provided reason".to_owned());
+async fn ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let user = args.single::<UserId>()?.to_user(&ctx).await?;
+    let reason = args.single::<String>().map(|v| format!("`{}`", v)).ok();
+    let dmds = args.single::<u8>().unwrap_or(0);
 
-    msg.reply(
-        &ctx,
-        format!("🔨 Banning user {} for reason `{}`.", user.tag(), reason),
-    )?;
-
-    msg.guild_id
-        .ok_or("Can't get guild from message?")? // we had a contract
-        .ban(&ctx.http, user, &reason)?;
+    match reason {
+        Some(reason) => {
+            msg.reply(
+                &ctx,
+                format!("🔨 Banning user {} for reason `{}`.", user.tag(), reason),
+            )
+            .await?;
+            msg.guild_id
+                .ok_or(Error::msg("Can't get guild from message?"))? // we had a contract
+                .ban_with_reason(&ctx.http, user, dmds, &reason)
+                .await?;
+        }
+        None => {
+            msg.reply(&ctx, format!("🔨 Banning user {}.", user.tag()))
+                .await?;
+            msg.guild_id
+                .ok_or(Error::msg("Can't get guild from message?"))? // we had a contract
+                .ban(&ctx.http, user, dmds)
+                .await?;
+        }
+    }
 
     Ok(())
 }
@@ -87,14 +103,16 @@ fn ban(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 #[usage = "@user#1234"]
 #[num_args(1)]
 #[only_in("guilds")]
-fn kick(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let user = args.single::<UserId>()?.to_user(&ctx)?;
+async fn kick(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let user = args.single::<UserId>()?.to_user(&ctx).await?;
 
-    msg.reply(&ctx, format!("🔫 Kicking user {}.", user.tag()))?;
+    msg.reply(&ctx, format!("🔫 Kicking user {}.", user.tag()))
+        .await?;
 
     msg.guild_id
         .ok_or("Can't get guild from message?")? // we had a contract
-        .kick(&ctx.http, user)?;
+        .kick(&ctx.http, user)
+        .await?;
 
     Ok(())
 }

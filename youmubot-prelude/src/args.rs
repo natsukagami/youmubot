@@ -2,14 +2,17 @@ pub use duration::Duration;
 pub use username_arg::UsernameArg;
 
 mod duration {
+    use crate::{Error, Result};
     use std::fmt;
     use std::time::Duration as StdDuration;
-    use String as Error;
-    // Parse a single duration unit
-    fn parse_duration_string(s: &str) -> Result<StdDuration, Error> {
+
+    const INVALID_DURATION: &str = "Not a valid duration";
+
+    /// Parse a single duration unit
+    fn parse_duration_string(s: &str) -> Result<StdDuration> {
         // We reject the empty case
         if s == "" {
-            return Err(Error::from("empty strings are not valid durations"));
+            return Err(Error::msg("empty strings are not valid durations"));
         }
         struct ParseStep {
             current_value: Option<u64>,
@@ -26,7 +29,7 @@ mod duration {
                         current_value: Some(v.unwrap_or(0) * 10 + ((item as u64) - ('0' as u64))),
                         ..s
                     }),
-                    (_, None) => Err(Error::from("Not a valid duration")),
+                    (_, None) => Err(Error::msg(INVALID_DURATION)),
                     (item, Some(v)) => Ok(ParseStep {
                         current_value: None,
                         current_duration: s.current_duration
@@ -36,7 +39,7 @@ mod duration {
                                 'h' => StdDuration::from_secs(60 * 60),
                                 'd' => StdDuration::from_secs(60 * 60 * 24),
                                 'w' => StdDuration::from_secs(60 * 60 * 24 * 7),
-                                _ => return Err(Error::from("Not a valid duration")),
+                                _ => return Err(Error::msg(INVALID_DURATION)),
                             } * (v as u32),
                     }),
                 },
@@ -44,7 +47,7 @@ mod duration {
             .and_then(|v| match v.current_value {
                 // All values should be consumed
                 None => Ok(v),
-                _ => Err(Error::from("Not a valid duration")),
+                _ => Err(Error::msg(INVALID_DURATION)),
             })
             .map(|v| v.current_duration)
     }
