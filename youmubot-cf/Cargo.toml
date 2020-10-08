@@ -9,7 +9,7 @@ edition = "2018"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "0.2", features = ["time"] }
 reqwest = "0.10.1"
-serenity = "0.9.0-rc.0"
+serenity = "0.9.0-rc.2"
 Inflector = "0.11"
 codeforces = "0.2.1"
 regex = "1"
