@@ -255,16 +255,17 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
     let data = ctx.data.read().await;
     let contest_id: u64 = args.single()?;
     let guild = m.guild_id.unwrap(); // Guild-only command
+    let member_cache = data.get::<MemberCache>().unwrap();
     let members = CfSavedUsers::open(&*data).borrow()?.clone();
     let members = members
         .into_iter()
         .map(|(user_id, cf_user)| {
-            guild
-                .member(&ctx, user_id)
+            member_cache
+                .query(&ctx, user_id, guild)
                 .map(|v| v.map(|v| (cf_user.handle, v)))
         })
         .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| future::ready(v.ok()))
+        .filter_map(|v| future::ready(v))
         .collect::<HashMap<_, _>>()
         .await;
     let http = data.get::<CFClient>().unwrap();

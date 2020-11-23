@@ -24,18 +24,22 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let data = ctx.data.read().await;
     let mode = args.single::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
     let guild = m.guild_id.expect("Guild-only command");
+    let member_cache = data.get::<MemberCache>().unwrap();
     let users = OsuSavedUsers::open(&*data).borrow()?.clone();
     let users = users
         .into_iter()
         .map(|(user_id, osu_user)| async move {
-            guild.member(&ctx, user_id).await.ok().and_then(|member| {
-                osu_user
-                    .pp
-                    .get(mode as usize)
-                    .cloned()
-                    .and_then(|pp| pp)
-                    .map(|pp| (pp, member.distinct(), osu_user.last_update.clone()))
-            })
+            member_cache
+                .query(&ctx, user_id, guild)
+                .await
+                .and_then(|member| {
+                    osu_user
+                        .pp
+                        .get(mode as usize)
+                        .cloned()
+                        .and_then(|pp| pp)
+                        .map(|pp| (pp, member.distinct(), osu_user.last_update.clone()))
+                })
         })
         .collect::<stream::FuturesUnordered<_>>()
         .filter_map(|v| future::ready(v))
@@ -117,6 +121,7 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> 
         }
     };
     let guild = m.guild_id.unwrap();
+    let member_cache = data.get::<MemberCache>().unwrap();
     // Signal that we are running.
     let running_reaction = m.react(&ctx, '⌛').await?;
 
@@ -132,9 +137,10 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> 
         let beatmap_id = bm.0.beatmap_id;
         osu_users
             .into_iter()
-            .map(|(user_id, osu_id)| async move {
-                let member = guild.member(&ctx, user_id).await;
-                member.ok().map(|_| (user_id, osu_id))
+            .map(|(user_id, osu_id)| {
+                member_cache
+                    .query(&ctx, user_id, guild)
+                    .map(move |t| t.map(|_| (user_id, osu_id)))
             })
             .collect::<stream::FuturesUnordered<_>>()
             .filter_map(future::ready)
@@ -217,6 +223,7 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
     }
 
     let guild = m.guild_id.expect("Guild-only command");
+    let member_cache = data.get::<MemberCache>().unwrap();
     let scores = {
         const NO_SCORES: &'static str =
             "No scores have been recorded for this beatmap. Run `osu check` to scan for yours!";
@@ -239,12 +246,10 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
 
         let mut scores: Vec<(f64, String, Score)> = users
             .into_iter()
-            .map(|(user_id, scores)| async move {
-                guild
-                    .member(&ctx, user_id)
-                    .await
-                    .ok()
-                    .and_then(|m| Some((m.distinct(), scores)))
+            .map(|(user_id, scores)| {
+                member_cache
+                    .query(&ctx, user_id, guild)
+                    .map(|m| m.map(move |m| (m.distinct(), scores)))
             })
             .collect::<stream::FuturesUnordered<_>>()
             .filter_map(|v| future::ready(v))
