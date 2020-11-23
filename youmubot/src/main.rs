@@ -86,7 +86,7 @@ async fn main() {
     // Sets up a client
     let mut client = {
         // Attempt to connect and set up a framework
-        Client::new(token)
+        Client::builder(token)
             .framework(fw)
             .event_handler(handler)
             .intents(
