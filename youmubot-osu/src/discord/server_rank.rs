@@ -4,12 +4,13 @@ use super::{
     ModeArg, OsuClient,
 };
 use crate::{
+    discord::BeatmapWithMode,
     models::{Mode, Score},
     request::UserID,
 };
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
-    model::channel::Message,
+    model::{channel::Message, id::UserId},
     utils::MessageBuilder,
 };
 use youmubot_prelude::*;
@@ -101,14 +102,13 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     Ok(())
 }
 
-#[command("leaderboard")]
-#[aliases("lb", "bmranks", "br", "cc")]
-#[description = "See the server's ranks on the last seen beatmap"]
+#[command("updatelb")]
+#[description = "Update the leaderboard on the last seen beatmap"]
 #[max_args(0)]
 #[only_in(guilds)]
-pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+#[required_permissions(MANAGE_MESSAGES)]
+pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let mut osu_user_bests = OsuUserBests::open(&*data);
     let bm = match get_beatmap(&*data, m.channel_id)? {
         Some(bm) => bm,
         None => {
@@ -116,6 +116,84 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
             return Ok(());
         }
     };
+    let guild = m.guild_id.unwrap();
+    // Signal that we are running.
+    let running_reaction = m.react(&ctx, '⌛').await?;
+
+    // Run a check on everyone in the server basically.
+    let all_server_users: Vec<(UserId, Vec<Score>)> = {
+        let osu = data.get::<OsuClient>().unwrap();
+        let osu_users = OsuSavedUsers::open(&*data);
+        let osu_users = osu_users
+            .borrow()?
+            .iter()
+            .map(|(&user_id, osu_user)| (user_id, osu_user.id))
+            .collect::<Vec<_>>();
+        let beatmap_id = bm.0.beatmap_id;
+        osu_users
+            .into_iter()
+            .map(|(user_id, osu_id)| async move {
+                let member = guild.member(&ctx, user_id).await;
+                member.ok().map(|_| (user_id, osu_id))
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .filter_map(future::ready)
+            .filter_map(|(member, osu_id)| async move {
+                let scores = osu
+                    .scores(beatmap_id, |f| f.user(UserID::ID(osu_id)))
+                    .await
+                    .ok();
+                scores
+                    .filter(|s| !s.is_empty())
+                    .map(|scores| (member, scores))
+            })
+            .collect::<Vec<_>>()
+            .await
+    };
+    let updated_users = all_server_users.len();
+    // Update everything.
+    {
+        let mut osu_user_bests = OsuUserBests::open(&*data);
+        let mut osu_user_bests = osu_user_bests.borrow_mut()?;
+        let user_bests = osu_user_bests.entry((bm.0.beatmap_id, bm.1)).or_default();
+        all_server_users.into_iter().for_each(|(member, scores)| {
+            user_bests.insert(member, scores);
+        })
+    }
+    // Signal update complete.
+    running_reaction.delete(&ctx).await.ok();
+    m.reply(
+        &ctx,
+        format!(
+            "update for beatmap ({}, {}) complete, {} users updated.",
+            bm.0.beatmap_id, bm.1, updated_users
+        ),
+    )
+    .await
+    .ok();
+    show_leaderboard(ctx, m, bm).await
+}
+
+#[command("leaderboard")]
+#[aliases("lb", "bmranks", "br", "cc")]
+#[description = "See the server's ranks on the last seen beatmap"]
+#[max_args(0)]
+#[only_in(guilds)]
+pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+    let data = ctx.data.read().await;
+    let bm = match get_beatmap(&*data, m.channel_id)? {
+        Some(bm) => bm,
+        None => {
+            m.reply(&ctx, "No beatmap queried on this channel.").await?;
+            return Ok(());
+        }
+    };
+    show_leaderboard(ctx, m, bm).await
+}
+
+async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> CommandResult {
+    let data = ctx.data.read().await;
+    let mut osu_user_bests = OsuUserBests::open(&*data);
 
     // Run a check on the user once too!
     {
