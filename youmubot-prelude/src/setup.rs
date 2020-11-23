@@ -11,4 +11,7 @@ pub fn setup_prelude(db_path: &Path, data: &mut TypeMap) {
 
     // Set up the HTTP client.
     data.insert::<crate::HTTPClient>(reqwest::Client::new());
+
+    // Set up the member cache.
+    data.insert::<crate::MemberCache>(std::sync::Arc::new(crate::MemberCache::default()));
 }
