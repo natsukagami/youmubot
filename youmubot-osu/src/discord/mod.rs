@@ -29,7 +29,7 @@ use db::OsuUser;
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::hook;
-use server_rank::{LEADERBOARD_COMMAND, SERVER_RANK_COMMAND};
+use server_rank::{LEADERBOARD_COMMAND, SERVER_RANK_COMMAND, UPDATE_LEADERBOARD_COMMAND};
 
 /// The osu! client.
 pub(crate) struct OsuClient;
@@ -58,6 +58,11 @@ pub fn setup(
     OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
     OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
     OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
+
+    // Locks
+    data.insert::<server_rank::update_lock::UpdateLock>(
+        server_rank::update_lock::UpdateLock::default(),
+    );
 
     // API client
     let http_client = data.get::<HTTPClient>().unwrap().clone();
@@ -89,7 +94,8 @@ pub fn setup(
     check,
     top,
     server_rank,
-    leaderboard
+    leaderboard,
+    update_leaderboard
 )]
 #[default_command(std)]
 struct Osu;
@@ -247,7 +253,7 @@ async fn list_plays<'a>(
 
     const ITEMS_PER_PAGE: usize = 5;
     let total_pages = (plays.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    paginate(
+    paginate_fn(
         move |page, ctx, msg| {
             let plays = plays.clone();
             Box::pin(async move {

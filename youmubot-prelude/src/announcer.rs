@@ -1,4 +1,4 @@
-use crate::{AppData, Result};
+use crate::{AppData, MemberCache, Result};
 use async_trait::async_trait;
 use futures_util::{
     future::{join_all, ready, FutureExt},
@@ -46,7 +46,7 @@ pub trait Announcer: Send {
 }
 
 /// A simple struct that allows looking up the relevant channels to an user.
-pub struct MemberToChannels(Vec<(GuildId, ChannelId)>);
+pub struct MemberToChannels(Vec<(GuildId, ChannelId)>, AppData);
 
 impl MemberToChannels {
     /// Gets the channel list of an user related to that channel.
@@ -56,13 +56,14 @@ impl MemberToChannels {
         u: impl Into<UserId>,
     ) -> Vec<ChannelId> {
         let u: UserId = u.into();
+        let member_cache = self.1.read().await.get::<MemberCache>().unwrap().clone();
         self.0
             .clone()
             .into_iter()
-            .map(|(guild, channel): (GuildId, ChannelId)| {
-                guild
-                    .member(http.clone(), u)
-                    .map(move |v| v.ok().map(|_| channel.clone()))
+            .map(|(guild, channel)| {
+                member_cache
+                    .query(http.clone(), u.into(), guild)
+                    .map(move |t| t.map(|_| channel))
             })
             .collect::<FuturesUnordered<_>>()
             .filter_map(|v| ready(v))
@@ -137,7 +138,7 @@ impl AnnouncerHandler {
         key: &'static str,
         announcer: &'_ RwLock<Box<dyn Announcer + Send + Sync>>,
     ) -> Result<()> {
-        let channels = MemberToChannels(Self::get_guilds(&data, key).await?);
+        let channels = MemberToChannels(Self::get_guilds(&data, key).await?, data.clone());
         announcer
             .write()
             .await

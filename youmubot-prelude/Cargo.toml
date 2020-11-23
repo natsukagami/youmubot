@@ -15,6 +15,7 @@ youmubot-db = { path = "../youmubot-db" }
 reqwest = "0.10"
 chrono = "0.4"
 flume = "0.9"
+dashmap = "3"
 
 [dependencies.serenity]
 version = "0.9"

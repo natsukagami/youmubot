@@ -4,12 +4,13 @@ use super::{
     ModeArg, OsuClient,
 };
 use crate::{
+    discord::BeatmapWithMode,
     models::{Mode, Score},
     request::UserID,
 };
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
-    model::channel::Message,
+    model::{channel::Message, id::UserId},
     utils::MessageBuilder,
 };
 use youmubot_prelude::*;
@@ -23,18 +24,22 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let data = ctx.data.read().await;
     let mode = args.single::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
     let guild = m.guild_id.expect("Guild-only command");
+    let member_cache = data.get::<MemberCache>().unwrap();
     let users = OsuSavedUsers::open(&*data).borrow()?.clone();
     let users = users
         .into_iter()
         .map(|(user_id, osu_user)| async move {
-            guild.member(&ctx, user_id).await.ok().and_then(|member| {
-                osu_user
-                    .pp
-                    .get(mode as usize)
-                    .cloned()
-                    .and_then(|pp| pp)
-                    .map(|pp| (pp, member.distinct(), osu_user.last_update.clone()))
-            })
+            member_cache
+                .query(&ctx, user_id, guild)
+                .await
+                .and_then(|member| {
+                    osu_user
+                        .pp
+                        .get(mode as usize)
+                        .cloned()
+                        .and_then(|pp| pp)
+                        .map(|pp| (pp, member.distinct(), osu_user.last_update.clone()))
+                })
         })
         .collect::<stream::FuturesUnordered<_>>()
         .filter_map(|v| future::ready(v))
@@ -55,7 +60,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
 
     let users = std::sync::Arc::new(users);
     let last_update = last_update.unwrap();
-    paginate(
+    paginate_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
             const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
@@ -101,14 +106,54 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     Ok(())
 }
 
-#[command("leaderboard")]
-#[aliases("lb", "bmranks", "br", "cc")]
-#[description = "See the server's ranks on the last seen beatmap"]
+pub(crate) mod update_lock {
+    use serenity::{model::id::GuildId, prelude::TypeMapKey};
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    #[derive(Debug, Default)]
+    pub struct UpdateLock(Mutex<HashSet<GuildId>>);
+
+    pub struct UpdateLockGuard<'a>(&'a UpdateLock, GuildId);
+
+    impl TypeMapKey for UpdateLock {
+        type Value = UpdateLock;
+    }
+
+    impl UpdateLock {
+        pub fn get(&self, guild: GuildId) -> Option<UpdateLockGuard> {
+            let mut set = self.0.lock().unwrap();
+            if set.contains(&guild) {
+                None
+            } else {
+                set.insert(guild);
+                Some(UpdateLockGuard(self, guild))
+            }
+        }
+    }
+
+    impl<'a> Drop for UpdateLockGuard<'a> {
+        fn drop(&mut self) {
+            let mut set = self.0 .0.lock().unwrap();
+            set.remove(&self.1);
+        }
+    }
+}
+
+#[command("updatelb")]
+#[description = "Update the leaderboard on the last seen beatmap"]
 #[max_args(0)]
 #[only_in(guilds)]
-pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+    let guild = m.guild_id.unwrap();
     let data = ctx.data.read().await;
-    let mut osu_user_bests = OsuUserBests::open(&*data);
+    let update_lock = data.get::<update_lock::UpdateLock>().unwrap();
+    let update_lock = match update_lock.get(guild) {
+        None => {
+            m.reply(&ctx, "Another update is running.").await?;
+            return Ok(());
+        }
+        Some(v) => v,
+    };
     let bm = match get_beatmap(&*data, m.channel_id)? {
         Some(bm) => bm,
         None => {
@@ -116,6 +161,86 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
             return Ok(());
         }
     };
+    let member_cache = data.get::<MemberCache>().unwrap();
+    // Signal that we are running.
+    let running_reaction = m.react(&ctx, '⌛').await?;
+
+    // Run a check on everyone in the server basically.
+    let all_server_users: Vec<(UserId, Vec<Score>)> = {
+        let osu = data.get::<OsuClient>().unwrap();
+        let osu_users = OsuSavedUsers::open(&*data);
+        let osu_users = osu_users
+            .borrow()?
+            .iter()
+            .map(|(&user_id, osu_user)| (user_id, osu_user.id))
+            .collect::<Vec<_>>();
+        let beatmap_id = bm.0.beatmap_id;
+        osu_users
+            .into_iter()
+            .map(|(user_id, osu_id)| {
+                member_cache
+                    .query(&ctx, user_id, guild)
+                    .map(move |t| t.map(|_| (user_id, osu_id)))
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .filter_map(future::ready)
+            .filter_map(|(member, osu_id)| async move {
+                let scores = osu
+                    .scores(beatmap_id, |f| f.user(UserID::ID(osu_id)))
+                    .await
+                    .ok();
+                scores
+                    .filter(|s| !s.is_empty())
+                    .map(|scores| (member, scores))
+            })
+            .collect::<Vec<_>>()
+            .await
+    };
+    let updated_users = all_server_users.len();
+    // Update everything.
+    {
+        let mut osu_user_bests = OsuUserBests::open(&*data);
+        let mut osu_user_bests = osu_user_bests.borrow_mut()?;
+        let user_bests = osu_user_bests.entry((bm.0.beatmap_id, bm.1)).or_default();
+        all_server_users.into_iter().for_each(|(member, scores)| {
+            user_bests.insert(member, scores);
+        })
+    }
+    // Signal update complete.
+    running_reaction.delete(&ctx).await.ok();
+    m.reply(
+        &ctx,
+        format!(
+            "update for beatmap ({}, {}) complete, {} users updated.",
+            bm.0.beatmap_id, bm.1, updated_users
+        ),
+    )
+    .await
+    .ok();
+    drop(update_lock);
+    show_leaderboard(ctx, m, bm).await
+}
+
+#[command("leaderboard")]
+#[aliases("lb", "bmranks", "br", "cc")]
+#[description = "See the server's ranks on the last seen beatmap"]
+#[max_args(0)]
+#[only_in(guilds)]
+pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+    let data = ctx.data.read().await;
+    let bm = match get_beatmap(&*data, m.channel_id)? {
+        Some(bm) => bm,
+        None => {
+            m.reply(&ctx, "No beatmap queried on this channel.").await?;
+            return Ok(());
+        }
+    };
+    show_leaderboard(ctx, m, bm).await
+}
+
+async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> CommandResult {
+    let data = ctx.data.read().await;
+    let mut osu_user_bests = OsuUserBests::open(&*data);
 
     // Run a check on the user once too!
     {
@@ -139,6 +264,7 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
     }
 
     let guild = m.guild_id.expect("Guild-only command");
+    let member_cache = data.get::<MemberCache>().unwrap();
     let scores = {
         const NO_SCORES: &'static str =
             "No scores have been recorded for this beatmap. Run `osu check` to scan for yours!";
@@ -161,12 +287,10 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
 
         let mut scores: Vec<(f64, String, Score)> = users
             .into_iter()
-            .map(|(user_id, scores)| async move {
-                guild
-                    .member(&ctx, user_id)
-                    .await
-                    .ok()
-                    .and_then(|m| Some((m.distinct(), scores)))
+            .map(|(user_id, scores)| {
+                member_cache
+                    .query(&ctx, user_id, guild)
+                    .map(|m| m.map(move |m| (m.distinct(), scores)))
             })
             .collect::<stream::FuturesUnordered<_>>()
             .filter_map(|v| future::ready(v))
@@ -192,7 +316,7 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
         .await?;
         return Ok(());
     }
-    paginate(
+    paginate_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
             const ITEMS_PER_PAGE: usize = 5;
             let start = (page as usize) * ITEMS_PER_PAGE;
