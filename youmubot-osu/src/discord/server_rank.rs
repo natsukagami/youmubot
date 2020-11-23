@@ -106,13 +106,54 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     Ok(())
 }
 
+pub(crate) mod update_lock {
+    use serenity::{model::id::GuildId, prelude::TypeMapKey};
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    #[derive(Debug, Default)]
+    pub struct UpdateLock(Mutex<HashSet<GuildId>>);
+
+    pub struct UpdateLockGuard<'a>(&'a UpdateLock, GuildId);
+
+    impl TypeMapKey for UpdateLock {
+        type Value = UpdateLock;
+    }
+
+    impl UpdateLock {
+        pub fn get(&self, guild: GuildId) -> Option<UpdateLockGuard> {
+            let mut set = self.0.lock().unwrap();
+            if set.contains(&guild) {
+                None
+            } else {
+                set.insert(guild);
+                Some(UpdateLockGuard(self, guild))
+            }
+        }
+    }
+
+    impl<'a> Drop for UpdateLockGuard<'a> {
+        fn drop(&mut self) {
+            let mut set = self.0 .0.lock().unwrap();
+            set.remove(&self.1);
+        }
+    }
+}
+
 #[command("updatelb")]
 #[description = "Update the leaderboard on the last seen beatmap"]
 #[max_args(0)]
 #[only_in(guilds)]
-#[required_permissions(MANAGE_MESSAGES)]
 pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+    let guild = m.guild_id.unwrap();
     let data = ctx.data.read().await;
+    let update_lock = data.get::<update_lock::UpdateLock>().unwrap();
+    let update_lock = match update_lock.get(guild) {
+        None => {
+            m.reply(&ctx, "Another update is running.").await?;
+            return Ok(());
+        }
+        Some(v) => v,
+    };
     let bm = match get_beatmap(&*data, m.channel_id)? {
         Some(bm) => bm,
         None => {
@@ -120,7 +161,6 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> 
             return Ok(());
         }
     };
-    let guild = m.guild_id.unwrap();
     let member_cache = data.get::<MemberCache>().unwrap();
     // Signal that we are running.
     let running_reaction = m.react(&ctx, '⌛').await?;
@@ -177,6 +217,7 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> 
     )
     .await
     .ok();
+    drop(update_lock);
     show_leaderboard(ctx, m, bm).await
 }
 

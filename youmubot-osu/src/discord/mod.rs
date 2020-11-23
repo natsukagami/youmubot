@@ -59,6 +59,11 @@ pub fn setup(
     OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
     OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
 
+    // Locks
+    data.insert::<server_rank::update_lock::UpdateLock>(
+        server_rank::update_lock::UpdateLock::default(),
+    );
+
     // API client
     let http_client = data.get::<HTTPClient>().unwrap().clone();
     let osu_client = Arc::new(OsuHttpClient::new(
