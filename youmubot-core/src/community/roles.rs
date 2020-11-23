@@ -33,7 +33,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
             const ROLES_PER_PAGE: usize = 8;
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
-            paginate(
+            paginate_fn(
                 |page, ctx, msg| {
                     let roles = roles.clone();
                     Box::pin(async move {

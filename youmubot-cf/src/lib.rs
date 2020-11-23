@@ -172,7 +172,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
     let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
     let last_updated = ranks.iter().map(|(_, cfu)| cfu.last_update).min().unwrap();
 
-    paginate(
+    paginate_fn(
         move |page, ctx, msg| {
             let ranks = ranks.clone();
             Box::pin(async move {
@@ -301,7 +301,7 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
     const ITEMS_PER_PAGE: usize = 10;
     let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
 
-    paginate(
+    paginate_fn(
         move |page, ctx, msg| {
             let contest = contest.clone();
             let problems = problems.clone();

@@ -14,7 +14,7 @@ const ARROW_RIGHT: &'static str = "➡️";
 const ARROW_LEFT: &'static str = "⬅️";
 
 #[async_trait::async_trait]
-pub trait Paginate {
+pub trait Paginate: Send {
     async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
 }
 
@@ -36,12 +36,7 @@ where
 // Paginate! with a pager function.
 /// If awaited, will block until everything is done.
 pub async fn paginate(
-    mut pager: impl for<'m> FnMut(
-            u8,
-            &'m Context,
-            &'m mut Message,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
-        + Send,
+    mut pager: impl Paginate,
     ctx: &Context,
     channel: ChannelId,
     timeout: std::time::Duration,
@@ -56,7 +51,7 @@ pub async fn paginate(
     message
         .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
         .await?;
-    pager(0, ctx, &mut message).await?;
+    pager.render(0, ctx, &mut message).await?;
     // Build a reaction collector
     let mut reaction_collector = message.await_reactions(&ctx).removed(true).await;
     let mut page = 0;
@@ -78,6 +73,21 @@ pub async fn paginate(
     message.react(&ctx, '🛑').await?;
 
     res
+}
+
+/// Same as `paginate`, but for function inputs, especially anonymous functions.
+pub async fn paginate_fn(
+    pager: impl for<'m> FnMut(
+            u8,
+            &'m Context,
+            &'m mut Message,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
+        + Send,
+    ctx: &Context,
+    channel: ChannelId,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    paginate(pager, ctx, channel, timeout).await
 }
 
 // Handle the reaction and return a new page number.

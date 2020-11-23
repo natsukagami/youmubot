@@ -13,7 +13,7 @@ pub mod setup;
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
 pub use hook::Hook;
-pub use pagination::paginate;
+pub use pagination::{paginate, paginate_fn};
 
 /// Re-exporting async_trait helps with implementing Announcer.
 pub use async_trait::async_trait;

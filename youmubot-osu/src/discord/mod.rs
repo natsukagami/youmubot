@@ -247,7 +247,7 @@ async fn list_plays<'a>(
 
     const ITEMS_PER_PAGE: usize = 5;
     let total_pages = (plays.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    paginate(
+    paginate_fn(
         move |page, ctx, msg| {
             let plays = plays.clone();
             Box::pin(async move {

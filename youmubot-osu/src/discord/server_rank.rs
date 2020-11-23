@@ -55,7 +55,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
 
     let users = std::sync::Arc::new(users);
     let last_update = last_update.unwrap();
-    paginate(
+    paginate_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
             const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
@@ -192,7 +192,7 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
         .await?;
         return Ok(());
     }
-    paginate(
+    paginate_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
             const ITEMS_PER_PAGE: usize = 5;
             let start = (page as usize) * ITEMS_PER_PAGE;
