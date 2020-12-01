@@ -362,15 +362,26 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
                     .max()
                     .unwrap()
                     .max(4);
+                let combos = scores
+                    .iter()
+                    .map(|(_, _, v)| format!("{}x", v.max_combo))
+                    .collect::<Vec<_>>();
+                let cw = combos
+                    .iter()
+                    .map(|v| v.len())
+                    .max()
+                    .unwrap()
+                    .max(5);
                 let mut content = MessageBuilder::new();
                 content
                     .push_line("```")
                     .push_line(format!(
-                        "rank | {:>pw$} | {:mdw$} | {:rw$} | {:>aw$} | {:mw$} | {:uw$}",
+                        "rank | {:>pw$} | {:mdw$} | {:rw$} | {:>aw$} | {:>cw$} | {:mw$} | {:uw$}",
                         "pp",
                         "mods",
                         "rank",
                         "acc",
+                        "combo",
                         "miss",
                         "user",
                         pw = pw,
@@ -379,9 +390,11 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
                         aw = aw,
                         mw = mw,
                         uw = uw,
+                        cw = cw,
                     ))
                     .push_line(format!(
-                        "-------{:-<pw$}---{:-<mdw$}---{:-<rw$}---{:-<aw$}---{:-<mw$}---{:-<uw$}",
+                        "-------{:-<pw$}---{:-<mdw$}---{:-<rw$}---{:-<aw$}---{:-<cw$}---{:-<mw$}---{:-<uw$}",
+                        "",
                         "",
                         "",
                         "",
@@ -394,21 +407,24 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
                         aw = aw,
                         mw = mw,
                         uw = uw,
+                        cw = cw,
                     ));
                 for (id, (_, member, p)) in scores.iter().enumerate() {
                     content.push_line_safe(format!(
-                        "{:>4} | {:>pw$} | {:>mdw$} | {:>rw$} | {:>aw$} | {:>mw$} | {:uw$}",
+                        "{:>4} | {:>pw$} | {:>mdw$} | {:>rw$} | {:>aw$} | {:>cw$} | {:>mw$} | {:uw$}",
                         format!("#{}", 1 + id + start),
                         pp[id],
                         p.mods.to_string(),
                         ranks[id],
                         accuracies[id],
+                        combos[id],
                         misses[id],
                         member,
                         pw = pw,
                         mdw = mdw,
                         rw = rw,
                         aw = aw,
+                        cw = cw,
                         mw = mw,
                         uw = uw,
                     ));
