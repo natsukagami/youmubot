@@ -8,7 +8,7 @@ use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use youmubot_prelude::*;
 
 /// Writes a number grouped in groups of 3.
-fn grouped_number(num: u64) -> String {
+pub(crate) fn grouped_number(num: u64) -> String {
     let s = num.to_string();
     let mut b = MessageBuilder::new();
     let mut i = if s.len() % 3 == 0 { 3 } else { s.len() % 3 };

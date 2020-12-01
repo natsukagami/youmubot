@@ -4,8 +4,8 @@ use super::{
     ModeArg, OsuClient,
 };
 use crate::{
-    discord::BeatmapWithMode,
-    models::{Mode, Score},
+    discord::{oppai_cache::BeatmapCache, BeatmapWithMode},
+    models::{Mode, Mods, Score},
     request::UserID,
 };
 use serenity::{
@@ -139,11 +139,30 @@ pub(crate) mod update_lock {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrderBy {
+    PP,
+    Score,
+}
+
+impl From<&str> for OrderBy {
+    fn from(s: &str) -> Self {
+        if s == "--score" {
+            Self::Score
+        } else {
+            Self::PP
+        }
+    }
+}
+
 #[command("updatelb")]
 #[description = "Update the leaderboard on the last seen beatmap"]
-#[max_args(0)]
+#[usage = "[--score to sort by score, default to sort by pp]"]
+#[max_args(1)]
 #[only_in(guilds)]
-pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> CommandResult {
+    let sort_order = OrderBy::from(args.rest());
+
     let guild = m.guild_id.unwrap();
     let data = ctx.data.read().await;
     let update_lock = data.get::<update_lock::UpdateLock>().unwrap();
@@ -161,6 +180,7 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> 
             return Ok(());
         }
     };
+    let mode = bm.1;
     let member_cache = data.get::<MemberCache>().unwrap();
     // Signal that we are running.
     let running_reaction = m.react(&ctx, '⌛').await?;
@@ -186,7 +206,7 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> 
             .filter_map(future::ready)
             .filter_map(|(member, osu_id)| async move {
                 let scores = osu
-                    .scores(beatmap_id, |f| f.user(UserID::ID(osu_id)))
+                    .scores(beatmap_id, |f| f.user(UserID::ID(osu_id)).mode(mode))
                     .await
                     .ok();
                 scores
@@ -211,22 +231,26 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> 
     m.reply(
         &ctx,
         format!(
-            "update for beatmap ({}, {}) complete, {} users updated.",
-            bm.0.beatmap_id, bm.1, updated_users
+            "update for beatmap (`{}`) complete, {} users updated.",
+            bm.0.short_link(if bm.mode() != bm.1 { Some(bm.1) } else { None }, None),
+            updated_users
         ),
     )
     .await
     .ok();
     drop(update_lock);
-    show_leaderboard(ctx, m, bm).await
+    show_leaderboard(ctx, m, bm, sort_order).await
 }
 
 #[command("leaderboard")]
 #[aliases("lb", "bmranks", "br", "cc")]
+#[usage = "[--score to sort by score, default to sort by pp]"]
 #[description = "See the server's ranks on the last seen beatmap"]
-#[max_args(0)]
+#[max_args(1)]
 #[only_in(guilds)]
-pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> CommandResult {
+pub async fn leaderboard(ctx: &Context, m: &Message, args: Args) -> CommandResult {
+    let sort_order = OrderBy::from(args.rest());
+
     let data = ctx.data.read().await;
     let bm = match get_beatmap(&*data, m.channel_id)? {
         Some(bm) => bm,
@@ -235,12 +259,35 @@ pub async fn leaderboard(ctx: &Context, m: &Message, mut _args: Args) -> Command
             return Ok(());
         }
     };
-    show_leaderboard(ctx, m, bm).await
+    show_leaderboard(ctx, m, bm, sort_order).await
 }
 
-async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> CommandResult {
+async fn show_leaderboard(
+    ctx: &Context,
+    m: &Message,
+    bm: BeatmapWithMode,
+    order: OrderBy,
+) -> CommandResult {
     let data = ctx.data.read().await;
     let mut osu_user_bests = OsuUserBests::open(&*data);
+
+    // Get oppai map.
+    let mode = bm.1;
+    let oppai = data.get::<BeatmapCache>().unwrap();
+    let oppai_map = oppai.get_beatmap(bm.0.beatmap_id).await?;
+    let get_oppai_pp = move |combo: u64, misses: u64, acc: f64, mods: Mods| {
+        mode.to_oppai_mode().and_then(|mode| {
+            oppai_map
+                .get_pp_from(
+                    oppai_rs::Combo::non_fc(combo as u32, misses as u32),
+                    acc as f32,
+                    Some(mode),
+                    mods,
+                )
+                .ok()
+                .map(|v| v as f64)
+        })
+    };
 
     // Run a check on the user once too!
     {
@@ -266,8 +313,7 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let scores = {
-        const NO_SCORES: &'static str =
-            "No scores have been recorded for this beatmap. Run `osu check` to scan for yours!";
+        const NO_SCORES: &'static str = "No scores have been recorded for this beatmap.";
 
         let users = osu_user_bests
             .borrow()?
@@ -300,11 +346,29 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
                     .map(move |v| future::ready((user.clone(), v.clone())))
                     .collect::<stream::FuturesUnordered<_>>()
             })
-            .filter_map(|(user, score)| future::ready(score.pp.map(|v| (v, user, score))))
+            .filter_map(|(user, score)| {
+                future::ready(
+                    score
+                        .pp
+                        .or_else(|| {
+                            get_oppai_pp(
+                                score.max_combo,
+                                score.count_miss,
+                                score.accuracy(mode),
+                                score.mods,
+                            )
+                        })
+                        .map(|v| (v, user, score)),
+                )
+            })
             .collect::<Vec<_>>()
             .await;
-        scores
-            .sort_by(|(a, _, _), (b, _, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        match order {
+            OrderBy::PP => scores.sort_by(|(a, _, _), (b, _, _)| {
+                b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+            }),
+            OrderBy::Score => scores.sort_by(|(_, _, a), (_, _, b)| b.score.cmp(&a.score)),
+        };
         scores
     };
 
@@ -350,11 +414,18 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
                     .map(|(_, _, v)| v.rank.to_string())
                     .collect::<Vec<_>>();
                 let rw = ranks.iter().map(|v| v.len()).max().unwrap().max(4);
+                let pp_label = match order {
+                    OrderBy::PP => "pp",
+                    OrderBy::Score => "score",
+                };
                 let pp = scores
                     .iter()
-                    .map(|(pp, _, _)| format!("{:.2}", pp))
+                    .map(|(pp, _, s)| match order {
+                        OrderBy::PP => format!("{:.2}", pp),
+                        OrderBy::Score => format!("{}", crate::discord::embeds::grouped_number(s.score)),
+                    })
                     .collect::<Vec<_>>();
-                let pw = pp.iter().map(|v| v.len()).max().unwrap_or(2);
+                let pw = pp.iter().map(|v| v.len()).max().unwrap_or(pp_label.len());
                 /*mods width*/
                 let mdw = scores
                     .iter()
@@ -377,7 +448,7 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
                     .push_line("```")
                     .push_line(format!(
                         "rank | {:>pw$} | {:mdw$} | {:rw$} | {:>aw$} | {:>cw$} | {:mw$} | {:uw$}",
-                        "pp",
+                        pp_label,
                         "mods",
                         "rank",
                         "acc",
@@ -434,6 +505,12 @@ async fn show_leaderboard(ctx: &Context, m: &Message, bm: BeatmapWithMode) -> Co
                     page + 1,
                     (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
                 ));
+                if let crate::models::ApprovalStatus::Ranked(_) = bm.0.approval {
+                } else {
+                    if order == OrderBy::PP {
+                        content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
+                    }
+                }
                 m.edit(&ctx, |f| f.content(content.build())).await?;
                 Ok(true)
             })
