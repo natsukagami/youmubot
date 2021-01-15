@@ -6,7 +6,6 @@ use serenity::{
     model::{
         channel::{Channel, Message},
         gateway,
-        id::{ChannelId, GuildId, UserId},
         permissions::Permissions,
     },
 };
@@ -52,14 +51,14 @@ impl EventHandler for Handler {
 }
 
 /// Returns whether the user has "MANAGE_MESSAGES" permission in the channel.
-async fn is_channel_mod(ctx: &Context, _: Option<GuildId>, ch: ChannelId, u: UserId) -> bool {
-    match ch.to_channel(&ctx).await {
+async fn is_not_channel_mod(ctx: &Context, msg: &Message) -> bool {
+    match msg.channel_id.to_channel(&ctx).await {
         Ok(Channel::Guild(gc)) => gc
-            .permissions_for_user(&ctx, u)
+            .permissions_for_user(&ctx, msg.author.id)
             .await
-            .map(|perms| perms.contains(Permissions::MANAGE_MESSAGES))
-            .unwrap_or(false),
-        _ => false,
+            .map(|perms| !perms.contains(Permissions::MANAGE_MESSAGES))
+            .unwrap_or(true),
+        _ => true,
     }
 }
 
@@ -167,7 +166,7 @@ async fn setup_framework(token: &str) -> StandardFramework {
         .after(after_hook)
         .on_dispatch_error(on_dispatch_error)
         .bucket("voting", |c| {
-            c.check(|ctx, g, ch, u| Box::pin(async move { !is_channel_mod(ctx, g, ch, u).await }))
+            c.check(|ctx, msg| Box::pin(is_not_channel_mod(ctx, msg)))
                 .delay(120 /* 2 minutes */)
                 .time_span(120)
                 .limit(1)
@@ -176,7 +175,7 @@ async fn setup_framework(token: &str) -> StandardFramework {
         .bucket("images", |c| c.time_span(60).limit(2))
         .await
         .bucket("community", |c| {
-            c.check(|ctx, g, ch, u| Box::pin(async move { !is_channel_mod(ctx, g, ch, u).await }))
+            c.check(|ctx, msg| Box::pin(is_not_channel_mod(ctx, msg)))
                 .delay(30)
                 .time_span(30)
                 .limit(1)
@@ -224,9 +223,9 @@ async fn on_dispatch_error(ctx: &Context, msg: &Message, error: DispatchError) {
     msg.reply(
         &ctx,
         &match error {
-            DispatchError::Ratelimited(seconds) => format!(
+            DispatchError::Ratelimited(rl) => format!(
                 "⏳ You are being rate-limited! Try this again in **{}**.",
-                youmubot_prelude::Duration(seconds),
+                youmubot_prelude::Duration(rl.rate_limit),
             ),
             DispatchError::NotEnoughArguments { min, given } => {
                 format!(
