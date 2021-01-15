@@ -7,15 +7,15 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = "0.9"
-chrono = "0.4.10"
-reqwest = "0.10.1"
+serenity = "0.10"
+chrono = "0.4"
+reqwest = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 bitflags = "1"
 lazy_static = "1"
 regex = "1"
-oppai-rs = "0.2.0"
-dashmap = "3.11.4"
+oppai-rs = "0.2"
+dashmap = "4"
 
 youmubot-db = { path = "../youmubot-db" }
 youmubot-prelude = { path = "../youmubot-prelude" }
