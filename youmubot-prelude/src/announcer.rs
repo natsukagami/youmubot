@@ -155,8 +155,7 @@ impl AnnouncerHandler {
         self.data.write().await.insert::<Self>(keys.clone());
         loop {
             eprintln!("{}: announcer started scanning", chrono::Utc::now());
-            // let after_timer = after(cooldown);
-            let after = tokio::time::delay_for(cooldown);
+            let after = tokio::time::sleep_until(tokio::time::Instant::now() + cooldown);
             join_all(self.announcers.iter().map(|(key, announcer)| {
                 eprintln!(" - scanning key `{}`", key);
                 Self::announce(self.data.clone(), self.cache_http.clone(), *key, announcer).map(

@@ -60,7 +60,7 @@ impl<'a, T> Drop for RatelimitGuard<'a, T> {
         let send = self.send.clone();
         let wait_time = self.wait_time.clone();
         tokio::spawn(async move {
-            tokio::time::delay_for(wait_time).await;
+            tokio::time::sleep(wait_time).await;
             send.send_async(()).await.ok();
         });
     }
