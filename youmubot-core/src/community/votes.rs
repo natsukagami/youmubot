@@ -195,7 +195,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                         .push(
                             votes
                                 .into_iter()
-                                .map(|v| v.mention())
+                                .map(|v| v.mention().to_string())
                                 .collect::<Vec<_>>()
                                 .join(", "),
                         );
