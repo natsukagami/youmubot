@@ -69,7 +69,8 @@ async fn message_command(
                 } else {
                     msg.edit(ctx, |f| {
                         f.content(format!(
-                            "[🖼️  **{}/{}**] Here's the image you requested!\n\n{}",                            page + 1,
+                            "[🖼️  **{}/{}**] Here's the image you requested!\n\n{}",
+                            page + 1,
                             images.len(),
                             images[page]
                         ))
