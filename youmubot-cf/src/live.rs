@@ -84,7 +84,7 @@ pub async fn watch_contest(
             break;
         }
         // Sleep for a minute
-        tokio::time::delay_for(std::time::Duration::from_secs(60)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
     }
 
     // Announce the final results

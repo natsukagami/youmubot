@@ -2,6 +2,7 @@ use codeforces::{Contest, RatingChange, User};
 use inflector::Inflector;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use std::borrow::Borrow;
+use youmubot_prelude::*;
 
 fn unwrap_or_ref<'a, T: ?Sized, B: Borrow<T>>(opt: &'a Option<B>, default: &'a T) -> &'a T {
     opt.as_ref().map(|v| v.borrow()).unwrap_or(default)
@@ -59,14 +60,14 @@ pub fn rating_change_embed<'a>(
     rating_change: &RatingChange,
     user: &User,
     contest: &Contest,
-    tag: &str,
+    user_id: serenity::model::id::UserId,
     e: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
     let delta = (rating_change.new_rating as i64) - (rating_change.old_rating as i64);
     let color = if delta < 0 { 0xff0000 } else { 0x00ff00 };
     let message = if delta > 0 {
         MessageBuilder::new()
-            .push(tag)
+            .push(user_id.mention())
             .push(" competed in ")
             .push_bold_safe(&contest.name)
             .push(", gaining ")
@@ -77,7 +78,7 @@ pub fn rating_change_embed<'a>(
             .build()
     } else {
         MessageBuilder::new()
-            .push(tag)
+            .push(user_id.mention())
             .push(" competed in ")
             .push_bold_safe(&contest.name)
             .push(", but lost ")
