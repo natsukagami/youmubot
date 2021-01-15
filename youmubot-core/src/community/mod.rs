@@ -104,7 +104,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                     .push_bold(format!("{}", users.len()))
                     .push(" ")
                     .push(
-                        role.map(|r| r.mention() + "s")
+                        role.map(|r| format!("{}s", r.mention()))
                             .unwrap_or("potential prayers".to_owned()),
                     )
                     .push(", ")

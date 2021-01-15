@@ -33,8 +33,7 @@ pub use hook::InfoHook;
 pub async fn setup(path: &std::path::Path, data: &mut TypeMap, announcers: &mut AnnouncerHandler) {
     CfSavedUsers::insert_into(data, path.join("cf_saved_users.yaml"))
         .expect("Must be able to set up DB");
-    let http = data.get::<HTTPClient>().unwrap();
-    let client = Arc::new(codeforces::Client::new(http.clone()));
+    let client = Arc::new(codeforces::Client::new());
     data.insert::<hook::ContestCache>(hook::ContestCache::new(client.clone()).await.unwrap());
     data.insert::<CFClient>(client);
     announcers.add("codeforces", announcer::Announcer);

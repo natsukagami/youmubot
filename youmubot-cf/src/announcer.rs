@@ -96,11 +96,7 @@ async fn update_user(
                             e.content(format!("Rating change for {}!", user_id.mention()))
                                 .embed(|c| {
                                     crate::embed::rating_change_embed(
-                                        &rc,
-                                        &info,
-                                        &contest,
-                                        &user_id.mention(),
-                                        c,
+                                        &rc, &info, &contest, user_id, c,
                                     )
                                 })
                         })

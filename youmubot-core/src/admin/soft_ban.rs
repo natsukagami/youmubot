@@ -148,7 +148,7 @@ pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
             }
         }
         // Sleep the thread for a minute
-        tokio::time::delay_for(std::time::Duration::from_secs(60)).await
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await
     }
 }
 

@@ -3,7 +3,7 @@ use serenity::framework::standard::CommandError as Error;
 use serenity::{
     framework::standard::{
         macros::{check, command},
-        Args, CheckResult, CommandOptions, CommandResult, Reason,
+        Args, CommandOptions, CommandResult, Reason,
     },
     model::channel::{Channel, Message},
 };
@@ -29,15 +29,20 @@ pub async fn image(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
 #[check]
 #[name = "nsfw"]
-async fn nsfw_check(ctx: &Context, msg: &Message, _: &mut Args, _: &CommandOptions) -> CheckResult {
+async fn nsfw_check(
+    ctx: &Context,
+    msg: &Message,
+    _: &mut Args,
+    _: &CommandOptions,
+) -> Result<(), Reason> {
     let channel = msg.channel_id.to_channel(&ctx).await.unwrap();
     if !(match channel {
         Channel::Guild(guild_channel) => guild_channel.nsfw,
         _ => true,
     }) {
-        CheckResult::Failure(Reason::User("😣 YOU FREAKING PERVERT!!!".to_owned()))
+        Err(Reason::User("😣 YOU FREAKING PERVERT!!!".to_owned()))
     } else {
-        CheckResult::Success
+        Ok(())
     }
 }
 
