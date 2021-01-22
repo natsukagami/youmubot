@@ -399,6 +399,7 @@ pub struct UserEventRank {
     pub beatmap_id: u64,
     pub rank: u16,
     pub mode: Mode,
+    pub date: DateTime<Utc>,
 }
 
 impl UserEvent {
@@ -409,6 +410,7 @@ impl UserEvent {
         let mode: Mode = Mode::parse_from_display(captures.get(2)?.as_str())?;
         Some(UserEventRank {
             beatmap_id: self.beatmap_id?,
+            date: self.date.clone(),
             mode,
             rank,
         })

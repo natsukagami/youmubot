@@ -438,7 +438,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                         "{}: here is the play that you requested",
                         msg.author
                     ))
-                    .embed(|m| score_embed(&recent_play, &beatmap_mode, &content, &user, None, m))
+                    .embed(|m| score_embed(&recent_play, &beatmap_mode, &content, &user).build(m))
                 })
                 .await?;
 
@@ -537,7 +537,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             for score in scores.iter() {
                 msg.channel_id
                     .send_message(&ctx, |c| {
-                        c.embed(|m| score_embed(&score, &bm, &content, &user, None, m))
+                        c.embed(|m| score_embed(&score, &bm, &content, &user).build(m))
                     })
                     .await?;
             }
@@ -601,7 +601,11 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                         "{}: here is the play that you requested",
                         msg.author
                     ))
-                    .embed(|m| score_embed(&top_play, &beatmap, &content, &user, Some(rank), m))
+                    .embed(|m| {
+                        score_embed(&top_play, &beatmap, &content, &user)
+                            .top_record(rank)
+                            .build(m)
+                    })
                 })
                 .await?;
 

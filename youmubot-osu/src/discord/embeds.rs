@@ -160,144 +160,184 @@ pub fn beatmapset_embed<'a>(
     }))
 }
 
-pub(crate) fn score_embed<'a>(
-    s: &Score,
-    bm: &BeatmapWithMode,
-    content: &BeatmapContent,
-    u: &User,
+pub(crate) struct ScoreEmbedBuilder<'a> {
+    s: &'a Score,
+    bm: &'a BeatmapWithMode,
+    content: &'a BeatmapContent,
+    u: &'a User,
     top_record: Option<u8>,
-    m: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
-    let mode = bm.mode();
-    let b = &bm.0;
-    let accuracy = s.accuracy(mode);
-    let stars = mode
-        .to_oppai_mode()
-        .and_then(|mode| content.get_info_with(Some(mode), s.mods).ok())
-        .map(|info| info.stars as f64)
-        .unwrap_or(b.difficulty.stars);
-    let score_line = match &s.rank {
-        Rank::SS | Rank::SSH => format!("SS"),
-        _ if s.perfect => format!("{:.2}% FC", accuracy),
-        Rank::F => format!("{:.2}% {} combo [FAILED]", accuracy, s.max_combo),
-        v => format!(
-            "{:.2}% {}x {} miss {} rank",
-            accuracy, s.max_combo, s.count_miss, v
-        ),
-    };
-    let pp = s.pp.map(|pp| (pp, format!("{:.2}pp", pp))).or_else(|| {
-        mode.to_oppai_mode()
-            .and_then(|op| {
-                content
-                    .get_pp_from(
-                        oppai_rs::Combo::non_fc(s.max_combo as u32, s.count_miss as u32),
-                        accuracy as f32,
-                        Some(op),
-                        s.mods,
+    world_record: Option<u16>,
+}
+
+impl<'a> ScoreEmbedBuilder<'a> {
+    pub fn top_record(&mut self, rank: u8) -> &mut Self {
+        self.top_record = Some(rank);
+        self
+    }
+    pub fn world_record(&mut self, rank: u16) -> &mut Self {
+        self.world_record = Some(rank);
+        self
+    }
+}
+
+pub(crate) fn score_embed<'a>(
+    s: &'a Score,
+    bm: &'a BeatmapWithMode,
+    content: &'a BeatmapContent,
+    u: &'a User,
+) -> ScoreEmbedBuilder<'a> {
+    ScoreEmbedBuilder {
+        s,
+        bm,
+        content,
+        u,
+        top_record: None,
+        world_record: None,
+    }
+}
+
+impl<'a> ScoreEmbedBuilder<'a> {
+    pub fn build<'b>(&self, m: &'b mut CreateEmbed) -> &'b mut CreateEmbed {
+        let mode = self.bm.mode();
+        let b = &self.bm.0;
+        let s = self.s;
+        let content = self.content;
+        let u = self.u;
+        let accuracy = s.accuracy(mode);
+        let stars = mode
+            .to_oppai_mode()
+            .and_then(|mode| content.get_info_with(Some(mode), s.mods).ok())
+            .map(|info| info.stars as f64)
+            .unwrap_or(b.difficulty.stars);
+        let score_line = match &s.rank {
+            Rank::SS | Rank::SSH => format!("SS"),
+            _ if s.perfect => format!("{:.2}% FC", accuracy),
+            Rank::F => format!("{:.2}% {} combo [FAILED]", accuracy, s.max_combo),
+            v => format!(
+                "{:.2}% {}x {} miss {} rank",
+                accuracy, s.max_combo, s.count_miss, v
+            ),
+        };
+        let pp = s.pp.map(|pp| (pp, format!("{:.2}pp", pp))).or_else(|| {
+            mode.to_oppai_mode()
+                .and_then(|op| {
+                    content
+                        .get_pp_from(
+                            oppai_rs::Combo::non_fc(s.max_combo as u32, s.count_miss as u32),
+                            accuracy as f32,
+                            Some(op),
+                            s.mods,
+                        )
+                        .ok()
+                })
+                .map(|pp| (pp as f64, format!("{:.2}pp [?]", pp)))
+        });
+        let pp = if !s.perfect {
+            mode.to_oppai_mode()
+                .and_then(|op| {
+                    content
+                        .get_pp_from(oppai_rs::Combo::FC(0), accuracy as f32, Some(op), s.mods)
+                        .ok()
+                })
+                .filter(|&v| {
+                    pp.as_ref()
+                        .map(|&(origin, _)| origin < v as f64)
+                        .unwrap_or(false)
+                })
+                .and_then(|value| {
+                    pp.as_ref()
+                        .map(|(_, original)| format!("{} ({:.2}pp if FC?)", original, value))
+                })
+                .or(pp.map(|v| v.1))
+        } else {
+            pp.map(|v| v.1)
+        };
+        let pp_gained = s.pp.map(|full_pp| {
+            self.top_record
+                .map(|top| {
+                    let after_pp = u.pp.unwrap();
+                    let effective_pp = full_pp * (0.95f64).powi(top as i32 - 1);
+                    let before_pp = after_pp - effective_pp;
+                    format!(
+                        "**pp gained**: **{:.2}**pp (+**{:.2}**pp | {:.2}pp \\➡️ {:.2}pp)",
+                        full_pp, effective_pp, before_pp, after_pp
                     )
-                    .ok()
-            })
-            .map(|pp| (pp as f64, format!("{:.2}pp [?]", pp)))
-    });
-    let pp = if !s.perfect {
-        mode.to_oppai_mode()
-            .and_then(|op| {
-                content
-                    .get_pp_from(oppai_rs::Combo::FC(0), accuracy as f32, Some(op), s.mods)
-                    .ok()
-            })
-            .filter(|&v| {
-                pp.as_ref()
-                    .map(|&(origin, _)| origin < v as f64)
-                    .unwrap_or(false)
-            })
-            .and_then(|value| {
-                pp.as_ref()
-                    .map(|(_, original)| format!("{} ({:.2}pp if FC?)", original, value))
-            })
-            .or(pp.map(|v| v.1))
-    } else {
-        pp.map(|v| v.1)
-    };
-    let pp_gained = s.pp.map(|full_pp| {
-        top_record
-            .map(|top| {
-                let after_pp = u.pp.unwrap();
-                let effective_pp = full_pp * (0.95f64).powi(top as i32 - 1);
-                let before_pp = after_pp - effective_pp;
-                format!(
-                    "**pp gained**: **{:.2}**pp (+**{:.2}**pp | {:.2}pp \\➡️ {:.2}pp)",
-                    full_pp, effective_pp, before_pp, after_pp
-                )
-            })
-            .unwrap_or_else(|| format!("**pp gained**: **{:.2}**pp", full_pp))
-    });
-    let score_line = pp
-        .map(|pp| format!("{} | {}", &score_line, pp))
-        .unwrap_or(score_line);
-    let max_combo = b
-        .difficulty
-        .max_combo
-        .map(|max| format!("**{}x**/{}x", s.max_combo, max))
-        .unwrap_or_else(|| format!("**{}x**", s.max_combo));
-    let top_record = top_record
-        .map(|v| format!("| #{} top record!", v))
-        .unwrap_or("".to_owned());
-    let diff = b.difficulty.apply_mods(s.mods, Some(stars));
-    m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
-        .color(0xffb6c1)
-        .title(format!(
-            "{} | {} - {} [{}] {} ({:.2}\\*) by {} | {} {}",
-            u.username,
-            b.artist,
-            b.title,
-            b.difficulty_name,
-            s.mods,
-            stars,
-            b.creator,
-            score_line,
-            top_record
-        ))
-        .description(format!(
-            r#"**Beatmap**: {} - {} [{}]**{} **
+                })
+                .unwrap_or_else(|| format!("**pp gained**: **{:.2}**pp", full_pp))
+        });
+        let score_line = pp
+            .map(|pp| format!("{} | {}", &score_line, pp))
+            .unwrap_or(score_line);
+        let max_combo = b
+            .difficulty
+            .max_combo
+            .map(|max| format!("**{}x**/{}x", s.max_combo, max))
+            .unwrap_or_else(|| format!("**{}x**", s.max_combo));
+        let top_record = self
+            .top_record
+            .map(|v| format!("| #{} top record!", v))
+            .unwrap_or("".to_owned());
+        let world_record = self
+            .world_record
+            .map(|v| format!("| #{} on Global Rankings!", v))
+            .unwrap_or("".to_owned());
+        let diff = b.difficulty.apply_mods(s.mods, Some(stars));
+        m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
+            .color(0xffb6c1)
+            .title(format!(
+                "{} | {} - {} [{}] {} ({:.2}\\*) by {} | {} {} {}",
+                u.username,
+                b.artist,
+                b.title,
+                b.difficulty_name,
+                s.mods,
+                stars,
+                b.creator,
+                score_line,
+                top_record,
+                world_record,
+            ))
+            .description(format!(
+                r#"**Beatmap**: {} - {} [{}]**{} **
 **Links**: [[Listing]]({}) [[Download]]({}) [[Bloodcat]]({})
 **Played on**: {}
 {}"#,
-            b.artist,
-            b.title,
-            b.difficulty_name,
-            s.mods,
-            b.link(),
-            b.download_link(false),
-            b.download_link(true),
-            s.date.format("%F %T"),
-            pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
-        ))
-        .image(b.cover_url())
-        .field(
-            "Score stats",
-            format!(
-                "**{}** | {} | **{:.2}%**",
-                grouped_number(s.score),
-                max_combo,
-                accuracy
-            ),
-            true,
-        )
-        .field(
-            "300s | 100s | 50s | misses",
-            format!(
-                "**{}** ({}) | **{}** ({}) | **{}** | **{}**",
-                s.count_300, s.count_geki, s.count_100, s.count_katu, s.count_50, s.count_miss
-            ),
-            true,
-        )
-        .field("Map stats", diff.format_info(mode, s.mods, b), false)
-        .timestamp(&s.date);
-    if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
-        m.footer(|f| f.text("Star difficulty does not reflect game mods."));
+                b.artist,
+                b.title,
+                b.difficulty_name,
+                s.mods,
+                b.link(),
+                b.download_link(false),
+                b.download_link(true),
+                s.date.format("%F %T"),
+                pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
+            ))
+            .image(b.cover_url())
+            .field(
+                "Score stats",
+                format!(
+                    "**{}** | {} | **{:.2}%**",
+                    grouped_number(s.score),
+                    max_combo,
+                    accuracy
+                ),
+                true,
+            )
+            .field(
+                "300s | 100s | 50s | misses",
+                format!(
+                    "**{}** ({}) | **{}** ({}) | **{}** | **{}**",
+                    s.count_300, s.count_geki, s.count_100, s.count_katu, s.count_50, s.count_miss
+                ),
+                true,
+            )
+            .field("Map stats", diff.format_info(mode, s.mods, b), false)
+            .timestamp(&s.date);
+        if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
+            m.footer(|f| f.text("Star difficulty does not reflect game mods."));
+        }
+        m
     }
-    m
 }
 
 pub(crate) fn user_embed<'a>(
