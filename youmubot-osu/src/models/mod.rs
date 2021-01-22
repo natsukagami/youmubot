@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -10,6 +11,10 @@ pub(crate) mod raw;
 
 pub use mods::Mods;
 use serenity::utils::MessageBuilder;
+
+lazy_static::lazy_static! {
+    static ref EVENT_RANK_REGEX: Regex = Regex::new(r#"^.+achieved rank #(\d+) on .+\((.+)\)$"#).unwrap();
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ApprovalStatus {
@@ -264,6 +269,17 @@ impl Mode {
         })
     }
 
+    /// Parse from the display output of the enum itself.
+    pub fn parse_from_display(s: &str) -> Option<Self> {
+        Some(match s {
+            "osu!" => Mode::Std,
+            "osu!taiko" => Mode::Taiko,
+            "osu!mania" => Mode::Catch,
+            "osu!catch" => Mode::Mania,
+            _ => return None,
+        })
+    }
+
     /// Parse from the new site's convention.
     pub fn parse_from_new_site(s: &str) -> Option<Self> {
         Some(match s {
@@ -375,6 +391,28 @@ pub struct UserEvent {
     pub beatmapset_id: Option<u64>,
     pub date: DateTime<Utc>,
     pub epic_factor: u8,
+}
+
+/// Represents a "achieved rank #x on beatmap" event.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UserEventRank {
+    pub beatmap_id: u64,
+    pub rank: u16,
+    pub mode: Mode,
+}
+
+impl UserEvent {
+    /// Try to parse the event into a "rank" event.
+    pub fn to_event_rank(&self) -> Option<UserEventRank> {
+        let captures = EVENT_RANK_REGEX.captures(self.display_html.as_str())?;
+        let rank: u16 = captures.get(1)?.as_str().parse().ok()?;
+        let mode: Mode = Mode::parse_from_display(captures.get(2)?.as_str())?;
+        Some(UserEventRank {
+            beatmap_id: self.beatmap_id?,
+            mode,
+            rank,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
