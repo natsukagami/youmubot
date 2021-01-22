@@ -66,9 +66,12 @@ pub fn setup(
 
     // API client
     let http_client = data.get::<HTTPClient>().unwrap().clone();
-    let osu_client = Arc::new(OsuHttpClient::new(
-        std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
-    ));
+    let make_client = || {
+        OsuHttpClient::new(
+            std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
+        )
+    };
+    let osu_client = Arc::new(make_client());
     data.insert::<OsuClient>(osu_client.clone());
     data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(http_client));
     data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
@@ -76,7 +79,10 @@ pub fn setup(
     ));
 
     // Announcer
-    announcers.add(announcer::ANNOUNCER_KEY, announcer::Announcer);
+    announcers.add(
+        announcer::ANNOUNCER_KEY,
+        announcer::Announcer::new(make_client()),
+    );
     Ok(())
 }
 
