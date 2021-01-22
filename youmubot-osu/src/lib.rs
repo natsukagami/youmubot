@@ -13,7 +13,7 @@ use std::convert::TryInto;
 use youmubot_prelude::{ratelimit::Ratelimit, *};
 
 /// The number of requests per minute to the osu! server.
-const REQUESTS_PER_MINUTE: usize = 60;
+const REQUESTS_PER_MINUTE: usize = 100;
 
 /// Client is the client that will perform calls to the osu! api server.
 pub struct Client {
