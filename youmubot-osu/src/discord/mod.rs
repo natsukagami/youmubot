@@ -23,6 +23,7 @@ mod db;
 pub(crate) mod embeds;
 mod hook;
 pub(crate) mod oppai_cache;
+mod register_user;
 mod server_rank;
 
 use db::OsuUser;
@@ -95,6 +96,7 @@ pub fn setup(
     catch,
     mania,
     save,
+    forcesave,
     recent,
     last,
     check,
@@ -168,14 +170,32 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
     match user {
         Some(u) => {
-            OsuSavedUsers::open(&*data).borrow_mut()?.insert(
-                msg.author.id,
-                OsuUser {
-                    id: u.id,
-                    last_update: chrono::Utc::now(),
-                    pp: vec![],
-                },
-            );
+            let check_beatmap_id = register_user::user_register_beatmap_id(&u);
+            let check = osu
+                .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
+                .await?
+                .into_iter()
+                .take(1)
+                .any(|s| s.beatmap_id == check_beatmap_id);
+            if !check {
+                let msg = msg.reply(&ctx, format!("To set your osu username, please make your most recent play be the following map: `/b/{}` in **osu! standard** mode! It does **not** have to be a pass.", check_beatmap_id));
+                let beatmap = osu
+                    .beatmaps(
+                        crate::request::BeatmapRequestKind::Beatmap(check_beatmap_id),
+                        |f| f,
+                    )
+                    .await?
+                    .into_iter()
+                    .next()
+                    .unwrap();
+                msg.await?
+                    .edit(&ctx, |f| {
+                        f.embed(|e| beatmap_embed(&beatmap, Mode::Std, Mods::NOMOD, None, e))
+                    })
+                    .await?;
+                return Ok(());
+            }
+            add_user(msg.author.id, u.id, &*data)?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -189,6 +209,55 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             msg.reply(&ctx, "user not found...").await?;
         }
     }
+    Ok(())
+}
+
+#[command]
+#[description = "Save the given username as someone's username."]
+#[owners_only]
+#[usage = "[ping user]/[username or user_id]"]
+#[num_args(2)]
+pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let data = ctx.data.read().await;
+    let osu = data.get::<OsuClient>().unwrap();
+    let target = args.single::<serenity::model::id::UserId>()?;
+
+    let user = args.single::<String>()?;
+    let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
+    match user {
+        Some(u) => {
+            add_user(target, u.id, &*data)?;
+            msg.reply(
+                &ctx,
+                MessageBuilder::new()
+                    .push("user has been set to ")
+                    .push_mono_safe(u.username)
+                    .build(),
+            )
+            .await?;
+        }
+        None => {
+            msg.reply(&ctx, "user not found...").await?;
+        }
+    }
+    Ok(())
+}
+
+fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &TypeMap) -> Result<()> {
+    OsuSavedUsers::open(data).borrow_mut()?.insert(
+        target,
+        OsuUser {
+            id: user_id,
+            last_update: chrono::Utc::now(),
+            pp: vec![],
+        },
+    );
+    OsuUserBests::open(data)
+        .borrow_mut()?
+        .iter_mut()
+        .for_each(|(_, r)| {
+            r.remove(&target);
+        });
     Ok(())
 }
 
