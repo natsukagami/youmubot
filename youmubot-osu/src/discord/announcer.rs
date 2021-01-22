@@ -3,15 +3,18 @@ use super::{embeds::score_embed, BeatmapWithMode};
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
     discord::cache::save_beatmap,
-    discord::oppai_cache::BeatmapCache,
-    models::{Mode, Score},
+    discord::oppai_cache::{BeatmapCache, BeatmapContent},
+    models::{Mode, Score, User, UserEventRank},
     request::UserID,
     Client as Osu,
 };
 use announcer::MemberToChannels;
 use serenity::{
     http::CacheHttp,
-    model::id::{ChannelId, UserId},
+    model::{
+        channel::Message,
+        id::{ChannelId, UserId},
+    },
     CacheAndHttp,
 };
 use std::{collections::HashMap, sync::Arc};
@@ -22,12 +25,14 @@ pub const ANNOUNCER_KEY: &'static str = "osu";
 
 /// The announcer struct implementing youmubot_prelude::Announcer
 pub struct Announcer {
-    client: Osu,
+    client: Arc<Osu>,
 }
 
 impl Announcer {
     pub fn new(client: Osu) -> Self {
-        Self { client }
+        Self {
+            client: Arc::new(client),
+        }
     }
 }
 
@@ -106,65 +111,56 @@ impl Announcer {
         mode: Mode,
         d: AppData,
     ) -> Result<Option<f64>, Error> {
+        let days_since_last_update = (chrono::Utc::now() - osu_user.last_update).num_days() + 1;
+        let last_update = osu_user.last_update.clone();
         let (scores, user) = {
             let scores = self.scan_user(osu_user, mode).await?;
             let user = self
                 .client
-                .user(UserID::ID(osu_user.id), |f| f.mode(mode))
+                .user(UserID::ID(osu_user.id), |f| {
+                    f.mode(mode)
+                        .event_days(days_since_last_update.min(31) as u8)
+                })
                 .await?
                 .ok_or(Error::msg("user not found"))?;
             (scores, user)
         };
+        let client = self.client.clone();
         let pp = user.pp;
         spawn_future(async move {
-            scores
-                .into_iter()
-                .map(|(rank, score)| {
-                    let d = d.clone();
-                    async move {
-                        let data = d.read().await;
-                        let cache = data.get::<BeatmapMetaCache>().unwrap();
-                        let oppai = data.get::<BeatmapCache>().unwrap();
-                        let beatmap = cache.get_beatmap_default(score.beatmap_id).await?;
-                        let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
-                        let r: Result<_> =
-                            Ok((rank, score, BeatmapWithMode(beatmap, mode), content));
-                        r
-                    }
-                })
-                .collect::<stream::FuturesOrdered<_>>()
-                .filter_map(|v| future::ready(v.ok()))
-                .for_each(move |(rank, score, beatmap, content)| {
-                    let channels = channels.clone();
-                    let d = d.clone();
-                    let c = c.clone();
-                    let user = user.clone();
-                    async move {
-                        let data = d.read().await;
-                        for channel in (&channels).iter() {
-                            if let Err(e) = channel
-                                .send_message(c.http(), |c| {
-                                    c.content(format!("New top record from {}!", user_id.mention()))
-                                        .embed(|e| {
-                                            score_embed(
-                                                &score,
-                                                &beatmap,
-                                                &content,
-                                                &user,
-                                                Some(rank),
-                                                e,
-                                            )
-                                        })
-                                })
-                                .await
-                            {
-                                dbg!(e);
-                            }
-                            save_beatmap(&*data, *channel, &beatmap).ok();
-                        }
-                    }
-                })
+            let event_scores = user
+                .events
+                .iter()
+                .filter_map(|u| u.to_event_rank())
+                .filter(|u| u.mode == mode && u.date > last_update)
+                .map(|ev| CollectedScore::from_event(&*client, &user, ev, user_id, &channels[..]))
+                .collect::<stream::FuturesUnordered<_>>()
+                .filter_map(|u| future::ready(u.ok_or_print()))
+                .collect::<Vec<_>>()
                 .await;
+            let top_scores = scores.into_iter().filter_map(|(rank, score)| {
+                if score.date > last_update {
+                    Some(CollectedScore::from_top_score(
+                        &user,
+                        score,
+                        mode,
+                        rank,
+                        user_id,
+                        &channels[..],
+                    ))
+                } else {
+                    None
+                }
+            });
+            let ctx = Context { data: d, c };
+            event_scores
+                .into_iter()
+                .chain(top_scores)
+                .map(|v| v.send_message(&ctx))
+                .collect::<stream::FuturesUnordered<_>>()
+                .try_collect::<Vec<_>>()
+                .await
+                .ok_or_print();
         });
         Ok(pp)
     }
@@ -181,5 +177,149 @@ impl Announcer {
             .map(|(i, v)| ((i + 1) as u8, v))
             .collect();
         Ok(scores)
+    }
+}
+
+#[derive(Clone)]
+struct Context {
+    data: AppData,
+    c: Arc<CacheAndHttp>,
+}
+
+struct CollectedScore<'a> {
+    pub user: &'a User,
+    pub score: Score,
+    pub mode: Mode,
+    pub kind: ScoreType,
+
+    pub discord_user: UserId,
+    pub channels: &'a [ChannelId],
+}
+
+impl<'a> CollectedScore<'a> {
+    fn from_top_score(
+        user: &'a User,
+        score: Score,
+        mode: Mode,
+        rank: u8,
+        discord_user: UserId,
+        channels: &'a [ChannelId],
+    ) -> Self {
+        Self {
+            user,
+            score,
+            mode,
+            kind: ScoreType::TopRecord(rank),
+            discord_user,
+            channels,
+        }
+    }
+
+    async fn from_event(
+        osu: &Osu,
+        user: &'a User,
+        event: UserEventRank,
+        discord_user: UserId,
+        channels: &'a [ChannelId],
+    ) -> Result<CollectedScore<'a>> {
+        let scores = osu
+            .scores(event.beatmap_id, |f| {
+                f.user(UserID::ID(user.id)).mode(event.mode)
+            })
+            .await?;
+        let score = match scores.into_iter().next() {
+            Some(v) => v,
+            None => return Err(Error::msg("cannot get score for map...")),
+        };
+        Ok(Self {
+            user,
+            score,
+            mode: event.mode,
+            kind: ScoreType::WorldRecord(event.rank),
+            discord_user,
+            channels,
+        })
+    }
+}
+
+impl<'a> CollectedScore<'a> {
+    async fn send_message(self, ctx: &Context) -> Result<Vec<Message>> {
+        let (bm, content) = self.get_beatmap(&ctx).await?;
+        self.channels
+            .into_iter()
+            .map(|c| self.send_message_to(*c, ctx, &bm, &content))
+            .collect::<stream::FuturesUnordered<_>>()
+            .try_collect()
+            .await
+    }
+
+    async fn get_beatmap(
+        &self,
+        ctx: &Context,
+    ) -> Result<(
+        BeatmapWithMode,
+        impl std::ops::Deref<Target = BeatmapContent>,
+    )> {
+        let data = ctx.data.read().await;
+        let cache = data.get::<BeatmapMetaCache>().unwrap();
+        let oppai = data.get::<BeatmapCache>().unwrap();
+        let beatmap = cache.get_beatmap_default(self.score.beatmap_id).await?;
+        let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
+        Ok((BeatmapWithMode(beatmap, self.mode), content))
+    }
+
+    async fn send_message_to(
+        &self,
+        channel: ChannelId,
+        ctx: &Context,
+        bm: &BeatmapWithMode,
+        content: &BeatmapContent,
+    ) -> Result<Message> {
+        let m = channel
+            .send_message(ctx.c.http(), |c| {
+                c.content(match self.kind {
+                    ScoreType::TopRecord(_) => {
+                        format!("New top record from {}!", self.discord_user.mention())
+                    }
+                    ScoreType::WorldRecord(_) => {
+                        format!("New best score from {}!", self.discord_user.mention())
+                    }
+                })
+                .embed(|e| {
+                    let mut b = score_embed(&self.score, &bm, content, self.user);
+                    match self.kind {
+                        ScoreType::TopRecord(rank) => b.top_record(rank),
+                        ScoreType::WorldRecord(rank) => b.world_record(rank),
+                    }
+                    .build(e)
+                })
+            })
+            .await?;
+        save_beatmap(&*ctx.data.read().await, channel, &bm).ok_or_print();
+        Ok(m)
+    }
+}
+
+enum ScoreType {
+    TopRecord(u8),
+    WorldRecord(u16),
+}
+
+trait OkPrint {
+    type Output;
+    fn ok_or_print(self) -> Option<Self::Output>;
+}
+
+impl<T, E: std::fmt::Debug> OkPrint for Result<T, E> {
+    type Output = T;
+
+    fn ok_or_print(self) -> Option<Self::Output> {
+        match self {
+            Ok(v) => Some(v),
+            Err(e) => {
+                eprintln!("Error: {:?}", e);
+                None
+            }
+        }
     }
 }
