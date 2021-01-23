@@ -95,7 +95,16 @@ impl youmubot_prelude::Announcer for Announcer {
             .collect::<HashMap<_, _>>()
             .await;
         // Update users
-        *OsuSavedUsers::open(&*d.read().await).borrow_mut()? = data;
+        let db = &*d.read().await;
+        let mut db = OsuSavedUsers::open(db);
+        let mut db = db.borrow_mut()?;
+        data.into_iter()
+            .for_each(|(k, v)| match db.get(&k).map(|v| v.last_update.clone()) {
+                Some(d) if d > v.last_update => (),
+                _ => {
+                    db.insert(k, v);
+                }
+            });
         Ok(())
     }
 }
