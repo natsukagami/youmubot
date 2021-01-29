@@ -74,6 +74,10 @@ impl std::str::FromStr for Mods {
     type Err = String;
     fn from_str(mut s: &str) -> Result<Self, Self::Err> {
         let mut res = Self::default();
+        // Strip leading +
+        if s.starts_with("+") {
+            s = &s[1..];
+        }
         while s.len() >= 2 {
             let (m, nw) = s.split_at(2);
             s = nw;
