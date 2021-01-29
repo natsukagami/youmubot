@@ -87,7 +87,7 @@ impl std::str::FromStr for Mods {
                 "DT" => res |= Mods::DT,
                 "RX" => res |= Mods::RX,
                 "HT" => res |= Mods::HT,
-                "NC" => res |= Mods::NC,
+                "NC" => res |= Mods::NC | Mods::DT,
                 "FL" => res |= Mods::FL,
                 "AT" => res |= Mods::AT,
                 "SO" => res |= Mods::SO,
@@ -121,9 +121,13 @@ impl fmt::Display for Mods {
         }
         write!(f, "+")?;
         for p in MODS_WITH_NAMES.iter() {
-            if self.contains(p.0) {
-                write!(f, "{}", p.1)?;
+            if !self.contains(p.0) {
+                continue;
             }
+            if p.0 == Mods::DT && self.contains(Mods::NC) {
+                continue;
+            }
+            write!(f, "{}", p.1)?;
         }
         Ok(())
     }
