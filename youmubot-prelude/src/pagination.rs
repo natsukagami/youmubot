@@ -13,9 +13,32 @@ use tokio::time as tokio_time;
 const ARROW_RIGHT: &'static str = "➡️";
 const ARROW_LEFT: &'static str = "⬅️";
 
+/// A trait that provides the implementation of a paginator.
 #[async_trait::async_trait]
-pub trait Paginate: Send {
+pub trait Paginate: Send + Sized {
+    /// Render the given page.
     async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
+
+    /// Any setting-up before the rendering stage.
+    async fn prerender(&mut self, _m: &mut Message) -> Result<()> {
+        Ok(())
+    }
+
+    /// Handle the incoming reaction. Defaults to calling `handle_pagination_reaction`, but you can do some additional handling
+    /// before handing the functionality over.
+    ///
+    /// Return the resulting current page, or `None` if the pagination should stop.
+    async fn handle_reaction(
+        &mut self,
+        page: u8,
+        ctx: &Context,
+        message: &mut Message,
+        reaction: &ReactionAction,
+    ) -> Result<Option<u8>> {
+        handle_pagination_reaction(page, self, ctx, message, reaction)
+            .await
+            .map(Some)
+    }
 }
 
 #[async_trait::async_trait]
@@ -51,6 +74,7 @@ pub async fn paginate(
     message
         .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
         .await?;
+    pager.prerender(&mut message).await?;
     pager.render(0, ctx, &mut message).await?;
     // Build a reaction collector
     let mut reaction_collector = message.await_reactions(&ctx).removed(true).await;
@@ -62,8 +86,12 @@ pub async fn paginate(
             Err(_) => break Ok(()),
             Ok(None) => break Ok(()),
             Ok(Some(reaction)) => {
-                page = match handle_reaction(page, &mut pager, ctx, &mut message, &reaction).await {
-                    Ok(v) => v,
+                page = match pager
+                    .handle_reaction(page, ctx, &mut message, &reaction)
+                    .await
+                {
+                    Ok(Some(v)) => v,
+                    Ok(None) => break Ok(()),
                     Err(e) => break Err(e),
                 };
             }
@@ -91,7 +119,7 @@ pub async fn paginate_fn(
 }
 
 // Handle the reaction and return a new page number.
-async fn handle_reaction(
+pub async fn handle_pagination_reaction(
     page: u8,
     pager: &mut impl Paginate,
     ctx: &Context,
