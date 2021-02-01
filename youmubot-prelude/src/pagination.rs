@@ -20,7 +20,7 @@ pub trait Paginate: Send + Sized {
     async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
 
     /// Any setting-up before the rendering stage.
-    async fn prerender(&mut self, _m: &mut Message) -> Result<()> {
+    async fn prerender(&mut self, ctx: &Context, _m: &mut Message) -> Result<()> {
         Ok(())
     }
 
@@ -56,17 +56,40 @@ where
     }
 }
 
+// Paginate! with a pager function, and replying to a message.
+/// If awaited, will block until everything is done.
+pub async fn paginate_reply(
+    pager: impl Paginate,
+    ctx: &Context,
+    reply_to: &Message,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    let message = reply_to
+        .reply(&ctx, "Youmu is loading the first page...")
+        .await?;
+    paginate_with_first_message(pager, ctx, message, timeout).await
+}
+
 // Paginate! with a pager function.
 /// If awaited, will block until everything is done.
 pub async fn paginate(
-    mut pager: impl Paginate,
+    pager: impl Paginate,
     ctx: &Context,
     channel: ChannelId,
     timeout: std::time::Duration,
 ) -> Result<()> {
-    let mut message = channel
+    let message = channel
         .send_message(&ctx, |e| e.content("Youmu is loading the first page..."))
         .await?;
+    paginate_with_first_message(pager, ctx, message, timeout).await
+}
+
+async fn paginate_with_first_message(
+    mut pager: impl Paginate,
+    ctx: &Context,
+    mut message: Message,
+    timeout: std::time::Duration,
+) -> Result<()> {
     // React to the message
     message
         .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
@@ -74,7 +97,7 @@ pub async fn paginate(
     message
         .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
         .await?;
-    pager.prerender(&mut message).await?;
+    pager.prerender(&ctx, &mut message).await?;
     pager.render(0, ctx, &mut message).await?;
     // Build a reaction collector
     let mut reaction_collector = message.await_reactions(&ctx).removed(true).await;

@@ -20,6 +20,7 @@ mod announcer;
 pub(crate) mod beatmap_cache;
 mod cache;
 mod db;
+pub(crate) mod display;
 pub(crate) mod embeds;
 mod hook;
 pub(crate) mod oppai_cache;
