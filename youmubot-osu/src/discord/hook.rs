@@ -1,9 +1,7 @@
-use super::OsuClient;
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
     discord::oppai_cache::{BeatmapCache, BeatmapInfo},
     models::{Beatmap, Mode, Mods},
-    request::BeatmapRequestKind,
 };
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -90,11 +88,6 @@ fn handle_old_links<'a>(
             let cache = data.get::<BeatmapCache>().unwrap();
             let osu = data.get::<BeatmapMetaCache>().unwrap();
             let req_type = capture.name("link_type").unwrap().as_str();
-            let req = match req_type {
-                "b" => BeatmapRequestKind::Beatmap(capture["id"].parse()?),
-                "s" => BeatmapRequestKind::Beatmapset(capture["id"].parse()?),
-                _ => unreachable!(),
-            };
             let mode = capture
                 .name("mode")
                 .map(|v| v.as_str().parse())
@@ -171,24 +164,22 @@ fn handle_new_links<'a>(
         .captures_iter(content)
         .map(|capture| async move {
             let data = ctx.data.read().await;
-            let osu = data.get::<OsuClient>().unwrap();
+            let osu = data.get::<BeatmapMetaCache>().unwrap();
             let cache = data.get::<BeatmapCache>().unwrap();
             let mode = capture
                 .name("mode")
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));
             let link = capture.get(0).unwrap().as_str();
-            let req = match capture.name("beatmap_id") {
-                Some(ref v) => BeatmapRequestKind::Beatmap(v.as_str().parse()?),
-                None => BeatmapRequestKind::Beatmapset(
-                    capture.name("set_id").unwrap().as_str().parse()?,
-                ),
+            let beatmaps = match capture.name("beatmap_id") {
+                Some(ref v) => vec![match mode {
+                    Some(mode) => osu.get_beatmap(v.as_str().parse()?, mode).await?,
+                    None => osu.get_beatmap_default(v.as_str().parse()?).await?,
+                }],
+                None => {
+                    osu.get_beatmapset(capture.name("set_id").unwrap().as_str().parse()?)
+                        .await?
+                }
             };
-            let beatmaps = osu
-                .beatmaps(req, |v| match mode {
-                    Some(m) => v.mode(m, true),
-                    None => v,
-                })
-                .await?;
             if beatmaps.is_empty() {
                 return Ok(None);
             }

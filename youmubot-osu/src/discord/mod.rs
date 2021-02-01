@@ -8,7 +8,7 @@ use crate::{
 use serenity::{
     framework::standard::{
         macros::{command, group},
-        Args, CommandError, CommandResult,
+        Args, CommandResult,
     },
     model::channel::Message,
     utils::MessageBuilder,
