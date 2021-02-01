@@ -20,33 +20,15 @@ mod beatmapset {
         reply_to: &Message,
         message: impl AsRef<str>,
     ) -> Result<bool> {
-        let data = ctx.data.read().await;
         let mods = mods.unwrap_or(Mods::NOMOD);
-
-        // Try and collect beatmap info
-        let beatmap_infos = {
-            let cache = data.get::<BeatmapCache>().unwrap();
-            beatmapset
-                .iter()
-                .map(|b| {
-                    let mode = mode.unwrap_or(b.mode).to_oppai_mode();
-                    cache.get_beatmap(b.beatmap_id).map(move |v| {
-                        v.ok()
-                            .and_then(move |v| v.get_info_with(Some(mode?), mods).ok())
-                    })
-                })
-                .collect::<stream::FuturesOrdered<_>>()
-                .collect::<Vec<_>>()
-                .await
-        };
 
         if beatmapset.is_empty() {
             return Ok(false);
         }
 
         let p = Paginate {
+            infos: vec![None; beatmapset.len()],
             maps: beatmapset,
-            infos: beatmap_infos,
             mode,
             mods,
             message: message.as_ref().to_owned(),
@@ -64,10 +46,25 @@ mod beatmapset {
 
     struct Paginate {
         maps: Vec<Beatmap>,
-        infos: Vec<Option<BeatmapInfo>>,
+        infos: Vec<Option<Option<BeatmapInfo>>>,
         mode: Option<Mode>,
         mods: Mods,
         message: String,
+    }
+
+    impl Paginate {
+        async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Option<BeatmapInfo> {
+            let data = ctx.data.read().await;
+            let cache = data.get::<BeatmapCache>().unwrap();
+            let mode = self.mode.unwrap_or(b.mode).to_oppai_mode();
+            cache
+                .get_beatmap(b.beatmap_id)
+                .map(move |v| {
+                    v.ok()
+                        .and_then(move |v| v.get_info_with(Some(mode?), self.mods).ok())
+                })
+                .await
+        }
     }
 
     #[async_trait]
@@ -93,7 +90,14 @@ mod beatmapset {
             }
 
             let map = &self.maps[page];
-            let info = self.infos[page].clone();
+            let info = match &self.infos[page] {
+                Some(info) => info.clone(),
+                None => {
+                    let info = self.get_beatmap_info(ctx, map).await;
+                    self.infos[page] = Some(info.clone());
+                    info
+                }
+            };
             m.edit(ctx, |e| {
                 e.content(self.message.as_str()).embed(|em| {
                     crate::discord::embeds::beatmap_embed(

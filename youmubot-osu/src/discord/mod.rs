@@ -563,6 +563,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     "Here is the beatmapset you requested!",
                 )
                 .await?;
+                return Ok(());
             }
             let info = data
                 .get::<BeatmapCache>()
