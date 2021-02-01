@@ -13,9 +13,32 @@ use tokio::time as tokio_time;
 const ARROW_RIGHT: &'static str = "➡️";
 const ARROW_LEFT: &'static str = "⬅️";
 
+/// A trait that provides the implementation of a paginator.
 #[async_trait::async_trait]
-pub trait Paginate: Send {
+pub trait Paginate: Send + Sized {
+    /// Render the given page.
     async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
+
+    /// Any setting-up before the rendering stage.
+    async fn prerender(&mut self, _ctx: &Context, _m: &mut Message) -> Result<()> {
+        Ok(())
+    }
+
+    /// Handle the incoming reaction. Defaults to calling `handle_pagination_reaction`, but you can do some additional handling
+    /// before handing the functionality over.
+    ///
+    /// Return the resulting current page, or `None` if the pagination should stop.
+    async fn handle_reaction(
+        &mut self,
+        page: u8,
+        ctx: &Context,
+        message: &mut Message,
+        reaction: &ReactionAction,
+    ) -> Result<Option<u8>> {
+        handle_pagination_reaction(page, self, ctx, message, reaction)
+            .await
+            .map(Some)
+    }
 }
 
 #[async_trait::async_trait]
@@ -33,17 +56,40 @@ where
     }
 }
 
+// Paginate! with a pager function, and replying to a message.
+/// If awaited, will block until everything is done.
+pub async fn paginate_reply(
+    pager: impl Paginate,
+    ctx: &Context,
+    reply_to: &Message,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    let message = reply_to
+        .reply(&ctx, "Youmu is loading the first page...")
+        .await?;
+    paginate_with_first_message(pager, ctx, message, timeout).await
+}
+
 // Paginate! with a pager function.
 /// If awaited, will block until everything is done.
 pub async fn paginate(
-    mut pager: impl Paginate,
+    pager: impl Paginate,
     ctx: &Context,
     channel: ChannelId,
     timeout: std::time::Duration,
 ) -> Result<()> {
-    let mut message = channel
+    let message = channel
         .send_message(&ctx, |e| e.content("Youmu is loading the first page..."))
         .await?;
+    paginate_with_first_message(pager, ctx, message, timeout).await
+}
+
+async fn paginate_with_first_message(
+    mut pager: impl Paginate,
+    ctx: &Context,
+    mut message: Message,
+    timeout: std::time::Duration,
+) -> Result<()> {
     // React to the message
     message
         .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
@@ -51,6 +97,7 @@ pub async fn paginate(
     message
         .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
         .await?;
+    pager.prerender(&ctx, &mut message).await?;
     pager.render(0, ctx, &mut message).await?;
     // Build a reaction collector
     let mut reaction_collector = message.await_reactions(&ctx).removed(true).await;
@@ -62,8 +109,12 @@ pub async fn paginate(
             Err(_) => break Ok(()),
             Ok(None) => break Ok(()),
             Ok(Some(reaction)) => {
-                page = match handle_reaction(page, &mut pager, ctx, &mut message, &reaction).await {
-                    Ok(v) => v,
+                page = match pager
+                    .handle_reaction(page, ctx, &mut message, &reaction)
+                    .await
+                {
+                    Ok(Some(v)) => v,
+                    Ok(None) => break Ok(()),
                     Err(e) => break Err(e),
                 };
             }
@@ -90,8 +141,23 @@ pub async fn paginate_fn(
     paginate(pager, ctx, channel, timeout).await
 }
 
+/// Same as `paginate_reply`, but for function inputs, especially anonymous functions.
+pub async fn paginate_reply_fn(
+    pager: impl for<'m> FnMut(
+            u8,
+            &'m Context,
+            &'m mut Message,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
+        + Send,
+    ctx: &Context,
+    reply_to: &Message,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    paginate_reply(pager, ctx, reply_to, timeout).await
+}
+
 // Handle the reaction and return a new page number.
-async fn handle_reaction(
+pub async fn handle_pagination_reaction(
     page: u8,
     pager: &mut impl Paginate,
     ctx: &Context,

@@ -60,7 +60,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
 
     let users = std::sync::Arc::new(users);
     let last_update = last_update.unwrap();
-    paginate_fn(
+    paginate_reply_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
             const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
@@ -98,7 +98,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
             })
         },
         ctx,
-        m.channel_id,
+        m,
         std::time::Duration::from_secs(60),
     )
     .await?;
@@ -380,7 +380,7 @@ async fn show_leaderboard(
         .await?;
         return Ok(());
     }
-    paginate_fn(
+    paginate_reply_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
             const ITEMS_PER_PAGE: usize = 5;
             let start = (page as usize) * ITEMS_PER_PAGE;
@@ -516,7 +516,7 @@ async fn show_leaderboard(
             })
         },
         ctx,
-        m.channel_id,
+        m,
         std::time::Duration::from_secs(60),
     )
     .await?;

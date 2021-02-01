@@ -11,6 +11,7 @@ use youmubot_prelude::*;
 pub struct BeatmapMetaCache {
     client: Arc<Client>,
     cache: DashMap<(u64, Mode), Beatmap>,
+    beatmapsets: DashMap<u64, Vec<u64>>,
 }
 
 impl TypeMapKey for BeatmapMetaCache {
@@ -23,6 +24,7 @@ impl BeatmapMetaCache {
         BeatmapMetaCache {
             client,
             cache: DashMap::new(),
+            beatmapsets: DashMap::new(),
         }
     }
     async fn insert_if_possible(&self, id: u64, mode: Option<Mode>) -> Result<Beatmap> {
@@ -54,17 +56,47 @@ impl BeatmapMetaCache {
         Ok(
             match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
                 .iter()
-                .filter_map(|&mode| {
+                .find_map(|&mode| {
                     self.cache
                         .get(&(id, mode))
                         .filter(|b| b.mode == mode)
                         .map(|b| b.clone())
-                })
-                .next()
-            {
+                }) {
                 Some(v) => v,
                 None => self.insert_if_possible(id, None).await?,
             },
         )
+    }
+
+    /// Get a beatmapset from its ID.
+    pub async fn get_beatmapset(&self, id: u64) -> Result<Vec<Beatmap>> {
+        match self.beatmapsets.get(&id).map(|v| v.clone()) {
+            Some(v) => {
+                v.into_iter()
+                    .map(|id| self.get_beatmap_default(id))
+                    .collect::<stream::FuturesOrdered<_>>()
+                    .try_collect()
+                    .await
+            }
+            None => {
+                let beatmaps = self
+                    .client
+                    .beatmaps(crate::BeatmapRequestKind::Beatmapset(id), |f| f)
+                    .await?;
+                if beatmaps.is_empty() {
+                    return Err(Error::msg("beatmapset not found"));
+                }
+                if let ApprovalStatus::Ranked(_) = &beatmaps[0].approval {
+                    // Save each beatmap.
+                    beatmaps.iter().for_each(|b| {
+                        self.cache.insert((b.beatmap_id, b.mode), b.clone());
+                    });
+                    // Save the beatmapset mapping.
+                    self.beatmapsets
+                        .insert(id, beatmaps.iter().map(|v| v.beatmap_id).collect());
+                }
+                Ok(beatmaps)
+            }
+        }
     }
 }

@@ -64,7 +64,7 @@ async fn message_command(
         return Ok(());
     }
     let images = std::sync::Arc::new(images);
-    paginate_fn(
+    paginate_reply_fn(
         move |page, ctx, msg: &mut Message| {
             let images = images.clone();
             Box::pin(async move {
@@ -87,7 +87,7 @@ async fn message_command(
             })
         },
         ctx,
-        msg.channel_id,
+        msg,
         std::time::Duration::from_secs(120),
     )
     .await?;
