@@ -144,7 +144,7 @@ impl Announcer {
                 .filter(|u| u.mode == mode && u.date > last_update)
                 .map(|ev| CollectedScore::from_event(&*client, &user, ev, user_id, &channels[..]))
                 .collect::<stream::FuturesUnordered<_>>()
-                .filter_map(|u| future::ready(u.ok_or_print()))
+                .filter_map(|u| future::ready(u.pls_ok()))
                 .collect::<Vec<_>>()
                 .await;
             let top_scores = scores.into_iter().filter_map(|(rank, score)| {
@@ -169,7 +169,7 @@ impl Announcer {
                 .collect::<stream::FuturesUnordered<_>>()
                 .try_collect::<Vec<_>>()
                 .await
-                .ok_or_print();
+                .pls_ok();
         });
         Ok(pp)
     }
@@ -304,7 +304,7 @@ impl<'a> CollectedScore<'a> {
                 })
             })
             .await?;
-        save_beatmap(&*ctx.data.read().await, channel, &bm).ok_or_print();
+        save_beatmap(&*ctx.data.read().await, channel, &bm).pls_ok();
         Ok(m)
     }
 }
@@ -312,23 +312,4 @@ impl<'a> CollectedScore<'a> {
 enum ScoreType {
     TopRecord(u8),
     WorldRecord(u16),
-}
-
-trait OkPrint {
-    type Output;
-    fn ok_or_print(self) -> Option<Self::Output>;
-}
-
-impl<T, E: std::fmt::Debug> OkPrint for Result<T, E> {
-    type Output = T;
-
-    fn ok_or_print(self) -> Option<Self::Output> {
-        match self {
-            Ok(v) => Some(v),
-            Err(e) => {
-                eprintln!("Error: {:?}", e);
-                None
-            }
-        }
-    }
 }

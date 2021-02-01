@@ -22,6 +22,7 @@ pub use async_trait::async_trait;
 
 /// Re-export the anyhow errors
 pub use anyhow::{Error, Result};
+pub use debugging_ok::OkPrint;
 
 /// Re-export useful future and stream utils
 pub use futures_util::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
@@ -61,5 +62,26 @@ pub mod prelude_commands {
     async fn ping(ctx: &Context, m: &Message) -> CommandResult {
         m.reply(&ctx, "Pong!").await?;
         Ok(())
+    }
+}
+
+mod debugging_ok {
+    pub trait OkPrint {
+        type Output;
+        fn pls_ok(self) -> Option<Self::Output>;
+    }
+
+    impl<T, E: std::fmt::Debug> OkPrint for Result<T, E> {
+        type Output = T;
+
+        fn pls_ok(self) -> Option<Self::Output> {
+            match self {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    eprintln!("Error: {:?}", e);
+                    None
+                }
+            }
+        }
     }
 }
