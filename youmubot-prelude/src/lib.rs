@@ -15,7 +15,7 @@ pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
 pub use hook::Hook;
 pub use member_cache::MemberCache;
-pub use pagination::{paginate, paginate_fn};
+pub use pagination::{paginate, paginate_fn, paginate_reply, paginate_reply_fn, Paginate};
 
 /// Re-exporting async_trait helps with implementing Announcer.
 pub use async_trait::async_trait;

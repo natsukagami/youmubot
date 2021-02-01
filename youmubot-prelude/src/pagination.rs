@@ -141,6 +141,21 @@ pub async fn paginate_fn(
     paginate(pager, ctx, channel, timeout).await
 }
 
+/// Same as `paginate_reply`, but for function inputs, especially anonymous functions.
+pub async fn paginate_reply_fn(
+    pager: impl for<'m> FnMut(
+            u8,
+            &'m Context,
+            &'m mut Message,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
+        + Send,
+    ctx: &Context,
+    reply_to: &Message,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    paginate_reply(pager, ctx, reply_to, timeout).await
+}
+
 // Handle the reaction and return a new page number.
 pub async fn handle_pagination_reaction(
     page: u8,

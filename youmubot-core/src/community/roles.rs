@@ -33,7 +33,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
             const ROLES_PER_PAGE: usize = 8;
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
-            paginate_fn(
+            paginate_reply_fn(
                 |page, ctx, msg| {
                     let roles = roles.clone();
                     Box::pin(async move {
@@ -99,7 +99,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
                     })
                 },
                 ctx,
-                m.channel_id,
+                m,
                 std::time::Duration::from_secs(60 * 10),
             )
             .await?;
