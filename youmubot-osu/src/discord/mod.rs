@@ -8,7 +8,7 @@ use crate::{
 use serenity::{
     framework::standard::{
         macros::{command, group},
-        Args, CommandError as Error, CommandResult,
+        Args, CommandError, CommandResult,
     },
     model::channel::Message,
     utils::MessageBuilder,
@@ -293,7 +293,7 @@ fn to_user_id_query(
     db.get(&id)
         .cloned()
         .map(|u| UserID::ID(u.id))
-        .ok_or(Error::from("No saved account found"))
+        .ok_or(Error::msg("No saved account found"))
 }
 
 enum Nth {
@@ -307,7 +307,7 @@ impl FromStr for Nth {
         if s == "--all" || s == "-a" || s == "##" {
             Ok(Nth::All)
         } else if !s.starts_with("#") {
-            Err(Error::from("Not an order"))
+            Err(Error::msg("Not an order"))
         } else {
             let v = s.split_at("#".len()).1.parse()?;
             Ok(Nth::Nth(v))
@@ -489,7 +489,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let user = osu
         .user(user, |f| f.mode(mode))
         .await?
-        .ok_or(Error::from("User not found"))?;
+        .ok_or(Error::msg("User not found"))?;
     match nth {
         Nth::Nth(nth) => {
             let recent_play = osu
@@ -497,7 +497,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?
                 .into_iter()
                 .last()
-                .ok_or(Error::from("No such play"))?;
+                .ok_or(Error::msg("No such play"))?;
             let beatmap = meta_cache.get_beatmap(recent_play.beatmap_id, mode).await?;
             let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, mode);
@@ -525,17 +525,45 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     Ok(())
 }
 
+/// Get beatmapset.
+struct OptBeatmapset;
+
+impl FromStr for OptBeatmapset {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "--set" | "-s" | "--beatmapset" => Ok(Self),
+            _ => Err(Error::msg("not opt beatmapset")),
+        }
+    }
+}
+
 #[command]
 #[description = "Show information from the last queried beatmap."]
-#[usage = "[mods = no mod]"]
-#[max_args(1)]
+#[usage = "[--set/-s/--beatmapset] / [mods = no mod]"]
+#[max_args(2)]
 pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let b = cache::get_beatmap(&*data, msg.channel_id)?;
+    let beatmapset = args.find::<OptBeatmapset>().is_ok();
 
     match b {
         Some(BeatmapWithMode(b, m)) => {
             let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
+            if beatmapset {
+                let beatmap_cache = data.get::<BeatmapMetaCache>().unwrap();
+                let beatmapset = beatmap_cache.get_beatmapset(b.beatmapset_id).await?;
+                display::display_beatmapset(
+                    ctx,
+                    beatmapset,
+                    None,
+                    Some(mods),
+                    msg,
+                    "Here is the beatmapset you requested!",
+                )
+                .await?;
+            }
             let info = data
                 .get::<BeatmapCache>()
                 .unwrap()
@@ -545,11 +573,9 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .ok();
             msg.channel_id
                 .send_message(&ctx, |f| {
-                    f.content(format!(
-                        "{}: here is the beatmap you requested!",
-                        msg.author
-                    ))
-                    .embed(|c| beatmap_embed(&b, m, mods, info, c))
+                    f.content("Here is the beatmap you requested!")
+                        .embed(|c| beatmap_embed(&b, m, mods, info, c))
+                        .reference_message(msg)
                 })
                 .await?;
         }
@@ -595,7 +621,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             let user = osu
                 .user(user, |f| f)
                 .await?
-                .ok_or(Error::from("User not found"))?;
+                .ok_or(Error::msg("User not found"))?;
             let scores = osu
                 .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
                 .await?;
@@ -647,7 +673,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
     let user = osu
         .user(user, |f| f.mode(mode))
         .await?
-        .ok_or(Error::from("User not found"))?;
+        .ok_or(Error::msg("User not found"))?;
 
     match nth {
         Nth::Nth(nth) => {
@@ -660,7 +686,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let top_play = top_play
                 .into_iter()
                 .last()
-                .ok_or(Error::from("No such play"))?;
+                .ok_or(Error::msg("No such play"))?;
             let beatmap = meta_cache.get_beatmap(top_play.beatmap_id, mode).await?;
             let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, mode);

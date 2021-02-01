@@ -87,8 +87,8 @@ fn handle_old_links<'a>(
         .captures_iter(content)
         .map(move |capture| async move {
             let data = ctx.data.read().await;
-            let osu = data.get::<OsuClient>().unwrap();
             let cache = data.get::<BeatmapCache>().unwrap();
+            let osu = data.get::<BeatmapMetaCache>().unwrap();
             let req_type = capture.name("link_type").unwrap().as_str();
             let req = match req_type {
                 "b" => BeatmapRequestKind::Beatmap(capture["id"].parse()?),
@@ -108,12 +108,14 @@ fn handle_old_links<'a>(
                         _ => return None,
                     })
                 });
-            let beatmaps = osu
-                .beatmaps(req, |v| match mode {
-                    Some(m) => v.mode(m, true),
-                    None => v,
-                })
-                .await?;
+            let beatmaps = match req_type {
+                "b" => vec![match mode {
+                    Some(mode) => osu.get_beatmap(capture["id"].parse()?, mode).await?,
+                    None => osu.get_beatmap_default(capture["id"].parse()?).await?,
+                }],
+                "s" => osu.get_beatmapset(capture["id"].parse()?).await?,
+                _ => unreachable!(),
+            };
             if beatmaps.is_empty() {
                 return Ok(None);
             }
