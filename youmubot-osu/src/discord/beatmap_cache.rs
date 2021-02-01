@@ -79,13 +79,14 @@ impl BeatmapMetaCache {
                     .await
             }
             None => {
-                let beatmaps = self
+                let mut beatmaps = self
                     .client
                     .beatmaps(crate::BeatmapRequestKind::Beatmapset(id), |f| f)
                     .await?;
                 if beatmaps.is_empty() {
                     return Err(Error::msg("beatmapset not found"));
                 }
+                beatmaps.sort_by_key(|b| (b.mode as u8, (b.difficulty.stars * 1000.0) as u64)); // Cast so that Ord is maintained
                 if let ApprovalStatus::Ranked(_) = &beatmaps[0].approval {
                     // Save each beatmap.
                     beatmaps.iter().for_each(|b| {
