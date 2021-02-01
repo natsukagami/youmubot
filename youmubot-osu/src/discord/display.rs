@@ -2,7 +2,9 @@ pub use beatmapset::display_beatmapset;
 
 mod beatmapset {
     use crate::{
-        discord::{oppai_cache::BeatmapInfo, BeatmapCache, OsuClient},
+        discord::{
+            cache::save_beatmap, oppai_cache::BeatmapInfo, BeatmapCache, BeatmapWithMode, OsuClient,
+        },
         models::{Beatmap, Mode, Mods},
         request::BeatmapRequestKind,
     };
@@ -15,24 +17,15 @@ mod beatmapset {
 
     pub async fn display_beatmapset(
         ctx: &Context,
-        beatmapset_id: u64,
+        beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
         mods: Option<Mods>,
         reply_to: &Message,
         message: impl AsRef<str>,
     ) -> Result<bool> {
         let data = ctx.data.read().await;
-        let client = data.get::<OsuClient>().unwrap();
         let mods = mods.unwrap_or(Mods::NOMOD);
 
-        let beatmapset = client
-            .beatmaps(BeatmapRequestKind::Beatmapset(beatmapset_id), |f| {
-                if let Some(mode) = mode {
-                    f.mode(mode, true);
-                }
-                f
-            })
-            .await?;
         // Try and collect beatmap info
         let beatmap_infos = {
             let cache = data.get::<BeatmapCache>().unwrap();
@@ -111,6 +104,13 @@ mod beatmapset {
                 })
             })
             .await?;
+            save_beatmap(
+                &*ctx.data.read().await,
+                m.channel_id,
+                &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),
+            )
+            .ok();
+
             Ok(true)
         }
 

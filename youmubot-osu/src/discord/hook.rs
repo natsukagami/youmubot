@@ -7,11 +7,11 @@ use crate::{
 };
 use lazy_static::lazy_static;
 use regex::Regex;
-use serenity::{builder::CreateMessage, model::channel::Message, utils::MessageBuilder};
+use serenity::{model::channel::Message, utils::MessageBuilder};
 use std::str::FromStr;
 use youmubot_prelude::*;
 
-use super::embeds::{beatmap_embed, beatmapset_embed};
+use super::embeds::beatmap_embed;
 
 lazy_static! {
     static ref OLD_LINK_REGEX: Regex = Regex::new(
@@ -38,39 +38,32 @@ pub fn hook<'a>(
             handle_new_links(ctx, &msg.content),
             handle_short_links(ctx, &msg, &msg.content),
         );
-        let last_beatmap = stream::select(old_links, stream::select(new_links, short_links))
+        stream::select(old_links, stream::select(new_links, short_links))
             .then(|l| async move {
-                let mut bm: Option<super::BeatmapWithMode> = None;
-                msg.channel_id
-                    .send_message(&ctx, |m| match l.embed {
-                        EmbedType::Beatmap(b, info, mods) => {
-                            let t = handle_beatmap(&b, info, l.link, l.mode, mods, m);
-                            let mode = l.mode.unwrap_or(b.mode);
-                            bm = Some(super::BeatmapWithMode(b, mode));
-                            t
-                        }
-                        EmbedType::Beatmapset(b) => handle_beatmapset(b, l.link, l.mode, m),
-                    })
-                    .await?;
-                let r: Result<_> = Ok(bm);
-                r
-            })
-            .filter_map(|v| async move {
-                match v {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("{}", e);
-                        None
+                match l.embed {
+                    EmbedType::Beatmap(b, info, mods) => {
+                        handle_beatmap(ctx, &b, info, l.link, l.mode, mods, msg)
+                            .await
+                            .pls_ok();
+                        let mode = l.mode.unwrap_or(b.mode);
+                        let bm = super::BeatmapWithMode(b, mode);
+                        crate::discord::cache::save_beatmap(
+                            &*ctx.data.read().await,
+                            msg.channel_id,
+                            &bm,
+                        )
+                        .pls_ok();
+                    }
+                    EmbedType::Beatmapset(b) => {
+                        handle_beatmapset(ctx, b, l.link, l.mode, msg)
+                            .await
+                            .pls_ok();
                     }
                 }
             })
-            .fold(None, |_, v| async move { Some(v) })
+            .collect::<()>()
             .await;
 
-        // Save the beatmap for query later.
-        if let Some(t) = last_beatmap {
-            super::cache::save_beatmap(&*ctx.data.read().await, msg.channel_id, &t)?;
-        }
         Ok(())
     })
 }
@@ -130,7 +123,7 @@ fn handle_old_links<'a>(
                     // collect beatmap info
                     let mods = capture
                         .name("mods")
-                        .map(|v| Mods::from_str(v.as_str()).ok())
+                        .map(|v| Mods::from_str(v.as_str()).pls_ok())
                         .flatten()
                         .unwrap_or(Mods::NOMOD);
                     let info = match mode.unwrap_or(b.mode).to_oppai_mode() {
@@ -138,7 +131,7 @@ fn handle_old_links<'a>(
                             .get_beatmap(b.beatmap_id)
                             .await
                             .and_then(|b| b.get_info_with(Some(mode), mods))
-                            .ok(),
+                            .pls_ok(),
                         None => None,
                     };
                     Some(ToPrint {
@@ -203,14 +196,14 @@ fn handle_new_links<'a>(
                     // collect beatmap info
                     let mods = capture
                         .name("mods")
-                        .and_then(|v| Mods::from_str(v.as_str()).ok())
+                        .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                         .unwrap_or(Mods::NOMOD);
                     let info = match mode.unwrap_or(beatmap.mode).to_oppai_mode() {
                         Some(mode) => cache
                             .get_beatmap(beatmap.beatmap_id)
                             .await
                             .and_then(|b| b.get_info_with(Some(mode), mods))
-                            .ok(),
+                            .pls_ok(),
                         None => None,
                     };
                     Some(ToPrint {
@@ -269,14 +262,14 @@ fn handle_short_links<'a>(
             }?;
             let mods = capture
                 .name("mods")
-                .and_then(|v| Mods::from_str(v.as_str()).ok())
+                .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                 .unwrap_or(Mods::NOMOD);
             let info = match mode.unwrap_or(beatmap.mode).to_oppai_mode() {
                 Some(mode) => cache
                     .get_beatmap(beatmap.beatmap_id)
                     .await
                     .and_then(|b| b.get_info_with(Some(mode), mods))
-                    .ok(),
+                    .pls_ok(),
                 None => None,
             };
             let r: Result<_> = Ok(ToPrint {
@@ -298,40 +291,47 @@ fn handle_short_links<'a>(
         })
 }
 
-fn handle_beatmap<'a, 'b>(
+async fn handle_beatmap<'a, 'b>(
+    ctx: &Context,
     beatmap: &Beatmap,
     info: Option<BeatmapInfo>,
     link: &'_ str,
     mode: Option<Mode>,
     mods: Mods,
-    m: &'a mut CreateMessage<'b>,
-) -> &'a mut CreateMessage<'b> {
-    m.content(
-        MessageBuilder::new()
-            .push("Beatmap information for ")
-            .push_mono_safe(link)
-            .build(),
-    )
-    .embed(|b| beatmap_embed(beatmap, mode.unwrap_or(beatmap.mode), mods, info, b))
+    reply_to: &Message,
+) -> Result<()> {
+    reply_to
+        .channel_id
+        .send_message(ctx, |m| {
+            m.content(
+                MessageBuilder::new()
+                    .push("Beatmap information for ")
+                    .push_mono_safe(link)
+                    .build(),
+            )
+            .embed(|b| beatmap_embed(beatmap, mode.unwrap_or(beatmap.mode), mods, info, b))
+            .reference_message(reply_to)
+        })
+        .await?;
+    Ok(())
 }
 
-fn handle_beatmapset<'a, 'b>(
+async fn handle_beatmapset<'a, 'b>(
+    ctx: &Context,
     beatmaps: Vec<Beatmap>,
     link: &'_ str,
     mode: Option<Mode>,
-    m: &'a mut CreateMessage<'b>,
-) -> &'a mut CreateMessage<'b> {
-    let mut beatmaps = beatmaps;
-    beatmaps.sort_by(|a, b| {
-        (mode.unwrap_or(a.mode) as u8, a.difficulty.stars)
-            .partial_cmp(&(mode.unwrap_or(b.mode) as u8, b.difficulty.stars))
-            .unwrap()
-    });
-    m.content(
-        MessageBuilder::new()
-            .push("Beatmapset information for ")
-            .push_mono_safe(link)
-            .build(),
+    reply_to: &Message,
+) -> Result<()> {
+    crate::discord::display::display_beatmapset(
+        &ctx,
+        beatmaps,
+        mode,
+        None,
+        reply_to,
+        format!("Beatmapset information for `{}`", link),
     )
-    .embed(|b| beatmapset_embed(&beatmaps, mode, b))
+    .await
+    .pls_ok();
+    Ok(())
 }
