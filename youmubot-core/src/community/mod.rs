@@ -114,6 +114,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                     .push(". Congrats! 🎉 🎊 🥳")
                     .build(),
             )
+            .reference_message(m)
         })
         .await?;
 

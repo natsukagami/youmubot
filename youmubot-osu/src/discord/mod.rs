@@ -504,11 +504,11 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
             msg.channel_id
                 .send_message(&ctx, |m| {
-                    m.content(format!(
-                        "{}: here is the play that you requested",
-                        msg.author
-                    ))
-                    .embed(|m| score_embed(&recent_play, &beatmap_mode, &content, &user).build(m))
+                    m.content(format!("Here is the play that you requested",))
+                        .embed(|m| {
+                            score_embed(&recent_play, &beatmap_mode, &content, &user).build(m)
+                        })
+                        .reference_message(msg)
                 })
                 .await?;
 
