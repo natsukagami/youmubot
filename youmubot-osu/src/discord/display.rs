@@ -32,7 +32,7 @@ mod beatmapset {
             beatmapset
                 .iter()
                 .map(|b| {
-                    let mode = b.mode.to_oppai_mode();
+                    let mode = mode.unwrap_or(b.mode).to_oppai_mode();
                     cache.get_beatmap(b.beatmap_id).map(move |v| {
                         v.ok()
                             .and_then(move |v| v.get_info_with(Some(mode?), mods).ok())
@@ -52,11 +52,16 @@ mod beatmapset {
             infos: beatmap_infos,
             mode,
             mods,
-            owner: reply_to.author.id,
             message: message.as_ref().to_owned(),
         };
 
-        pagination::paginate_reply(p, ctx, reply_to, std::time::Duration::from_secs(60)).await?;
+        let ctx = ctx.clone();
+        let reply_to = reply_to.clone();
+        spawn_future(async move {
+            pagination::paginate_reply(p, &ctx, &reply_to, std::time::Duration::from_secs(60))
+                .await
+                .pls_ok();
+        });
         Ok(true)
     }
 
@@ -65,7 +70,6 @@ mod beatmapset {
         infos: Vec<Option<BeatmapInfo>>,
         mode: Option<Mode>,
         mods: Mods,
-        owner: serenity::model::id::UserId,
         message: String,
     }
 
@@ -78,7 +82,16 @@ mod beatmapset {
             m: &mut serenity::model::channel::Message,
         ) -> Result<bool> {
             let page = page as usize;
-            if page >= self.maps.len() {
+            if page == self.maps.len() {
+                m.edit(ctx, |f| {
+                    f.embed(|em| {
+                        crate::discord::embeds::beatmapset_embed(&self.maps[..], self.mode, em)
+                    })
+                })
+                .await?;
+                return Ok(true);
+            }
+            if page > self.maps.len() {
                 return Ok(false);
             }
 
@@ -132,22 +145,13 @@ mod beatmapset {
             reaction: &ReactionAction,
         ) -> Result<Option<u8>> {
             // Render the old style.
-            if let ReactionAction::Added(v) = reaction {
-                if let ReactionType::Unicode(s) = &v.emoji {
-                    if s == SHOW_ALL_EMOTE && v.user_id.filter(|&id| id == self.owner).is_some() {
-                        message
-                            .edit(ctx, |f| {
-                                f.embed(|em| {
-                                    crate::discord::embeds::beatmapset_embed(
-                                        &self.maps[..],
-                                        self.mode,
-                                        em,
-                                    )
-                                })
-                            })
-                            .await?;
-                        return Ok(None);
-                    }
+            let v = match reaction {
+                ReactionAction::Added(v) | ReactionAction::Removed(v) => v,
+            };
+            if let ReactionType::Unicode(s) = &v.emoji {
+                if s == SHOW_ALL_EMOTE {
+                    self.render(self.maps.len() as u8, ctx, message).await?;
+                    return Ok(Some(self.maps.len() as u8));
                 }
             }
             pagination::handle_pagination_reaction(page, self, ctx, message, reaction)
