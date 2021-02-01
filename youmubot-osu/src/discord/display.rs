@@ -2,11 +2,8 @@ pub use beatmapset::display_beatmapset;
 
 mod beatmapset {
     use crate::{
-        discord::{
-            cache::save_beatmap, oppai_cache::BeatmapInfo, BeatmapCache, BeatmapWithMode, OsuClient,
-        },
+        discord::{cache::save_beatmap, oppai_cache::BeatmapInfo, BeatmapCache, BeatmapWithMode},
         models::{Beatmap, Mode, Mods},
-        request::BeatmapRequestKind,
     };
     use serenity::{
         collector::ReactionAction, model::channel::Message, model::channel::ReactionType,

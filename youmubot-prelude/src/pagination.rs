@@ -20,7 +20,7 @@ pub trait Paginate: Send + Sized {
     async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
 
     /// Any setting-up before the rendering stage.
-    async fn prerender(&mut self, ctx: &Context, _m: &mut Message) -> Result<()> {
+    async fn prerender(&mut self, _ctx: &Context, _m: &mut Message) -> Result<()> {
         Ok(())
     }
 
