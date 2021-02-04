@@ -1,6 +1,8 @@
 use std::{ffi::CString, sync::Arc};
 use youmubot_prelude::*;
 
+pub use oppai_rs::Accuracy as OppaiAccuracy;
+
 /// the information collected from a download/Oppai request.
 #[derive(Debug)]
 pub struct BeatmapContent {
@@ -20,7 +22,7 @@ impl BeatmapContent {
     pub fn get_pp_from(
         &self,
         combo: oppai_rs::Combo,
-        accuracy: f32,
+        accuracy: impl Into<OppaiAccuracy>,
         mode: Option<oppai_rs::Mode>,
         mods: impl Into<oppai_rs::Mods>,
     ) -> Result<f32> {

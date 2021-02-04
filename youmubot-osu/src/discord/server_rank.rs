@@ -4,7 +4,10 @@ use super::{
     ModeArg, OsuClient,
 };
 use crate::{
-    discord::{oppai_cache::BeatmapCache, BeatmapWithMode},
+    discord::{
+        oppai_cache::{BeatmapCache, OppaiAccuracy},
+        BeatmapWithMode,
+    },
     models::{Mode, Mods, Score},
     request::UserID,
 };
@@ -275,12 +278,12 @@ async fn show_leaderboard(
     let mode = bm.1;
     let oppai = data.get::<BeatmapCache>().unwrap();
     let oppai_map = oppai.get_beatmap(bm.0.beatmap_id).await?;
-    let get_oppai_pp = move |combo: u64, misses: u64, acc: f64, mods: Mods| {
+    let get_oppai_pp = move |combo: u64, misses: u64, acc: OppaiAccuracy, mods: Mods| {
         mode.to_oppai_mode().and_then(|mode| {
             oppai_map
                 .get_pp_from(
                     oppai_rs::Combo::non_fc(combo as u32, misses as u32),
-                    acc as f32,
+                    acc,
                     Some(mode),
                     mods,
                 )
@@ -354,7 +357,10 @@ async fn show_leaderboard(
                             get_oppai_pp(
                                 score.max_combo,
                                 score.count_miss,
-                                score.accuracy(mode),
+                                OppaiAccuracy::from_hits(
+                                    score.count_100 as u32,
+                                    score.count_50 as u32,
+                                ),
                                 score.mods,
                             )
                         })

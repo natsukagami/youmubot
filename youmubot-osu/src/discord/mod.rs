@@ -1,6 +1,6 @@
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
-    discord::oppai_cache::BeatmapCache,
+    discord::oppai_cache::{BeatmapCache, OppaiAccuracy},
     models::{Beatmap, Mode, Mods, Score, User},
     request::UserID,
     Client as OsuHttpClient,
@@ -384,7 +384,10 @@ async fn list_plays<'a>(
                                                 max_combo: p.max_combo as u32,
                                                 misses: p.count_miss as u32,
                                             },
-                                            p.accuracy(mode) as f32,
+                                            OppaiAccuracy::from_hits(
+                                                p.count_100 as u32,
+                                                p.count_50 as u32,
+                                            ),
                                             Some(op),
                                             p.mods,
                                         )

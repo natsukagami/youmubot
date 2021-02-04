@@ -1,6 +1,6 @@
 use super::BeatmapWithMode;
 use crate::{
-    discord::oppai_cache::{BeatmapContent, BeatmapInfo},
+    discord::oppai_cache::{BeatmapContent, BeatmapInfo, OppaiAccuracy},
     models::{Beatmap, Mode, Mods, Rank, Score, User},
 };
 use chrono::Utc;
@@ -224,7 +224,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     content
                         .get_pp_from(
                             oppai_rs::Combo::non_fc(s.max_combo as u32, s.count_miss as u32),
-                            accuracy as f32,
+                            OppaiAccuracy::from_hits(s.count_100 as u32, s.count_50 as u32),
                             Some(op),
                             s.mods,
                         )
@@ -236,7 +236,12 @@ impl<'a> ScoreEmbedBuilder<'a> {
             mode.to_oppai_mode()
                 .and_then(|op| {
                     content
-                        .get_pp_from(oppai_rs::Combo::FC(0), accuracy as f32, Some(op), s.mods)
+                        .get_pp_from(
+                            oppai_rs::Combo::FC(0),
+                            OppaiAccuracy::from_hits(s.count_100 as u32, s.count_50 as u32),
+                            Some(op),
+                            s.mods,
+                        )
                         .ok()
                 })
                 .filter(|&v| {
