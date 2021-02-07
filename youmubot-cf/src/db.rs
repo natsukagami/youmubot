@@ -15,6 +15,8 @@ pub struct CfUser {
     #[serde(default)]
     pub last_contest_id: Option<u64>,
     pub rating: Option<i64>,
+    #[serde(default)]
+    pub failures: u8,
 }
 
 impl CfUser {
@@ -26,6 +28,7 @@ impl CfUser {
             last_update: Utc::now(),
             last_contest_id: rc.into_iter().last().map(|v| v.contest_id),
             rating: u.rating,
+            failures: 0,
         }
     }
 }

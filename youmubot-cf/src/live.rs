@@ -27,15 +27,18 @@ pub async fn watch_contest(
 ) -> Result<()> {
     let data = ctx.data.read().await;
     let db = CfSavedUsers::open(&*data).borrow()?.clone();
-    let http = ctx.http.clone();
+    let member_cache = data.get::<member_cache::MemberCache>().unwrap().clone();
+    let mut msg = channel
+        .send_message(&ctx, |e| e.content("Youmu is building the member list..."))
+        .await?;
     // Collect an initial member list.
     // This never changes during the scan.
     let mut member_results: HashMap<UserId, MemberResult> = db
         .into_iter()
         .map(|(user_id, cfu)| {
-            let http = http.clone();
+            let member_cache = &member_cache;
             async move {
-                guild.member(http, user_id).await.map(|m| {
+                member_cache.query(ctx, user_id, guild).await.map(|m| {
                     (
                         user_id,
                         MemberResult {
@@ -48,29 +51,36 @@ pub async fn watch_contest(
             }
         })
         .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| future::ready(v.ok()))
+        .filter_map(|v| future::ready(v))
         .collect()
         .await;
 
     let http = data.get::<CFClient>().unwrap();
-    let (mut contest, _, _) = Contest::standings(&http, contest_id, |f| f.limit(1, 1)).await?;
+    let (mut contest, _, _) =
+        Contest::standings(&*http.borrow().await?, contest_id, |f| f.limit(1, 1)).await?;
 
-    channel
-        .send_message(&ctx, |e| {
-            e.content(format!(
-                "Youmu is watching contest **{}**, with the following members:\n{}",
-                contest.name,
-                member_results
-                    .iter()
-                    .map(|(_, m)| format!("- {} as **{}**", m.member.distinct(), m.handle))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            ))
-        })
-        .await?;
+    msg.edit(&ctx, |e| {
+        e.content(format!(
+            "Youmu is watching contest **{}**, with the following members: {}",
+            contest.name,
+            member_results
+                .iter()
+                .map(|(_, m)| serenity::utils::MessageBuilder::new()
+                    .push_safe(m.member.distinct())
+                    .push(" (")
+                    .push_mono_safe(&m.handle)
+                    .push(")")
+                    .build())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ))
+    })
+    .await?;
 
     loop {
-        if let Ok(messages) = scan_changes(&*http, &mut member_results, &mut contest).await {
+        if let Ok(messages) =
+            scan_changes(&*http.borrow().await?, &mut member_results, &mut contest).await
+        {
             for message in messages {
                 channel
                     .send_message(&ctx, |e| {
@@ -128,6 +138,17 @@ pub async fn watch_contest(
     Ok(())
 }
 
+fn mention(phase: ContestPhase, m: &Member) -> String {
+    match phase {
+        ContestPhase::Before | ContestPhase::Coding =>
+        // Don't mention directly, avoid spamming in contest
+        {
+            MessageBuilder::new().push_safe(m.distinct()).build()
+        }
+        _ => m.mention().to_string(),
+    }
+}
+
 async fn scan_changes(
     http: &codeforces::Client,
     members: &mut HashMap<UserId, MemberResult>,
@@ -179,6 +200,7 @@ async fn scan_changes(
                 last_submission_time_seconds: None,
             });
             messages.extend(translate_overall_result(
+                contest.phase,
                 member_result.handle.as_str(),
                 &old_row,
                 &row,
@@ -192,6 +214,7 @@ async fn scan_changes(
             ) {
                 if let Some(message) = analyze_change(&contest, old, new).map(|c| {
                     translate_change(
+                        contest.phase,
                         member_result.handle.as_str(),
                         &row,
                         &member_result.member,
@@ -219,6 +242,7 @@ async fn scan_changes(
 }
 
 fn translate_overall_result(
+    phase: ContestPhase,
     handle: &str,
     old_row: &RanklistRow,
     new_row: &RanklistRow,
@@ -228,7 +252,7 @@ fn translate_overall_result(
         let mut m = MessageBuilder::new();
         m.push_bold_safe(handle)
             .push(" (")
-            .push_safe(member.distinct())
+            .push(mention(phase, member))
             .push(")");
         m
     };
@@ -260,6 +284,7 @@ fn translate_overall_result(
 }
 
 fn translate_change(
+    phase: ContestPhase,
     handle: &str,
     row: &RanklistRow,
     member: &Member,
@@ -270,7 +295,7 @@ fn translate_change(
     let mut m = MessageBuilder::new();
     m.push_bold_safe(handle)
         .push(" (")
-        .push_safe(member.distinct())
+        .push_safe(mention(phase, member))
         .push(")");
 
     use Change::*;
