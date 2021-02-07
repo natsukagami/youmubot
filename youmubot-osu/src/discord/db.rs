@@ -23,4 +23,6 @@ pub struct OsuUser {
     pub last_update: DateTime<Utc>,
     #[serde(default)]
     pub pp: Vec<Option<f64>>,
+    /// More than 5 failures => gone
+    pub failures: Option<u8>,
 }

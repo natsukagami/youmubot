@@ -46,29 +46,25 @@ impl youmubot_prelude::Announcer for Announcer {
     ) -> Result<()> {
         // For each user...
         let data = OsuSavedUsers::open(&*d.read().await).borrow()?.clone();
+        let now = chrono::Utc::now();
         let data = data
             .into_iter()
             .map(|(user_id, osu_user)| {
-                let d = d.clone();
                 let channels = &channels;
-                let c = c.clone();
+                let ctx = Context {
+                    c: c.clone(),
+                    data: d.clone(),
+                };
                 let s = &self;
                 async move {
-                    let channels = channels.channels_of(c.clone(), user_id).await;
+                    let channels = channels.channels_of(ctx.c.clone(), user_id).await;
                     if channels.is_empty() {
                         return (user_id, osu_user); // We don't wanna update an user without any active server
                     }
                     let pp = match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
                         .into_iter()
                         .map(|m| {
-                            s.handle_user_mode(
-                                c.clone(),
-                                &osu_user,
-                                user_id,
-                                channels.clone(),
-                                *m,
-                                d.clone(),
-                            )
+                            s.handle_user_mode(&ctx, now, &osu_user, user_id, channels.clone(), *m)
                         })
                         .collect::<stream::FuturesOrdered<_>>()
                         .try_collect::<Vec<_>>()
@@ -77,15 +73,21 @@ impl youmubot_prelude::Announcer for Announcer {
                         Ok(v) => v,
                         Err(e) => {
                             eprintln!("osu: Cannot update {}: {}", osu_user.id, e);
-                            return (user_id, osu_user);
+                            return (
+                                user_id,
+                                OsuUser {
+                                    failures: Some(osu_user.failures.unwrap_or(0) + 1),
+                                    ..osu_user
+                                },
+                            );
                         }
                     };
-                    let last_update = chrono::Utc::now();
                     (
                         user_id,
                         OsuUser {
                             pp,
-                            last_update,
+                            last_update: now,
+                            failures: None,
                             ..osu_user
                         },
                     )
@@ -100,9 +102,17 @@ impl youmubot_prelude::Announcer for Announcer {
         let mut db = db.borrow_mut()?;
         data.into_iter()
             .for_each(|(k, v)| match db.get(&k).map(|v| v.last_update.clone()) {
-                Some(d) if d > v.last_update => (),
+                Some(d) if d > now => (),
                 _ => {
-                    db.insert(k, v);
+                    if v.failures.unwrap_or(0) > 5 {
+                        eprintln!(
+                            "osu: Removing user {} [{}] due to 5 consecutive failures",
+                            k, v.id
+                        );
+                        db.remove(&k);
+                    } else {
+                        db.insert(k, v);
+                    }
                 }
             });
         Ok(())
@@ -113,14 +123,14 @@ impl Announcer {
     /// Handles an user/mode scan, announces all possible new scores, return the new pp value.
     async fn handle_user_mode(
         &self,
-        c: Arc<CacheAndHttp>,
+        ctx: &Context,
+        now: chrono::DateTime<chrono::Utc>,
         osu_user: &OsuUser,
         user_id: UserId,
         channels: Vec<ChannelId>,
         mode: Mode,
-        d: AppData,
     ) -> Result<Option<f64>, Error> {
-        let days_since_last_update = (chrono::Utc::now() - osu_user.last_update).num_days() + 1;
+        let days_since_last_update = (now - osu_user.last_update).num_days() + 1;
         let last_update = osu_user.last_update.clone();
         let (scores, user) = {
             let scores = self.scan_user(osu_user, mode).await?;
@@ -136,19 +146,20 @@ impl Announcer {
         };
         let client = self.client.clone();
         let pp = user.pp;
+        let ctx = ctx.clone();
         spawn_future(async move {
             let event_scores = user
                 .events
                 .iter()
                 .filter_map(|u| u.to_event_rank())
-                .filter(|u| u.mode == mode && u.date > last_update)
+                .filter(|u| u.mode == mode && u.date > last_update && u.date <= now)
                 .map(|ev| CollectedScore::from_event(&*client, &user, ev, user_id, &channels[..]))
                 .collect::<stream::FuturesUnordered<_>>()
                 .filter_map(|u| future::ready(u.pls_ok()))
                 .collect::<Vec<_>>()
                 .await;
             let top_scores = scores.into_iter().filter_map(|(rank, score)| {
-                if score.date > last_update {
+                if score.date > last_update && score.date <= now {
                     Some(CollectedScore::from_top_score(
                         &user,
                         score,
@@ -161,7 +172,6 @@ impl Announcer {
                     None
                 }
             });
-            let ctx = Context { data: d, c };
             event_scores
                 .into_iter()
                 .chain(top_scores)

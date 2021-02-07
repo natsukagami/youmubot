@@ -249,6 +249,7 @@ fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &TypeMap) -
         target,
         OsuUser {
             id: user_id,
+            failures: None,
             last_update: chrono::Utc::now(),
             pp: vec![],
         },
