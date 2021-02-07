@@ -22,7 +22,7 @@ mod live;
 struct CFClient;
 
 impl TypeMapKey for CFClient {
-    type Value = Arc<codeforces::Client>;
+    type Value = Arc<ratelimit::Ratelimit<codeforces::Client>>;
 }
 
 use db::{CfSavedUsers, CfUser};
@@ -33,7 +33,11 @@ pub use hook::InfoHook;
 pub async fn setup(path: &std::path::Path, data: &mut TypeMap, announcers: &mut AnnouncerHandler) {
     CfSavedUsers::insert_into(data, path.join("cf_saved_users.yaml"))
         .expect("Must be able to set up DB");
-    let client = Arc::new(codeforces::Client::new());
+    let client = Arc::new(ratelimit::Ratelimit::new(
+        codeforces::Client::new(),
+        4,
+        std::time::Duration::from_secs(1),
+    ));
     data.insert::<hook::ContestCache>(hook::ContestCache::new(client.clone()).await.unwrap());
     data.insert::<CFClient>(client);
     announcers.add("codeforces", announcer::Announcer);
@@ -74,7 +78,7 @@ pub async fn profile(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
         }
     };
 
-    let account = codeforces::User::info(&http, &[&handle[..]])
+    let account = codeforces::User::info(&*http.borrow().await?, &[&handle[..]])
         .await?
         .into_iter()
         .next();
@@ -106,7 +110,7 @@ pub async fn save(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let handle = args.single::<String>()?;
     let http = data.get::<CFClient>().unwrap();
 
-    let account = codeforces::User::info(&http, &[&handle[..]])
+    let account = codeforces::User::info(&*http.borrow().await?, &[&handle[..]])
         .await?
         .into_iter()
         .next();
@@ -118,7 +122,7 @@ pub async fn save(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
         }
         Some(acc) => {
             // Collect rating changes data.
-            let rating_changes = acc.rating_changes(&http).await?;
+            let rating_changes = acc.rating_changes(&*http.borrow().await?).await?;
             let mut db = CfSavedUsers::open(&*data);
             m.reply(
                 &ctx,
@@ -268,7 +272,7 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
         .collect::<HashMap<_, _>>()
         .await;
     let http = data.get::<CFClient>().unwrap();
-    let (contest, problems, ranks) = Contest::standings(http, contest_id, |f| {
+    let (contest, problems, ranks) = Contest::standings(&*http.borrow().await?, contest_id, |f| {
         f.handles(members.iter().map(|(k, _)| k.clone()).collect())
     })
     .await?;

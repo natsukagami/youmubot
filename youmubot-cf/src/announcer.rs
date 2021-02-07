@@ -9,6 +9,8 @@ use serenity::{http::CacheHttp, model::id::UserId, CacheAndHttp};
 use std::sync::Arc;
 use youmubot_prelude::*;
 
+type Client = <CFClient as TypeMapKey>::Value;
+
 /// Updates the rating and rating changes of the users.
 pub struct Announcer;
 
@@ -23,14 +25,44 @@ impl youmubot_prelude::Announcer for Announcer {
         let data = data.read().await;
         let client = data.get::<CFClient>().unwrap();
         let mut users = CfSavedUsers::open(&*data).borrow()?.clone();
-
         users
             .iter_mut()
-            .map(|(user_id, cfu)| update_user(http.clone(), &channels, &client, *user_id, cfu))
+            .map(|(user_id, cfu)| {
+                let http = http.clone();
+                let channels = &channels;
+                async move {
+                    if let Err(e) = update_user(http, &channels, &client, *user_id, cfu).await {
+                        cfu.failures += 1;
+                        eprintln!(
+                            "Codeforces: cannot update user {}: {} [{} failures]",
+                            cfu.handle, e, cfu.failures
+                        );
+                    } else {
+                        cfu.failures = 0;
+                    }
+                }
+            })
             .collect::<stream::FuturesUnordered<_>>()
-            .try_collect::<()>()
-            .await?;
-        *CfSavedUsers::open(&*data).borrow_mut()? = users;
+            .collect::<()>()
+            .await;
+        let mut db = CfSavedUsers::open(&*data);
+        let mut db = db.borrow_mut()?;
+        for (key, user) in users {
+            match db.get(&key).map(|v| v.last_update) {
+                Some(u) if u > user.last_update => (),
+                _ => {
+                    if user.failures >= 5 {
+                        eprintln!(
+                            "Codeforces: Removing user {} - {}: failures count too high",
+                            key, user.handle,
+                        );
+                        db.remove(&key);
+                    } else {
+                        db.insert(key, user);
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -38,17 +70,17 @@ impl youmubot_prelude::Announcer for Announcer {
 async fn update_user(
     http: Arc<CacheAndHttp>,
     channels: &MemberToChannels,
-    client: &codeforces::Client,
+    client: &Client,
     user_id: UserId,
     cfu: &mut CfUser,
 ) -> Result<()> {
-    let info = User::info(client, &[cfu.handle.as_str()])
+    let info = User::info(&*client.borrow().await?, &[cfu.handle.as_str()])
         .await?
         .into_iter()
         .next()
         .ok_or(Error::msg("Not found"))?;
 
-    let rating_changes = info.rating_changes(client).await?;
+    let rating_changes = info.rating_changes(&*client.borrow().await?).await?;
 
     let channels_list = channels.channels_of(&http, user_id).await;
     cfu.last_update = Utc::now();
@@ -87,8 +119,10 @@ async fn update_user(
                     return Ok(());
                 }
                 let (contest, _, _) =
-                    codeforces::Contest::standings(client, rc.contest_id, |f| f.limit(1, 1))
-                        .await?;
+                    codeforces::Contest::standings(&*client.borrow().await?, rc.contest_id, |f| {
+                        f.limit(1, 1)
+                    })
+                    .await?;
                 channels
                     .iter()
                     .map(|channel| {
