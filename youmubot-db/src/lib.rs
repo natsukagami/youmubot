@@ -23,6 +23,11 @@ impl<T: std::any::Any + Default + Send + Sync + Clone + Serialize + std::fmt::De
 where
     for<'de> T: Deserialize<'de>,
 {
+    /// Load the DB from a path.
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Database<T>, DBError> {
+        Ok(Database::<T>::load_from_path(path)?)
+    }
+
     /// Insert into a ShareMap.
     pub fn insert_into(data: &mut TypeMap, path: impl AsRef<Path>) -> Result<(), DBError> {
         let db = Database::<T>::load_from_path_or_default(path)?;

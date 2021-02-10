@@ -23,7 +23,11 @@ pub fn setup(
     data: &mut TypeMap,
 ) -> serenity::framework::standard::CommandResult {
     db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
-    db::Roles::insert_into(&mut *data, &path.join("roles.yaml"))?;
+    db::load_role_list(
+        &mut *data,
+        &path.join("roles_v2.yaml"),
+        &path.join("roles.yaml"),
+    )?;
 
     // Create handler threads
     tokio::spawn(admin::watch_soft_bans(
