@@ -1,7 +1,11 @@
 use crate::db::Roles as DB;
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
-    model::{channel::Message, guild::Role, id::RoleId},
+    model::{
+        channel::{Message, ReactionType},
+        guild::Role,
+        id::RoleId,
+    },
     utils::MessageBuilder,
 };
 use youmubot_prelude::*;
@@ -18,7 +22,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
     let roles = db
         .borrow()?
         .get(&guild_id)
-        .filter(|v| !v.is_empty())
+        .filter(|v| !v.roles.is_empty())
         .cloned();
     match roles {
         None => {
@@ -27,6 +31,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
         Some(v) => {
             let roles = guild_id.to_partial_guild(&ctx).await?.roles;
             let roles: Vec<_> = v
+                .roles
                 .into_iter()
                 .filter_map(|(_, role)| roles.get(&role.id).cloned().map(|r| (r, role.description)))
                 .collect();
@@ -128,7 +133,7 @@ async fn toggle(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             if !DB::open(&*ctx.data.read().await)
                 .borrow()?
                 .get(&guild_id)
-                .map(|g| g.contains_key(&role.id))
+                .map(|g| g.roles.contains_key(&role.id))
                 .unwrap_or(false) =>
         {
             m.reply(&ctx, "This role is not self-assignable. Check the `listroles` command to see which role can be assigned.").await?;
@@ -150,16 +155,32 @@ async fn toggle(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
 }
 
 #[command("addrole")]
-#[description = "Add a role as the assignable role"]
-#[usage = "{role-name-or-id} / {description}"]
-#[example = "hd820 / Headphones role"]
-#[num_args(2)]
+#[description = "Add a role as the assignable role. Overrides the old entry."]
+#[usage = "{role-name-or-id} / {description} / [representing emoji = none]"]
+#[example = "hd820 / Headphones role / 🎧"]
+#[min_args(2)]
+#[max_args(3)]
 #[required_permissions(MANAGE_ROLES)]
 #[only_in(guilds)]
 async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let role = args.single_quoted::<String>()?;
     let data = ctx.data.read().await;
-    let description = args.single::<String>()?;
+    let description = args.single_quoted::<String>()?;
+    let reaction = match args.single::<ReactionType>() {
+        Ok(v) => match &v {
+            ReactionType::Custom { id, .. } => {
+                // Verify that the reaction type is from the server.
+                if m.guild_id.unwrap().emoji(&ctx, *id).await.is_err() {
+                    m.reply(&ctx, "Emote cannot be used as I cannot send this back.")
+                        .await?;
+                    return Ok(());
+                }
+                Some(v)
+            }
+            _ => Some(v),
+        },
+        _ => None,
+    };
     let guild_id = m.guild_id.unwrap();
     let roles = guild_id.to_partial_guild(&ctx).await?.roles;
     let role = role_from_string(&role, &roles);
@@ -167,26 +188,18 @@ async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
         None => {
             m.reply(&ctx, "No such role exists").await?;
         }
-        Some(role)
-            if DB::open(&*data)
-                .borrow()?
-                .get(&guild_id)
-                .map(|g| g.contains_key(&role.id))
-                .unwrap_or(false) =>
-        {
-            m.reply(&ctx, "This role already exists in the database.")
-                .await?;
-        }
         Some(role) => {
             DB::open(&*data)
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
+                .roles
                 .insert(
                     role.id,
                     crate::db::Role {
                         id: role.id,
                         description,
+                        reaction,
                     },
                 );
             m.react(&ctx, '👌').await?;
@@ -216,7 +229,7 @@ async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             if !DB::open(&*data)
                 .borrow()?
                 .get(&guild_id)
-                .map(|g| g.contains_key(&role.id))
+                .map(|g| g.roles.contains_key(&role.id))
                 .unwrap_or(false) =>
         {
             m.reply(&ctx, "This role does not exist in the assignable list.")
@@ -227,6 +240,7 @@ async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
+                .roles
                 .remove(&role.id);
             m.react(&ctx, '👌').await?;
         }
