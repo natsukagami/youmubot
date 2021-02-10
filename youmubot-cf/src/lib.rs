@@ -4,7 +4,7 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::channel::Message,
+    model::{channel::Message, guild::Member},
     utils::MessageBuilder,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -293,17 +293,42 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+    contest_rank_table(ctx, m, contest, problems, ranks).await?;
+
+    Ok(())
+}
+
+#[command]
+#[description = "Watch a contest and announce any change on the members of the server assigned to the contest."]
+#[usage = "[the contest id]"]
+#[num_args(1)]
+#[required_permissions(MANAGE_CHANNELS)]
+#[only_in(guilds)]
+pub async fn watch(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+    let contest_id: u64 = args.single()?;
+
+    live::watch_contest(ctx, m.guild_id.unwrap(), m.channel_id, contest_id).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn contest_rank_table(
+    ctx: &Context,
+    reply_to: &Message,
+    contest: Contest,
+    problems: Vec<codeforces::Problem>,
+    ranks: Vec<(Member, String, codeforces::RanklistRow)>,
+) -> Result<()> {
+    const ITEMS_PER_PAGE: usize = 10;
+    let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
 
     if ranks.is_empty() {
-        m.reply(&ctx, "No one in this server participated in the contest...")
+        reply_to
+            .reply(&ctx, "No one in this server participated in the contest...")
             .await?;
         return Ok(());
     }
-
     let ranks = Arc::new(ranks);
-
-    const ITEMS_PER_PAGE: usize = 10;
-    let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
 
     paginate_reply_fn(
         move |page, ctx, msg| {
@@ -395,23 +420,8 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
             })
         },
         ctx,
-        m,
+        reply_to,
         Duration::from_secs(60),
     )
-    .await?;
-    Ok(())
-}
-
-#[command]
-#[description = "Watch a contest and announce any change on the members of the server assigned to the contest."]
-#[usage = "[the contest id]"]
-#[num_args(1)]
-#[required_permissions(MANAGE_CHANNELS)]
-#[only_in(guilds)]
-pub async fn watch(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
-    let contest_id: u64 = args.single()?;
-
-    live::watch_contest(ctx, m.guild_id.unwrap(), m.channel_id, contest_id).await?;
-
-    Ok(())
+    .await
 }

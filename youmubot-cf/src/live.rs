@@ -56,7 +56,7 @@ pub async fn watch_contest(
         .await;
 
     let http = data.get::<CFClient>().unwrap();
-    let (mut contest, _, _) =
+    let (mut contest, problems, _) =
         Contest::standings(&*http.borrow().await?, contest_id, |f| f.limit(1, 1)).await?;
 
     msg.edit(&ctx, |e| {
@@ -76,6 +76,7 @@ pub async fn watch_contest(
         ))
     })
     .await?;
+    msg.pin(ctx).await.ok();
 
     loop {
         if let Ok(messages) =
@@ -103,38 +104,13 @@ pub async fn watch_contest(
         .filter_map(|(_, m)| {
             let member = m.member;
             let handle = m.handle;
-            m.row.map(|row| ((handle, member), row))
+            m.row.map(|row| (member, handle, row))
         })
         .collect::<Vec<_>>();
-    ranks.sort_by(|(_, a), (_, b)| a.rank.cmp(&b.rank));
+    ranks.sort_by(|(_, _, a), (_, _, b)| a.rank.cmp(&b.rank));
 
-    if ranks.is_empty() {
-        channel
-            .send_message(&ctx, |e| {
-                e.content(format!(
-                    "**{}** has ended, but I can't find anyone in this server on the scoreboard...",
-                    contest.name
-                ))
-            })
-            .await?;
-        return Ok(());
-    }
-
-    channel.send_message(
-        &ctx, |e|
-        	e.content(format!(
-            	"**{}** has ended, and the rankings in the server is:\n{}", contest.name,
-            	ranks.into_iter().map(|((handle, mem), row)| format!(
-                	"- **#{}**: {} (**{}**) with **{:.0}** points [{}] and ({} succeeded, {} failed) hacks!",
- 			row.rank,
- 			mem.mention(),
- 			handle,
- 			row.points,
- 			row.problem_results.iter().map(|p| format!("{:.0}", p.points)).collect::<Vec<_>>().join("/"),
- 			row.successful_hack_count,
- 			row.unsuccessful_hack_count,
-            	)).collect::<Vec<_>>().join("\n")))).await?;
-
+    msg.unpin(ctx).await.ok();
+    crate::contest_rank_table(&ctx, &msg, contest, problems, ranks).await?;
     Ok(())
 }
 
