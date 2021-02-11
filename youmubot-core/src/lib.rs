@@ -35,6 +35,9 @@ pub fn setup(
         client.data.clone(),
     ));
 
+    // Start reaction handlers
+    data.insert::<community::ReactionWatchers>(community::ReactionWatchers::new(&*data)?);
+
     Ok(())
 }
 
