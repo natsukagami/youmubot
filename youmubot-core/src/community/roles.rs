@@ -10,6 +10,8 @@ use serenity::{
 };
 use youmubot_prelude::*;
 
+pub use reaction_watcher::Watchers as ReactionWatchers;
+
 #[command("listroles")]
 #[description = "List all available roles in the server."]
 #[num_args(0)]
@@ -17,7 +19,6 @@ use youmubot_prelude::*;
 async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
     let guild_id = m.guild_id.unwrap(); // only_in(guilds)
     let data = ctx.data.read().await;
-
     let db = DB::open(&*data);
     let roles = db
         .borrow()?
@@ -256,5 +257,332 @@ fn role_from_string(role: &str, roles: &std::collections::HashMap<RoleId, Role>)
             .iter()
             .find_map(|(_, r)| if r.name == role { Some(r) } else { None })
             .cloned(),
+    }
+}
+
+#[command("rolemessage")]
+#[description = "Create a message that handles roles in a list. All roles in the list must already be inside the set. Empty = all assignable roles."]
+#[usage = "{title}/[role]/[role]/..."]
+#[example = "Game Roles/Genshin/osu!"]
+#[min_args(1)]
+#[required_permissions(MANAGE_ROLES)]
+#[only_in(guilds)]
+async fn rolemessage(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+    let title = args.single_quoted::<String>().unwrap();
+    let data = ctx.data.read().await;
+    let guild_id = m.guild_id.unwrap();
+    let assignables = DB::open(&*data)
+        .borrow()?
+        .get(&guild_id)
+        .filter(|v| !v.roles.is_empty())
+        .map(|r| r.roles.clone())
+        .unwrap_or_default();
+    let mut rolenames = args
+        .iter::<String>()
+        .quoted()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let rolelist = guild_id.to_partial_guild(&ctx).await?.roles;
+    let mut roles = Vec::new();
+    if rolenames.is_empty() {
+        rolenames = assignables.keys().map(|v| v.to_string()).collect();
+    }
+    for rolename in rolenames {
+        let role = match role_from_string(rolename.as_str(), &rolelist) {
+            Some(role) => role,
+            None => {
+                m.reply(&ctx, format!("Role `{}` not found", rolename))
+                    .await?;
+                return Ok(());
+            }
+        };
+        let role = match assignables.get(&role.id) {
+            Some(r) => match &r.reaction {
+                Some(emote) => (r.clone(), role.clone(), emote.clone()),
+                None => {
+                    m.reply(
+                        &ctx,
+                        format!("Role `{}` does not have a assignable emote.", rolename),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            },
+            None => {
+                m.reply(&ctx, format!("Role `{}` is not assignable.", rolename))
+                    .await?;
+                return Ok(());
+            }
+        };
+        roles.push(role);
+    }
+    data.get::<ReactionWatchers>()
+        .unwrap()
+        .add(ctx.clone(), guild_id, m.channel_id, title, roles)
+        .await?;
+    Ok(())
+}
+
+#[command("rmrolemessage")]
+#[description = "Delete a role message handler."]
+#[usage = "(reply to the message to delete)"]
+#[num_args(0)]
+#[required_permissions(MANAGE_ROLES)]
+#[only_in(guilds)]
+async fn rmrolemessage(ctx: &Context, m: &Message, _args: Args) -> CommandResult {
+    let data = ctx.data.read().await;
+    let guild_id = m.guild_id.unwrap();
+
+    let message = match &m.referenced_message {
+        Some(m) => m,
+        None => {
+            m.reply(&ctx, "No replied message found.").await?;
+            return Ok(());
+        }
+    };
+
+    if data
+        .get::<ReactionWatchers>()
+        .unwrap()
+        .remove(ctx, guild_id, message.id)
+        .await?
+    {
+        message.delete(&ctx).await.ok();
+        m.react(&ctx, '👌').await.ok();
+    } else {
+        m.reply(&ctx, "Message does not come with a reaction handler")
+            .await
+            .ok();
+    }
+
+    Ok(())
+}
+
+mod reaction_watcher {
+    use crate::db::{Role, RoleMessage, Roles};
+    use dashmap::DashMap;
+    use flume::{Receiver, Sender};
+    use serenity::{
+        collector::ReactionAction,
+        model::{
+            channel::ReactionType,
+            guild::Role as DiscordRole,
+            id::{ChannelId, GuildId, MessageId},
+        },
+    };
+    use youmubot_prelude::*;
+
+    /// A set of watchers.
+    #[derive(Debug)]
+    pub struct Watchers {
+        watchers: DashMap<MessageId, Watcher>,
+
+        init: Mutex<Vec<(GuildId, MessageId, RoleMessage)>>,
+    }
+
+    impl Watchers {
+        pub fn new(data: &TypeMap) -> Result<Self> {
+            let init = Roles::open(&*data)
+                .borrow()?
+                .iter()
+                .flat_map(|(&guild, rs)| {
+                    rs.reaction_messages
+                        .iter()
+                        .map(move |(m, r)| (guild, m.clone(), r.clone()))
+                })
+                .collect();
+            Ok(Self {
+                init: Mutex::new(init),
+                watchers: DashMap::new(),
+            })
+        }
+        pub async fn init(&self, ctx: &Context) {
+            let mut init = self.init.lock().await;
+            for (msg, watcher) in init
+                .drain(..)
+                .map(|(guild, msg, rm)| (msg, Watcher::spawn(ctx.clone(), guild, rm.id)))
+            {
+                self.watchers.insert(msg, watcher);
+            }
+        }
+        pub async fn add(
+            &self,
+            ctx: Context,
+            guild: GuildId,
+            channel: ChannelId,
+            title: String,
+            roles: Vec<(Role, DiscordRole, ReactionType)>,
+        ) -> Result<()> {
+            // Send a message
+            let msg = channel
+                .send_message(&ctx, |m| {
+                    m.content({
+                        let mut builder = serenity::utils::MessageBuilder::new();
+                        builder
+                            .push_bold("Role Menu:")
+                            .push(" ")
+                            .push_bold_line_safe(&title)
+                            .push_line("React to give yourself a role.")
+                            .push_line("");
+                        for (role, discord_role, emoji) in &roles {
+                            builder
+                                .push(emoji)
+                                .push(" ")
+                                .push_bold_safe(&discord_role.name)
+                                .push(": ")
+                                .push_line_safe(&role.description)
+                                .push_line("");
+                        }
+                        builder
+                    })
+                })
+                .await?;
+            // Do reactions
+            roles
+                .iter()
+                .map(|(_, _, emoji)| {
+                    msg.react(&ctx, emoji.clone()).map(|r| {
+                        r.ok();
+                    })
+                })
+                .collect::<stream::FuturesUnordered<_>>()
+                .collect::<()>()
+                .await;
+            // Store the message into the list.
+            {
+                let data = ctx.data.read().await;
+                Roles::open(&*data)
+                    .borrow_mut()?
+                    .entry(guild)
+                    .or_default()
+                    .reaction_messages
+                    .insert(
+                        msg.id,
+                        RoleMessage {
+                            id: msg.id,
+                            title,
+                            roles: roles.into_iter().map(|(a, _, b)| (a, b)).collect(),
+                        },
+                    );
+            }
+            // Spawn the handler
+            self.watchers
+                .insert(msg.id, Watcher::spawn(ctx, guild, msg.id));
+            Ok(())
+        }
+
+        pub async fn remove(
+            &self,
+            ctx: &Context,
+            guild: GuildId,
+            message: MessageId,
+        ) -> Result<bool> {
+            let data = ctx.data.read().await;
+            Roles::open(&*data)
+                .borrow_mut()?
+                .entry(guild)
+                .or_default()
+                .reaction_messages
+                .remove(&message);
+            Ok(self.watchers.remove(&message).is_some())
+        }
+    }
+
+    impl TypeMapKey for Watchers {
+        type Value = Watchers;
+    }
+
+    /// A reaction watcher structure. Contains a cancel signaler that cancels the watcher upon Drop.
+    #[derive(Debug)]
+    struct Watcher {
+        cancel: Sender<()>,
+    }
+
+    impl Watcher {
+        pub fn spawn(ctx: Context, guild: GuildId, message: MessageId) -> Self {
+            let (send, recv) = flume::bounded(0);
+            tokio::spawn(Self::handle(ctx, recv, guild, message));
+            Watcher { cancel: send }
+        }
+
+        async fn handle(ctx: Context, recv: Receiver<()>, guild: GuildId, message: MessageId) {
+            let mut recv = recv.into_recv_async();
+            let collect = || {
+                serenity::collector::CollectReaction::new(&ctx)
+                    .message_id(message)
+                    .removed(true)
+            };
+            loop {
+                let reaction = match future::select(recv, collect()).await {
+                    future::Either::Left(_) => break,
+                    future::Either::Right((r, new_recv)) => {
+                        recv = new_recv;
+                        match r {
+                            Some(r) => r,
+                            None => continue,
+                        }
+                    }
+                };
+                eprintln!("{:?}", reaction);
+                if let Err(e) = Self::handle_reaction(&ctx, guild, message, &*reaction).await {
+                    eprintln!("Handling {:?}: {}", reaction, e);
+                    break;
+                }
+            }
+        }
+
+        async fn handle_reaction(
+            ctx: &Context,
+            guild: GuildId,
+            message: MessageId,
+            reaction: &ReactionAction,
+        ) -> Result<()> {
+            let data = ctx.data.read().await;
+            // Collect user
+            let user_id = match reaction.as_inner_ref().user_id {
+                Some(id) => id,
+                None => return Ok(()),
+            };
+            let mut member = match guild.member(ctx, user_id).await.ok() {
+                Some(m) => m,
+                None => return Ok(()),
+            };
+            if member.user.bot {
+                return Ok(());
+            }
+            // Get the role list.
+            let role = Roles::open(&*data)
+                .borrow()?
+                .get(&guild)
+                .ok_or(Error::msg("guild no longer has role list"))?
+                .reaction_messages
+                .get(&message)
+                .map(|msg| &msg.roles[..])
+                .ok_or(Error::msg("message is no longer a role list handler"))?
+                .iter()
+                .find_map(|(role, role_reaction)| {
+                    if &reaction.as_inner_ref().emoji == role_reaction {
+                        Some(role.id)
+                    } else {
+                        None
+                    }
+                });
+            let role = match role {
+                Some(id) => id,
+                None => return Ok(()),
+            };
+
+            match reaction {
+                ReactionAction::Added(_) => member.add_role(&ctx, role).await.pls_ok(),
+                ReactionAction::Removed(_) => member.remove_role(&ctx, role).await.pls_ok(),
+            };
+            Ok(())
+        }
+    }
+
+    impl Drop for Watcher {
+        fn drop(&mut self) {
+            self.cancel.send(()).unwrap()
+        }
     }
 }

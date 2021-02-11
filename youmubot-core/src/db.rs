@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Serialize};
-use serenity::model::id::{RoleId, UserId};
+use serenity::model::{
+    channel::ReactionType,
+    id::{MessageId, RoleId, UserId},
+};
 use std::collections::HashMap;
 use youmubot_db::{GuildMap, DB};
 use youmubot_prelude::*;
@@ -38,7 +41,7 @@ impl ServerSoftBans {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct RoleList {
     /// `reaction_message` handles the reaction-handling message.
-    pub reaction_message: Option<serenity::model::id::MessageId>,
+    pub reaction_messages: HashMap<MessageId, RoleMessage>,
     pub roles: HashMap<RoleId, Role>,
 }
 
@@ -68,7 +71,7 @@ pub fn load_role_list(
                     (
                         guild,
                         RoleList {
-                            reaction_message: None,
+                            reaction_messages: HashMap::new(),
                             roles,
                         },
                     )
@@ -85,13 +88,21 @@ pub fn load_role_list(
     }
 }
 
+/// A single role in the list of role messages.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RoleMessage {
+    pub id: serenity::model::id::MessageId,
+    pub title: String,
+    pub roles: Vec<(Role, ReactionType)>,
+}
+
 /// Role represents an assignable role.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Role {
     pub id: RoleId,
     pub description: String,
     #[serde(default)]
-    pub reaction: Option<serenity::model::channel::ReactionType>,
+    pub reaction: Option<ReactionType>,
 }
 
 mod legacy {

@@ -27,7 +27,16 @@ impl Handler {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, _: Context, ready: gateway::Ready) {
+    async fn ready(&self, ctx: Context, ready: gateway::Ready) {
+        // Start ReactionWatchers for community.
+        #[cfg(feature = "core")]
+        ctx.data
+            .read()
+            .await
+            .get::<youmubot_core::community::ReactionWatchers>()
+            .unwrap()
+            .init(&ctx)
+            .await;
         println!("{} is connected!", ready.user.name);
     }
 

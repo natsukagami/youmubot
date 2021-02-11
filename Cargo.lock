@@ -1848,6 +1848,8 @@ name = "youmubot-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dashmap",
+ "flume",
  "futures-util",
  "rand 0.7.3",
  "serde",
