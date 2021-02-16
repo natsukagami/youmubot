@@ -41,12 +41,13 @@ impl BeatmapContent {
     pub fn get_info_with(
         &self,
         mode: Option<oppai_rs::Mode>,
-        _mods: impl Into<oppai_rs::Mods>,
+        mods: impl Into<oppai_rs::Mods>,
     ) -> Result<BeatmapInfo> {
         let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
         if let Some(mode) = mode {
             oppai.mode(mode)?;
         }
+        oppai.mods(mods.into());
         let objects = oppai.num_objects();
         let stars = oppai.stars();
         Ok(BeatmapInfo { stars, objects })
