@@ -204,15 +204,27 @@ impl<'a> ScoreEmbedBuilder<'a> {
         let content = self.content;
         let u = self.u;
         let accuracy = s.accuracy(mode);
-        let stars = mode
+        let info = mode
             .to_oppai_mode()
-            .and_then(|mode| content.get_info_with(Some(mode), s.mods).ok())
+            .and_then(|mode| content.get_info_with(Some(mode), s.mods).ok());
+        let stars = info
+            .as_ref()
             .map(|info| info.stars as f64)
             .unwrap_or(b.difficulty.stars);
         let score_line = match &s.rank {
             Rank::SS | Rank::SSH => format!("SS"),
             _ if s.perfect => format!("{:.2}% FC", accuracy),
-            Rank::F => format!("{:.2}% {} combo [FAILED]", accuracy, s.max_combo),
+            Rank::F => {
+                let display = info
+                    .map(|info| {
+                        ((s.count_300 + s.count_100 + s.count_50 + s.count_miss) as f64)
+                            / (info.objects as f64)
+                            * 100.0
+                    })
+                    .map(|p| format!("FAILED @ {:.2}%", p))
+                    .unwrap_or("FAILED".to_owned());
+                format!("{:.2}% {} combo [{}]", accuracy, s.max_combo, display)
+            }
             v => format!(
                 "{:.2}% {}x {} miss {} rank",
                 accuracy, s.max_combo, s.count_miss, v
@@ -287,17 +299,22 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .map(|v| format!("| #{} on Global Rankings!", v))
             .unwrap_or("".to_owned());
         let diff = b.difficulty.apply_mods(s.mods, Some(stars));
+        let creator = if b.difficulty_name.contains("'s") {
+            "".to_owned()
+        } else {
+            format!("by {} ", b.creator)
+        };
         m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
             .color(0xffb6c1)
             .title(format!(
-                "{} | {} - {} [{}] {} ({:.2}\\*) by {} | {} {} {}",
+                "{} | {} - {} [{}] {} ({:.2}\\*) {}| {} {} {}",
                 u.username,
                 b.artist,
                 b.title,
                 b.difficulty_name,
                 s.mods,
                 stars,
-                b.creator,
+                creator,
                 score_line,
                 top_record,
                 world_record,
