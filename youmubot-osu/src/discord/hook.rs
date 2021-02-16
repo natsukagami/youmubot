@@ -1,6 +1,6 @@
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
-    discord::oppai_cache::{BeatmapCache, BeatmapInfo},
+    discord::oppai_cache::{BeatmapCache, BeatmapInfoWithPP},
     models::{Beatmap, Mode, Mods},
 };
 use lazy_static::lazy_static;
@@ -67,7 +67,7 @@ pub fn hook<'a>(
 }
 
 enum EmbedType {
-    Beatmap(Beatmap, Option<BeatmapInfo>, Mods),
+    Beatmap(Beatmap, Option<BeatmapInfoWithPP>, Mods),
     Beatmapset(Vec<Beatmap>),
 }
 
@@ -125,7 +125,7 @@ fn handle_old_links<'a>(
                         Some(mode) => cache
                             .get_beatmap(b.beatmap_id)
                             .await
-                            .and_then(|b| b.get_info_with(Some(mode), mods))
+                            .and_then(|b| b.get_possible_pp_with(Some(mode), mods))
                             .pls_ok(),
                         None => None,
                     };
@@ -195,7 +195,7 @@ fn handle_new_links<'a>(
                         Some(mode) => cache
                             .get_beatmap(beatmap.beatmap_id)
                             .await
-                            .and_then(|b| b.get_info_with(Some(mode), mods))
+                            .and_then(|b| b.get_possible_pp_with(Some(mode), mods))
                             .pls_ok(),
                         None => None,
                     };
@@ -261,7 +261,7 @@ fn handle_short_links<'a>(
                 Some(mode) => cache
                     .get_beatmap(beatmap.beatmap_id)
                     .await
-                    .and_then(|b| b.get_info_with(Some(mode), mods))
+                    .and_then(|b| b.get_possible_pp_with(Some(mode), mods))
                     .pls_ok(),
                 None => None,
             };
@@ -287,7 +287,7 @@ fn handle_short_links<'a>(
 async fn handle_beatmap<'a, 'b>(
     ctx: &Context,
     beatmap: &Beatmap,
-    info: Option<BeatmapInfo>,
+    info: Option<BeatmapInfoWithPP>,
     link: &'_ str,
     mode: Option<Mode>,
     mods: Mods,
