@@ -13,6 +13,7 @@ pub struct BeatmapContent {
 /// the output of "one" oppai run.
 #[derive(Clone, Copy, Debug)]
 pub struct BeatmapInfo {
+    pub objects: u32,
     pub stars: f32,
     pub pp: [f32; 4], // 95, 98, 99, 100
 }
@@ -51,8 +52,9 @@ impl BeatmapContent {
             oppai.accuracy(99.0)?.pp(),
             oppai.accuracy(100.0)?.pp(),
         ];
+        let objects = oppai.num_objects();
         let stars = oppai.stars();
-        Ok(BeatmapInfo { stars, pp })
+        Ok(BeatmapInfo { stars, pp, objects })
     }
 }
 
