@@ -15,8 +15,10 @@ pub struct BeatmapContent {
 pub struct BeatmapInfo {
     pub objects: u32,
     pub stars: f32,
-    pub pp: [f32; 4], // 95, 98, 99, 100
 }
+
+/// Beatmap Info with attached 95/98/99/100% FC pp.
+pub type BeatmapInfoWithPP = (BeatmapInfo, [f32; 4]);
 
 impl BeatmapContent {
     /// Get pp given the combo and accuracy.
@@ -39,8 +41,22 @@ impl BeatmapContent {
     pub fn get_info_with(
         &self,
         mode: Option<oppai_rs::Mode>,
-        mods: impl Into<oppai_rs::Mods>,
+        _mods: impl Into<oppai_rs::Mods>,
     ) -> Result<BeatmapInfo> {
+        let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
+        if let Some(mode) = mode {
+            oppai.mode(mode)?;
+        }
+        let objects = oppai.num_objects();
+        let stars = oppai.stars();
+        Ok(BeatmapInfo { stars, objects })
+    }
+
+    pub fn get_possible_pp_with(
+        &self,
+        mode: Option<oppai_rs::Mode>,
+        mods: impl Into<oppai_rs::Mods>,
+    ) -> Result<BeatmapInfoWithPP> {
         let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
         if let Some(mode) = mode {
             oppai.mode(mode)?;
@@ -54,7 +70,7 @@ impl BeatmapContent {
         ];
         let objects = oppai.num_objects();
         let stars = oppai.stars();
-        Ok(BeatmapInfo { stars, pp, objects })
+        Ok((BeatmapInfo { stars, objects }, pp))
     }
 }
 

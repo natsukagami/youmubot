@@ -1,6 +1,6 @@
 use super::BeatmapWithMode;
 use crate::{
-    discord::oppai_cache::{BeatmapContent, BeatmapInfo, OppaiAccuracy},
+    discord::oppai_cache::{BeatmapContent, BeatmapInfo, BeatmapInfoWithPP, OppaiAccuracy},
     models::{Beatmap, Mode, Mods, Rank, Score, User},
 };
 use chrono::Utc;
@@ -60,7 +60,7 @@ pub fn beatmap_embed<'a>(
     b: &'_ Beatmap,
     m: Mode,
     mods: Mods,
-    info: Option<BeatmapInfo>,
+    info: Option<BeatmapInfoWithPP>,
     c: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
     let mod_str = if mods == Mods::NOMOD {
@@ -68,7 +68,9 @@ pub fn beatmap_embed<'a>(
     } else {
         format!(" {}", mods)
     };
-    let diff = b.difficulty.apply_mods(mods, info.map(|v| v.stars as f64));
+    let diff = b
+        .difficulty
+        .apply_mods(mods, info.map(|(v, _)| v.stars as f64));
     c.title(
         MessageBuilder::new()
             .push_bold_safe(&b.artist)
@@ -88,12 +90,12 @@ pub fn beatmap_embed<'a>(
     .url(b.link())
     .image(b.cover_url())
     .color(0xffb6c1)
-    .fields(info.map(|info| {
+    .fields(info.map(|(_, pp)| {
         (
             "Calculated pp",
             format!(
                 "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
-                info.pp[0], info.pp[1], info.pp[2], info.pp[3]
+                pp[0], pp[1], pp[2], pp[3]
             ),
             false,
         )

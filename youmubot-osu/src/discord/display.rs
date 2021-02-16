@@ -2,7 +2,9 @@ pub use beatmapset::display_beatmapset;
 
 mod beatmapset {
     use crate::{
-        discord::{cache::save_beatmap, oppai_cache::BeatmapInfo, BeatmapCache, BeatmapWithMode},
+        discord::{
+            cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapCache, BeatmapWithMode,
+        },
         models::{Beatmap, Mode, Mods},
     };
     use serenity::{
@@ -46,14 +48,14 @@ mod beatmapset {
 
     struct Paginate {
         maps: Vec<Beatmap>,
-        infos: Vec<Option<Option<BeatmapInfo>>>,
+        infos: Vec<Option<Option<BeatmapInfoWithPP>>>,
         mode: Option<Mode>,
         mods: Mods,
         message: String,
     }
 
     impl Paginate {
-        async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Option<BeatmapInfo> {
+        async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Option<BeatmapInfoWithPP> {
             let data = ctx.data.read().await;
             let cache = data.get::<BeatmapCache>().unwrap();
             let mode = self.mode.unwrap_or(b.mode).to_oppai_mode();
@@ -61,7 +63,7 @@ mod beatmapset {
                 .get_beatmap(b.beatmap_id)
                 .map(move |v| {
                     v.ok()
-                        .and_then(move |v| v.get_info_with(Some(mode?), self.mods).ok())
+                        .and_then(move |v| v.get_possible_pp_with(Some(mode?), self.mods).ok())
                 })
                 .await
         }

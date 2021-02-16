@@ -610,7 +610,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .unwrap()
                 .get_beatmap(b.beatmap_id)
                 .await?
-                .get_info_with(m.to_oppai_mode(), mods)
+                .get_possible_pp_with(m.to_oppai_mode(), mods)
                 .ok();
             msg.channel_id
                 .send_message(&ctx, |f| {
