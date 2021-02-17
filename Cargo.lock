@@ -154,10 +154,11 @@ dependencies = [
 
 [[package]]
 name = "codeforces"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7df54b4689d51d58162c8b76a642ba44d6128b68f29c3fbc23815e6ea4bfef15"
+checksum = "f0167d57615475a20056a4ce224d143cf603f7159e3102ac5e6a3a1d9ea1c71a"
 dependencies = [
+ "flume",
  "futures-util",
  "reqwest",
  "serde",

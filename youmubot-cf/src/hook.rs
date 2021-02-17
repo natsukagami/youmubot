@@ -42,7 +42,7 @@ impl TypeMapKey for ContestCache {
 impl ContestCache {
     /// Creates a new, empty cache.
     pub(crate) async fn new(http: Client) -> Result<Self> {
-        let contests_list = Contest::list(&*http.borrow().await?, true).await?;
+        let contests_list = Contest::list(&*http, true).await?;
         Ok(Self {
             contests: HashMap::new(),
             all_list: RwLock::new((contests_list, Instant::now())),
@@ -64,17 +64,14 @@ impl ContestCache {
         &self,
         contest_id: u64,
     ) -> Result<(Contest, Option<Vec<Problem>>)> {
-        let (c, p) =
-            match Contest::standings(&*self.http.borrow().await?, contest_id, |f| f.limit(1, 1))
-                .await
-            {
-                Ok((c, p, _)) => (c, Some(p)),
-                Err(codeforces::Error::Codeforces(s)) if s.ends_with("has not started") => {
-                    let c = self.get_from_list(contest_id).await?;
-                    (c, None)
-                }
-                Err(v) => return Err(Error::from(v)),
-            };
+        let (c, p) = match Contest::standings(&*self.http, contest_id, |f| f.limit(1, 1)).await {
+            Ok((c, p, _)) => (c, Some(p)),
+            Err(codeforces::Error::Codeforces(s)) if s.ends_with("has not started") => {
+                let c = self.get_from_list(contest_id).await?;
+                (c, None)
+            }
+            Err(v) => return Err(Error::from(v)),
+        };
         self.contests.insert(contest_id, (c, p));
         Ok(self.contests.get(&contest_id).unwrap().clone())
     }
@@ -83,10 +80,8 @@ impl ContestCache {
         let last_updated = self.all_list.read().await.1.clone();
         if Instant::now() - last_updated > std::time::Duration::from_secs(60 * 60) {
             // We update at most once an hour.
-            *self.all_list.write().await = (
-                Contest::list(&*self.http.borrow().await?, true).await?,
-                Instant::now(),
-            );
+            *self.all_list.write().await =
+                (Contest::list(&*self.http, true).await?, Instant::now());
         }
         self.all_list
             .read()

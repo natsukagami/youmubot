@@ -57,7 +57,7 @@ pub async fn watch_contest(
 
     let http = data.get::<CFClient>().unwrap();
     let (mut contest, problems, _) =
-        Contest::standings(&*http.borrow().await?, contest_id, |f| f.limit(1, 1)).await?;
+        Contest::standings(&*http, contest_id, |f| f.limit(1, 1)).await?;
 
     msg.edit(&ctx, |e| {
         e.content(format!(
@@ -79,9 +79,7 @@ pub async fn watch_contest(
     msg.pin(ctx).await.ok();
 
     loop {
-        if let Ok(messages) =
-            scan_changes(&*http.borrow().await?, &mut member_results, &mut contest).await
-        {
+        if let Ok(messages) = scan_changes(&*http, &mut member_results, &mut contest).await {
             for message in messages {
                 channel
                     .send_message(&ctx, |e| {

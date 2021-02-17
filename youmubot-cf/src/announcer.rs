@@ -74,13 +74,13 @@ async fn update_user(
     user_id: UserId,
     cfu: &mut CfUser,
 ) -> Result<()> {
-    let info = User::info(&*client.borrow().await?, &[cfu.handle.as_str()])
+    let info = User::info(&*client, &[cfu.handle.as_str()])
         .await?
         .into_iter()
         .next()
         .ok_or(Error::msg("Not found"))?;
 
-    let rating_changes = info.rating_changes(&*client.borrow().await?).await?;
+    let rating_changes = info.rating_changes(&*client).await?;
 
     let channels_list = channels.channels_of(&http, user_id).await;
     cfu.last_update = Utc::now();
@@ -119,10 +119,8 @@ async fn update_user(
                     return Ok(());
                 }
                 let (contest, _, _) =
-                    codeforces::Contest::standings(&*client.borrow().await?, rc.contest_id, |f| {
-                        f.limit(1, 1)
-                    })
-                    .await?;
+                    codeforces::Contest::standings(&*client, rc.contest_id, |f| f.limit(1, 1))
+                        .await?;
                 channels
                     .iter()
                     .map(|channel| {
