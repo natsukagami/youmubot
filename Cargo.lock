@@ -2272,6 +2272,7 @@ name = "youmubot-db-sql"
 version = "0.1.0"
 dependencies = [
  "sqlx",
+ "thiserror",
 ]
 
 [[package]]
