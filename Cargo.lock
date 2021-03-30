@@ -2271,6 +2271,8 @@ dependencies = [
 name = "youmubot-db-sql"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "futures-util",
  "sqlx",
  "thiserror",
 ]

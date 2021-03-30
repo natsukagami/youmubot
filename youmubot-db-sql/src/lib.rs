@@ -5,6 +5,10 @@ pub use errors::*;
 
 /// The DB constructs that will be used in the package.
 pub use sqlite::{SqliteConnection as Connection, SqliteError, SqlitePool as Pool};
+pub use sqlx::Sqlite as Database;
+
+/// Models defined in the database.
+pub mod models;
 
 /// Create a new pool of sqlite connections to the given database path,
 /// run migrations on it and return the result.
