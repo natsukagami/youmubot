@@ -109,7 +109,7 @@ impl youmubot_prelude::Announcer for Announcer {
                             "osu: Removing user {} [{}] due to 5 consecutive failures",
                             k, v.id
                         );
-                        db.remove(&k);
+                        // db.remove(&k);
                     } else {
                         db.insert(k, v);
                     }
