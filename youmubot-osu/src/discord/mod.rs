@@ -76,7 +76,10 @@ pub fn setup(
     };
     let osu_client = Arc::new(make_client());
     data.insert::<OsuClient>(osu_client.clone());
-    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(http_client));
+    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(
+        http_client,
+        sql_client.clone(),
+    ));
     data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
         osu_client, sql_client,
     ));

@@ -246,13 +246,7 @@ impl<'a> CollectedScore<'a> {
             .await
     }
 
-    async fn get_beatmap(
-        &self,
-        ctx: &Context,
-    ) -> Result<(
-        BeatmapWithMode,
-        impl std::ops::Deref<Target = BeatmapContent>,
-    )> {
+    async fn get_beatmap(&self, ctx: &Context) -> Result<(BeatmapWithMode, BeatmapContent)> {
         let data = ctx.data.read().await;
         let cache = data.get::<BeatmapMetaCache>().unwrap();
         let oppai = data.get::<BeatmapCache>().unwrap();

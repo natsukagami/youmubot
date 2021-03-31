@@ -1,4 +1,5 @@
 use std::{ffi::CString, sync::Arc};
+use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
 
 pub use oppai_rs::Accuracy as OppaiAccuracy;
@@ -7,7 +8,7 @@ pub use oppai_rs::Accuracy as OppaiAccuracy;
 #[derive(Debug)]
 pub struct BeatmapContent {
     id: u64,
-    content: CString,
+    content: Arc<CString>,
 }
 
 /// the output of "one" oppai run.
@@ -78,17 +79,14 @@ impl BeatmapContent {
 /// A central cache for the beatmaps.
 pub struct BeatmapCache {
     client: ratelimit::Ratelimit<reqwest::Client>,
-    cache: dashmap::DashMap<u64, Arc<BeatmapContent>>,
+    pool: Pool,
 }
 
 impl BeatmapCache {
     /// Create a new cache.
-    pub fn new(client: reqwest::Client) -> Self {
+    pub fn new(client: reqwest::Client, pool: Pool) -> Self {
         let client = ratelimit::Ratelimit::new(client, 5, std::time::Duration::from_secs(1));
-        BeatmapCache {
-            client,
-            cache: dashmap::DashMap::new(),
-        }
+        BeatmapCache { client, pool }
     }
 
     async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
@@ -103,20 +101,39 @@ impl BeatmapCache {
             .await?;
         Ok(BeatmapContent {
             id,
-            content: CString::new(content.into_iter().collect::<Vec<_>>())?,
+            content: Arc::new(CString::new(content.into_iter().collect::<Vec<_>>())?),
         })
     }
 
+    async fn get_beatmap_db(&self, id: u64) -> Result<Option<BeatmapContent>> {
+        Ok(models::CachedBeatmapContent::by_id(id as i64, &self.pool)
+            .await?
+            .map(|v| BeatmapContent {
+                id,
+                content: Arc::new(CString::new(v.content).unwrap()),
+            }))
+    }
+
+    async fn save_beatmap(&self, b: &BeatmapContent) -> Result<()> {
+        let mut bc = models::CachedBeatmapContent {
+            beatmap_id: b.id as i64,
+            cached_at: chrono::Utc::now(),
+            content: b.content.as_ref().clone().into_bytes(),
+        };
+        bc.store(&self.pool).await?;
+        Ok(())
+    }
+
     /// Get a beatmap from the cache.
-    pub async fn get_beatmap(
-        &self,
-        id: u64,
-    ) -> Result<impl std::ops::Deref<Target = BeatmapContent>> {
-        if !self.cache.contains_key(&id) {
-            self.cache
-                .insert(id, Arc::new(self.download_beatmap(id).await?));
+    pub async fn get_beatmap(&self, id: u64) -> Result<BeatmapContent> {
+        match self.get_beatmap_db(id).await? {
+            Some(v) => Ok(v),
+            None => {
+                let m = self.download_beatmap(id).await?;
+                self.save_beatmap(&m).await?;
+                Ok(m)
+            }
         }
-        Ok(self.cache.get(&id).unwrap().clone())
     }
 }
 
