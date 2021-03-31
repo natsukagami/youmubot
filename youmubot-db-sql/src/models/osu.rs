@@ -54,7 +54,7 @@ pub struct UserBestScore {
     pub beatmap_id: i64,
     pub mode: u8,
     pub user_id: i64,
-    pub mods: u32,
+    pub mods: i64,
 
     pub cached_at: DateTime,
     /// To be deserialized by `bincode`
@@ -75,7 +75,7 @@ impl UserBestScore {
                 beatmap_id as "beatmap_id: i64",
                 mode as "mode: u8",
                 user_id as "user_id: i64",
-                mods as "mods: u32",
+                mods as "mods: i64",
                 cached_at as "cached_at: DateTime",
                 score as "score: Vec<u8>"
             FROM osu_user_best_scores
@@ -103,7 +103,7 @@ impl UserBestScore {
                 beatmap_id as "beatmap_id: i64",
                 mode as "mode: u8",
                 user_id as "user_id: i64",
-                mods as "mods: u32",
+                mods as "mods: i64",
                 cached_at as "cached_at: DateTime",
                 score as "score: Vec<u8>"
             FROM osu_user_best_scores
@@ -140,6 +140,19 @@ impl UserBestScore {
             self.mods,
             self.cached_at,
             self.score
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn clear_user(
+        user_id: i64,
+        conn: impl Executor<'_, Database = Database>,
+    ) -> Result<()> {
+        query!(
+            "DELETE FROM osu_user_best_scores WHERE user_id = ?",
+            user_id
         )
         .execute(conn)
         .await?;

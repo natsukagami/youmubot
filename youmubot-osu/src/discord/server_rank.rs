@@ -227,12 +227,11 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
     let updated_users = all_server_users.len();
     // Update everything.
     {
-        let mut osu_user_bests = OsuUserBests::open(&*data);
-        let mut osu_user_bests = osu_user_bests.borrow_mut()?;
-        let user_bests = osu_user_bests.entry((bm.0.beatmap_id, bm.1)).or_default();
-        all_server_users.into_iter().for_each(|(member, scores)| {
-            user_bests.insert(member, scores);
-        })
+        let db = data.get::<OsuUserBests>().unwrap();
+        all_server_users.into_iter()
+            .map(|(u, scores)| db.save(u, mode, scores))
+            .collect::<stream::FuturesUnordered<_>>()
+            .try_collect::<()>().await?;
     }
     // Signal update complete.
     running_reaction.delete(&ctx).await.ok();
@@ -277,7 +276,6 @@ async fn show_leaderboard(
     order: OrderBy,
 ) -> CommandResult {
     let data = ctx.data.read().await;
-    let mut osu_user_bests = OsuUserBests::open(&*data);
 
     // Get oppai map.
     let mode = bm.1;
@@ -312,11 +310,11 @@ async fn show_leaderboard(
                 .await
             {
                 if !scores.is_empty() {
-                    osu_user_bests
-                        .borrow_mut()?
-                        .entry((bm.0.beatmap_id, bm.1))
-                        .or_default()
-                        .insert(m.author.id, scores);
+                    data.get::<OsuUserBests>()
+                        .unwrap()
+                        .save(m.author.id, mode, scores)
+                        .await
+                        .pls_ok();
                 }
             }
         }
@@ -327,37 +325,25 @@ async fn show_leaderboard(
     let scores = {
         const NO_SCORES: &'static str = "No scores have been recorded for this beatmap.";
 
-        let users = osu_user_bests
-            .borrow()?
-            .get(&(bm.0.beatmap_id, bm.1))
-            .cloned();
-        let users = match users {
-            None => {
-                m.reply(&ctx, NO_SCORES).await?;
-                return Ok(());
-            }
-            Some(v) if v.is_empty() => {
-                m.reply(&ctx, NO_SCORES).await?;
-                return Ok(());
-            }
-            Some(v) => v,
-        };
+        let scores = data
+            .get::<OsuUserBests>()
+            .unwrap()
+            .by_beatmap(bm.0.beatmap_id, bm.1)
+            .await?;
+        if scores.is_empty() {
+            m.reply(&ctx, NO_SCORES).await?;
+            return Ok(());
+        }
 
-        let mut scores: Vec<(f64, String, Score)> = users
+        let mut scores: Vec<(f64, String, Score)> = scores
             .into_iter()
-            .map(|(user_id, scores)| {
+            .map(|(user_id, score)| {
                 member_cache
                     .query(&ctx, user_id, guild)
-                    .map(|m| m.map(move |m| (m.distinct(), scores)))
+                    .map(|m| m.map(move |m| (m.distinct(), score)))
             })
             .collect::<stream::FuturesUnordered<_>>()
             .filter_map(|v| future::ready(v))
-            .flat_map(|(user, scores)| {
-                scores
-                    .into_iter()
-                    .map(move |v| future::ready((user.clone(), v.clone())))
-                    .collect::<stream::FuturesUnordered<_>>()
-            })
             .filter_map(|(user, score)| {
                 future::ready(
                     score

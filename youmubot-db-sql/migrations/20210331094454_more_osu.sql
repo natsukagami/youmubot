@@ -9,8 +9,8 @@ CREATE TABLE osu_last_beatmaps (
 CREATE TABLE osu_user_best_scores (
     beatmap_id BIGINT NOT NULL,
     mode       INT    NOT NULL,
-    user_id    INT    NOT NULL,
-    mods       INT    NOT NULL,
+    user_id    INT    NOT NULL REFERENCES osu_users(user_id) ON DELETE CASCADE,
+    mods       BIGINT NOT NULL,
 
     cached_at DATETIME NOT NULL,
     score     BLOB     NOT NULL,

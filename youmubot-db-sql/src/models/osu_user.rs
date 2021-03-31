@@ -88,9 +88,8 @@ impl OsuUser {
             r#"INSERT
                INTO osu_users(user_id, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures)
                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT (user_id) DO UPDATE
+               ON CONFLICT (user_id) WHERE id = ? DO UPDATE
                SET
-                id = excluded.id,
                 last_update = excluded.last_update,
                 pp_std = excluded.pp_std,
                 pp_taiko = excluded.pp_taiko,
@@ -105,7 +104,13 @@ impl OsuUser {
             self.pp_taiko,
             self.pp_mania,
             self.pp_catch,
-            self.failures).execute(conn).await?;
+            self.failures,
+            self.user_id).execute(conn).await?;
+        Ok(())
+    }
+
+    pub async fn delete(user_id: i64, conn: impl Executor<'_, Database = Database>) -> Result<()> {
+        query!("DELETE FROM osu_users WHERE user_id = ?", user_id).execute(conn).await?;
         Ok(())
     }
 }

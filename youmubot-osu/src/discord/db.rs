@@ -4,8 +4,6 @@ use youmubot_db_sql::{models::osu as models, models::osu_user as model, Pool};
 use crate::models::{Beatmap, Mode, Score};
 use serde::{Deserialize, Serialize};
 use serenity::model::id::{ChannelId, UserId};
-use std::collections::HashMap;
-use youmubot_db::DB;
 use youmubot_prelude::*;
 
 /// Save the user IDs.
@@ -48,6 +46,15 @@ impl OsuSavedUsers {
         let mut conn = self.pool.acquire().await?;
         Ok(model::OsuUser::from(u).store(&mut conn).await?)
     }
+
+    /// Save the given user as a completely new user.
+    pub async fn new_user(&self, u: OsuUser) -> Result<()> {
+        let mut t = self.pool.begin().await?;
+        model::OsuUser::delete(u.user_id.0 as i64, &mut t).await?;
+        model::OsuUser::from(u).store(&mut t).await?;
+        t.commit().await?;
+        Ok(())
+    }
 }
 
 /// Save each channel's last requested beatmap.
@@ -88,9 +95,57 @@ impl OsuLastBeatmap {
     }
 }
 
-/// Save each beatmap's plays by user.
-pub type OsuUserBests =
-    DB<HashMap<(u64, Mode) /* Beatmap ID and Mode */, HashMap<UserId, Vec<Score>>>>;
+/// Save each channel's last requested beatmap.
+pub struct OsuUserBests(Pool);
+
+impl TypeMapKey for OsuUserBests {
+    type Value = OsuUserBests;
+}
+
+impl OsuUserBests {
+    pub fn new(pool: Pool) -> Self {
+        Self(pool)
+    }
+}
+
+impl OsuUserBests {
+    pub async fn by_beatmap(&self, beatmap_id: u64, mode: Mode) -> Result<Vec<(UserId, Score)>> {
+        let scores = models::UserBestScore::by_map(beatmap_id as i64, mode as u8, &self.0).await?;
+        Ok(scores
+            .into_iter()
+            .map(|us| {
+                (
+                    UserId(us.user_id as u64),
+                    bincode::deserialize(&us.score[..]).unwrap(),
+                )
+            })
+            .collect())
+    }
+
+    pub async fn save(
+        &self,
+        user: impl Into<UserId>,
+        mode: Mode,
+        scores: impl IntoIterator<Item = Score>,
+    ) -> Result<()> {
+        let user = user.into();
+        scores
+            .into_iter()
+            .map(|score| models::UserBestScore {
+                user_id: user.0 as i64,
+                beatmap_id: score.beatmap_id as i64,
+                mode: mode as u8,
+                mods: score.mods.bits() as i64,
+                cached_at: Utc::now(),
+                score: bincode::serialize(&score).unwrap(),
+            })
+            .map(|mut us| async move { us.store(&self.0).await })
+            .collect::<stream::FuturesUnordered<_>>()
+            .try_collect::<()>()
+            .await?;
+        Ok(())
+    }
+}
 
 /// An osu! saved user.
 #[derive(Serialize, Deserialize, Debug, Clone)]

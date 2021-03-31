@@ -59,8 +59,8 @@ pub fn setup(
     let sql_client = data.get::<SQLClient>().unwrap().clone();
     // Databases
     data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client.clone()));
-    data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client));
-    OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
+    data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client.clone()));
+    data.insert::<OsuUserBests>(OsuUserBests::new(sql_client));
 
     // Locks
     data.insert::<server_rank::update_lock::UpdateLock>(
@@ -253,13 +253,7 @@ async fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &Type
         last_update: chrono::Utc::now(),
         pp: [None, None, None, None],
     };
-    data.get::<OsuSavedUsers>().unwrap().save(u).await?;
-    OsuUserBests::open(data)
-        .borrow_mut()?
-        .iter_mut()
-        .for_each(|(_, r)| {
-            r.remove(&target);
-        });
+    data.get::<OsuSavedUsers>().unwrap().new_user(u).await?;
     Ok(())
 }
 
@@ -681,11 +675,11 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 
             if let Some(user_id) = user_id {
                 // Save to database
-                OsuUserBests::open(&*data)
-                    .borrow_mut()?
-                    .entry((bm.0.beatmap_id, bm.1))
-                    .or_default()
-                    .insert(user_id, scores);
+                data.get::<OsuUserBests>()
+                    .unwrap()
+                    .save(user_id, m, scores)
+                    .await
+                    .pls_ok();
             }
         }
     }
