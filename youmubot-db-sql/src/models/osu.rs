@@ -193,6 +193,31 @@ impl CachedBeatmap {
         .await
         .map_err(Error::from)
     }
+
+    pub async fn by_beatmapset(
+        beatmapset: i64,
+        conn: impl Executor<'_, Database = Database>,
+    ) -> Result<Vec<Self>> {
+        query_as!(
+            Self,
+            r#"SELECT
+                beatmap.beatmap_id as "beatmap_id: i64",
+                beatmap.mode as "mode: u8",
+                beatmap.cached_at as "cached_at: DateTime",
+                beatmap.beatmap as "beatmap: Vec<u8>"
+            FROM osu_cached_beatmapsets
+            INNER JOIN osu_cached_beatmaps AS beatmap
+                ON osu_cached_beatmapsets.beatmap_id = beatmap.beatmap_id
+                AND osu_cached_beatmapsets.mode = beatmap.mode
+            WHERE
+                beatmapset_id = ?
+                "#,
+            beatmapset
+        )
+        .fetch_all(conn)
+        .await
+        .map_err(Error::from)
+    }
 }
 
 impl CachedBeatmap {
@@ -214,6 +239,24 @@ impl CachedBeatmap {
             self.mode,
             self.cached_at,
             self.beatmap
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn link_beatmapset(
+        &self,
+        beatmapset_id: i64,
+        conn: impl Executor<'_, Database = Database>,
+    ) -> Result<()> {
+        query!(
+            r#"INSERT INTO osu_cached_beatmapsets(beatmapset_id, beatmap_id, mode)
+                VALUES (?, ?, ?)
+                ON CONFLICT DO NOTHING"#,
+            beatmapset_id,
+            self.beatmap_id,
+            self.mode,
         )
         .execute(conn)
         .await?;

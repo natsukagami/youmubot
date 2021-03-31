@@ -60,7 +60,7 @@ pub fn setup(
     // Databases
     data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client.clone()));
     data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client.clone()));
-    data.insert::<OsuUserBests>(OsuUserBests::new(sql_client));
+    data.insert::<OsuUserBests>(OsuUserBests::new(sql_client.clone()));
 
     // Locks
     data.insert::<server_rank::update_lock::UpdateLock>(
@@ -78,7 +78,7 @@ pub fn setup(
     data.insert::<OsuClient>(osu_client.clone());
     data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(http_client));
     data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
-        osu_client,
+        osu_client, sql_client,
     ));
 
     // Announcer

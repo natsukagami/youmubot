@@ -228,10 +228,12 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
     // Update everything.
     {
         let db = data.get::<OsuUserBests>().unwrap();
-        all_server_users.into_iter()
+        all_server_users
+            .into_iter()
             .map(|(u, scores)| db.save(u, mode, scores))
             .collect::<stream::FuturesUnordered<_>>()
-            .try_collect::<()>().await?;
+            .try_collect::<()>()
+            .await?;
     }
     // Signal update complete.
     running_reaction.delete(&ctx).await.ok();
