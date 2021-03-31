@@ -2,8 +2,7 @@ use crate::models::*;
 
 pub struct LastBeatmap {
     pub channel_id: i64,
-    pub beatmap_id: i64,
-    pub beatmapset_id: i64,
+    pub beatmap: Vec<u8>,
     pub mode: u8,
 }
 
@@ -17,8 +16,7 @@ impl LastBeatmap {
             LastBeatmap,
             r#"SELECT
                     channel_id as "channel_id: i64",
-                    beatmap_id as "beatmap_id: i64",
-                    beatmapset_id as "beatmapset_id: i64",
+                    beatmap,
                     mode as "mode: u8"
                 FROM osu_last_beatmaps
                 WHERE channel_id = ?"#,
@@ -35,17 +33,15 @@ impl LastBeatmap {
     pub async fn store(&self, conn: impl Executor<'_, Database = Database>) -> Result<()> {
         query!(
             r#"INSERT INTO
-                  osu_last_beatmaps (channel_id, beatmap_id, beatmapset_id, mode)
+                  osu_last_beatmaps (channel_id, beatmap, mode)
                VALUES
-                  (?, ?, ?, ?)
+                  (?, ?, ?)
                ON CONFLICT (channel_id) DO UPDATE
                   SET
-                    beatmap_id = excluded.beatmap_id,
-                    beatmapset_id = excluded.beatmapset_id,
+                    beatmap = excluded.beatmap,
                     mode = excluded.mode"#,
             self.channel_id,
-            self.beatmap_id,
-            self.beatmapset_id,
+            self.beatmap,
             self.mode,
         )
         .execute(conn)

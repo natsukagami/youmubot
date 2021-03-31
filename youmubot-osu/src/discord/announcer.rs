@@ -288,7 +288,9 @@ impl<'a> CollectedScore<'a> {
                 })
             })
             .await?;
-        save_beatmap(&*ctx.data.read().await, channel, &bm).pls_ok();
+        save_beatmap(&*ctx.data.read().await, channel, &bm)
+            .await
+            .pls_ok();
         Ok(m)
     }
 }

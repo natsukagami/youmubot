@@ -179,7 +179,7 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
         }
         Some(v) => v,
     };
-    let bm = match get_beatmap(&*data, m.channel_id)? {
+    let bm = match get_beatmap(&*data, m.channel_id).await? {
         Some(bm) => bm,
         None => {
             m.reply(&ctx, "No beatmap queried on this channel.").await?;
@@ -260,7 +260,7 @@ pub async fn leaderboard(ctx: &Context, m: &Message, args: Args) -> CommandResul
     let sort_order = OrderBy::from(args.rest());
 
     let data = ctx.data.read().await;
-    let bm = match get_beatmap(&*data, m.channel_id)? {
+    let bm = match get_beatmap(&*data, m.channel_id).await? {
         Some(bm) => bm,
         None => {
             m.reply(&ctx, "No beatmap queried on this channel.").await?;

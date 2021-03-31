@@ -125,7 +125,8 @@ mod beatmapset {
                 m.channel_id,
                 &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),
             )
-            .ok();
+            .await
+            .pls_ok();
 
             Ok(true)
         }

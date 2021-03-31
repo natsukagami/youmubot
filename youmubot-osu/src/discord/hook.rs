@@ -50,6 +50,7 @@ pub fn hook<'a>(
                             msg.channel_id,
                             &bm,
                         )
+                        .await
                         .pls_ok();
                     }
                     EmbedType::Beatmapset(b) => {

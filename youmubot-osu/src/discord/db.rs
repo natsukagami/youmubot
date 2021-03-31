@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use youmubot_db_sql::{models::osu_user as model, Pool};
+use youmubot_db_sql::{models::osu as models, models::osu_user as model, Pool};
 
 use crate::models::{Beatmap, Mode, Score};
 use serde::{Deserialize, Serialize};
@@ -51,7 +51,42 @@ impl OsuSavedUsers {
 }
 
 /// Save each channel's last requested beatmap.
-pub type OsuLastBeatmap = DB<HashMap<ChannelId, (Beatmap, Mode)>>;
+pub struct OsuLastBeatmap(Pool);
+
+impl TypeMapKey for OsuLastBeatmap {
+    type Value = OsuLastBeatmap;
+}
+
+impl OsuLastBeatmap {
+    pub fn new(pool: Pool) -> Self {
+        Self(pool)
+    }
+}
+
+impl OsuLastBeatmap {
+    pub async fn by_channel(&self, id: impl Into<ChannelId>) -> Result<Option<(Beatmap, Mode)>> {
+        let last_beatmap = models::LastBeatmap::by_channel_id(id.into().0 as i64, &self.0).await?;
+        Ok(match last_beatmap {
+            Some(lb) => Some((bincode::deserialize(&lb.beatmap[..])?, lb.mode.into())),
+            None => None,
+        })
+    }
+
+    pub async fn save(
+        &self,
+        channel: impl Into<ChannelId>,
+        beatmap: &Beatmap,
+        mode: Mode,
+    ) -> Result<()> {
+        let b = models::LastBeatmap {
+            channel_id: channel.into().0 as i64,
+            beatmap: bincode::serialize(beatmap)?,
+            mode: mode as u8,
+        };
+        b.store(&self.0).await?;
+        Ok(())
+    }
+}
 
 /// Save each beatmap's plays by user.
 pub type OsuUserBests =
@@ -95,11 +130,13 @@ impl From<model::OsuUser> for OsuUser {
     }
 }
 
+#[allow(dead_code)]
 mod legacy {
     use chrono::{DateTime, Utc};
 
+    use crate::models::{Beatmap, Mode, Score};
     use serde::{Deserialize, Serialize};
-    use serenity::model::id::UserId;
+    use serenity::model::id::{ChannelId, UserId};
     use std::collections::HashMap;
     use youmubot_db::DB;
 
@@ -115,4 +152,11 @@ mod legacy {
         /// More than 5 failures => gone
         pub failures: Option<u8>,
     }
+
+    /// Save each channel's last requested beatmap.
+    pub type OsuLastBeatmap = DB<HashMap<ChannelId, (Beatmap, Mode)>>;
+
+    /// Save each beatmap's plays by user.
+    pub type OsuUserBests =
+        DB<HashMap<(u64, Mode) /* Beatmap ID and Mode */, HashMap<UserId, Vec<Score>>>>;
 }

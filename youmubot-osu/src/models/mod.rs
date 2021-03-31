@@ -243,6 +243,18 @@ pub enum Mode {
     Mania,
 }
 
+impl From<u8> for Mode {
+    fn from(n: u8) -> Self {
+        match n {
+            0 => Self::Std,
+            1 => Self::Taiko,
+            2 => Self::Catch,
+            3 => Self::Mania,
+            _ => panic!("Unknown mode {}", n),
+        }
+    }
+}
+
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Mode::*;

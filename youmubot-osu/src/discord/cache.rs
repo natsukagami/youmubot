@@ -4,28 +4,27 @@ use serenity::model::id::ChannelId;
 use youmubot_prelude::*;
 
 /// Save the beatmap into the server data storage.
-pub(crate) fn save_beatmap(
+pub(crate) async fn save_beatmap(
     data: &TypeMap,
     channel_id: ChannelId,
     bm: &BeatmapWithMode,
 ) -> Result<()> {
-    OsuLastBeatmap::open(data)
-        .borrow_mut()?
-        .insert(channel_id, (bm.0.clone(), bm.mode()));
+    data.get::<OsuLastBeatmap>()
+        .unwrap()
+        .save(channel_id, &bm.0, bm.1)
+        .await?;
 
     Ok(())
 }
 
 /// Get the last beatmap requested from this channel.
-pub(crate) fn get_beatmap(
+pub(crate) async fn get_beatmap(
     data: &TypeMap,
     channel_id: ChannelId,
 ) -> Result<Option<BeatmapWithMode>> {
-    let db = OsuLastBeatmap::open(data);
-    let db = db.borrow()?;
-
-    Ok(db
-        .get(&channel_id)
-        .cloned()
-        .map(|(a, b)| BeatmapWithMode(a, b)))
+    data.get::<OsuLastBeatmap>()
+        .unwrap()
+        .by_channel(channel_id)
+        .await
+        .map(|v| v.map(|(bm, mode)| BeatmapWithMode(bm, mode)))
 }

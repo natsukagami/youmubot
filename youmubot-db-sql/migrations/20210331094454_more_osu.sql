@@ -2,8 +2,7 @@
 
 CREATE TABLE osu_last_beatmaps (
     channel_id    BIGINT NOT NULL PRIMARY KEY,
-    beatmap_id    BIGINT NOT NULL,
-    beatmapset_id BIGINT NOT NULL,
+    beatmap       BLOB   NOT NULL,
     mode          INT    NOT NULL
 );
 

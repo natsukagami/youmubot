@@ -58,8 +58,8 @@ pub fn setup(
 ) -> CommandResult {
     let sql_client = data.get::<SQLClient>().unwrap().clone();
     // Databases
-    data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client));
-    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
+    data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client.clone()));
+    data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client));
     OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
 
     // Locks
@@ -553,7 +553,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*data, msg.channel_id, &beatmap_mode)?;
+            cache::save_beatmap(&*data, msg.channel_id, &beatmap_mode).await?;
         }
         Nth::All => {
             let plays = osu
@@ -585,7 +585,7 @@ impl FromStr for OptBeatmapset {
 #[max_args(2)]
 pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let b = cache::get_beatmap(&*data, msg.channel_id)?;
+    let b = cache::get_beatmap(&*data, msg.channel_id).await?;
     let beatmapset = args.find::<OptBeatmapset>().is_ok();
 
     match b {
@@ -636,7 +636,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[max_args(1)]
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let bm = cache::get_beatmap(&*data, msg.channel_id)?;
+    let bm = cache::get_beatmap(&*data, msg.channel_id).await?;
 
     match bm {
         None => {
@@ -747,7 +747,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .await?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*data, msg.channel_id, &beatmap)?;
+            cache::save_beatmap(&*data, msg.channel_id, &beatmap).await?;
         }
         Nth::All => {
             let plays = osu
