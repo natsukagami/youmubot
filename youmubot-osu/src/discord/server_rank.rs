@@ -28,12 +28,15 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let mode = args.single::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
-    let users = OsuSavedUsers::open(&*data).borrow()?.clone();
-    let users = users
+    let users = data
+        .get::<OsuSavedUsers>()
+        .unwrap()
+        .all()
+        .await?
         .into_iter()
-        .map(|(user_id, osu_user)| async move {
+        .map(|osu_user| async move {
             member_cache
-                .query(&ctx, user_id, guild)
+                .query(&ctx, osu_user.user_id, guild)
                 .await
                 .and_then(|member| {
                     osu_user
@@ -191,11 +194,13 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
     // Run a check on everyone in the server basically.
     let all_server_users: Vec<(UserId, Vec<Score>)> = {
         let osu = data.get::<OsuClient>().unwrap();
-        let osu_users = OsuSavedUsers::open(&*data);
-        let osu_users = osu_users
-            .borrow()?
-            .iter()
-            .map(|(&user_id, osu_user)| (user_id, osu_user.id))
+        let osu_users = data
+            .get::<OsuSavedUsers>()
+            .unwrap()
+            .all()
+            .await?
+            .into_iter()
+            .map(|osu_user| (osu_user.user_id, osu_user.id))
             .collect::<Vec<_>>();
         let beatmap_id = bm.0.beatmap_id;
         osu_users
@@ -294,8 +299,12 @@ async fn show_leaderboard(
 
     // Run a check on the user once too!
     {
-        let osu_users = OsuSavedUsers::open(&*data);
-        let user = osu_users.borrow()?.get(&m.author.id).map(|v| v.id);
+        let user = data
+            .get::<OsuSavedUsers>()
+            .unwrap()
+            .by_user_id(m.author.id)
+            .await?
+            .map(|v| v.id);
         if let Some(id) = user {
             let osu = data.get::<OsuClient>().unwrap();
             if let Ok(scores) = osu

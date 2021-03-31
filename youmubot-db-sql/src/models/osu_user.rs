@@ -7,7 +7,7 @@ use sqlx::{query, query_as, Executor};
 pub struct OsuUser {
     pub user_id: i64,
     pub id: i64,
-    pub last_update: Option<DateTime>,
+    pub last_update: DateTime,
     pub pp_std: Option<f32>,
     pub pp_taiko: Option<f32>,
     pub pp_mania: Option<f32>,
@@ -60,11 +60,11 @@ impl OsuUser {
     }
 
     /// Query all users.
-    pub async fn all<'a, E>(conn: &'a mut E) -> Result<impl Stream<Item = Result<Self>> + 'a>
+    pub fn all<'a, E>(conn: &'a mut E) -> impl Stream<Item = Result<Self>> + 'a
     where
         &'a mut E: Executor<'a, Database = Database>,
     {
-        let u = query_as!(
+         query_as!(
             Self,
             r#"SELECT
                 user_id as "user_id: i64",
@@ -80,8 +80,7 @@ impl OsuUser {
                 Ok(v) => v.right().map(Ok),
                 Err(e) => Some(Err(Error::from(e))),
             })
-        });
-        Ok(u)
+        })
     }
 }
 

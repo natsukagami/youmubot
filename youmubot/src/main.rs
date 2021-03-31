@@ -121,9 +121,16 @@ async fn main() {
             .map(|v| std::path::PathBuf::from(v))
             .unwrap_or_else(|e| {
                 println!("No DBPATH set up ({:?}), using `/data`", e);
-                std::path::PathBuf::from("data")
+                std::path::PathBuf::from("/data")
             });
-        youmubot_prelude::setup::setup_prelude(&db_path, &mut data);
+        let sql_path = var("SQLPATH")
+            .map(|v| std::path::PathBuf::from(v))
+            .unwrap_or_else(|e| {
+                let res = db_path.join("youmubot.db");
+                println!("No SQLPATH set up ({:?}), using `{:?}`", e, res);
+                res
+            });
+        youmubot_prelude::setup::setup_prelude(&db_path, sql_path, &mut data).await;
         // Setup core
         #[cfg(feature = "core")]
         youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");

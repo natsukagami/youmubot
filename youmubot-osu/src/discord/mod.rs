@@ -56,8 +56,9 @@ pub fn setup(
     data: &mut TypeMap,
     announcers: &mut AnnouncerHandler,
 ) -> CommandResult {
+    let sql_client = data.get::<SQLClient>().unwrap().clone();
     // Databases
-    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
+    data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client));
     OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
     OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
 
@@ -196,7 +197,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     .await?;
                 return Ok(());
             }
-            add_user(msg.author.id, u.id, &*data)?;
+            add_user(msg.author.id, u.id, &*data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -227,7 +228,7 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
     match user {
         Some(u) => {
-            add_user(target, u.id, &*data)?;
+            add_user(target, u.id, &*data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -244,16 +245,15 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     Ok(())
 }
 
-fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &TypeMap) -> Result<()> {
-    OsuSavedUsers::open(data).borrow_mut()?.insert(
-        target,
-        OsuUser {
-            id: user_id,
-            failures: None,
-            last_update: chrono::Utc::now(),
-            pp: vec![],
-        },
-    );
+async fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &TypeMap) -> Result<()> {
+    let u = OsuUser {
+        user_id: target,
+        id: user_id,
+        failures: 0,
+        last_update: chrono::Utc::now(),
+        pp: [None, None, None, None],
+    };
+    data.get::<OsuSavedUsers>().unwrap().save(u).await?;
     OsuUserBests::open(data)
         .borrow_mut()?
         .iter_mut()
@@ -278,7 +278,7 @@ impl FromStr for ModeArg {
     }
 }
 
-fn to_user_id_query(
+async fn to_user_id_query(
     s: Option<UsernameArg>,
     data: &TypeMap,
     msg: &Message,
@@ -289,10 +289,10 @@ fn to_user_id_query(
         None => msg.author.id,
     };
 
-    let db = OsuSavedUsers::open(data);
-    let db = db.borrow()?;
-    db.get(&id)
-        .cloned()
+    data.get::<OsuSavedUsers>()
+        .unwrap()
+        .by_user_id(id)
+        .await?
         .map(|u| UserID::ID(u.id))
         .ok_or(Error::msg("No saved account found"))
 }
@@ -521,7 +521,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let data = ctx.data.read().await;
     let nth = args.single::<Nth>().unwrap_or(Nth::All);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
 
     let osu = data.get::<OsuClient>().unwrap();
     let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
@@ -652,7 +652,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 None => Some(msg.author.id),
                 _ => None,
             };
-            let user = to_user_id_query(username_arg, &*data, msg)?;
+            let user = to_user_id_query(username_arg, &*data, msg).await?;
 
             let osu = data.get::<OsuClient>().unwrap();
             let oppai = data.get::<BeatmapCache>().unwrap();
@@ -706,7 +706,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .map(|ModeArg(t)| t)
         .unwrap_or(Mode::Std);
 
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
     let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
     let osu = data.get::<OsuClient>().unwrap();
 
@@ -761,7 +761,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
 
 async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
     let data = ctx.data.read().await;
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
     let osu = data.get::<OsuClient>().unwrap();
     let cache = data.get::<BeatmapMetaCache>().unwrap();
     let user = osu.user(user, |f| f.mode(mode)).await?;

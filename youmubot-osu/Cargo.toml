@@ -18,6 +18,7 @@ oppai-rs = "0.2"
 dashmap = "4"
 
 youmubot-db = { path = "../youmubot-db" }
+youmubot-db-sql = { path = "../youmubot-db-sql" }
 youmubot-prelude = { path = "../youmubot-prelude" }
 
 [dev-dependencies]

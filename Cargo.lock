@@ -2292,6 +2292,7 @@ dependencies = [
  "serde_json",
  "serenity",
  "youmubot-db",
+ "youmubot-db-sql",
  "youmubot-prelude",
 ]
 
@@ -2309,4 +2310,5 @@ dependencies = [
  "serenity",
  "tokio",
  "youmubot-db",
+ "youmubot-db-sql",
 ]
