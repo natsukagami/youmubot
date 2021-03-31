@@ -1,5 +1,4 @@
 use super::*;
-use crate::*;
 use sqlx::{query, query_as, Executor};
 
 /// An osu user, as represented in the SQL.
@@ -64,7 +63,7 @@ impl OsuUser {
     where
         &'a mut E: Executor<'a, Database = Database>,
     {
-         query_as!(
+        query_as!(
             Self,
             r#"SELECT
                 user_id as "user_id: i64",
@@ -75,12 +74,7 @@ impl OsuUser {
             FROM osu_users"#,
         )
         .fetch_many(conn)
-        .filter_map(|either| {
-            futures_util::future::ready(match either {
-                Ok(v) => v.right().map(Ok),
-                Err(e) => Some(Err(Error::from(e))),
-            })
-        })
+        .filter_map(map_many_result)
     }
 }
 
