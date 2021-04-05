@@ -24,6 +24,8 @@ jobs:
                   key: ${{ runner.os }}-rust-${{ steps.cargo.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}-release-build
             - name: Build release
               run: cargo build --release
+              env:
+                  SQLX_OFFLINE: "true"
             - name: Upload compiled binary artifact
               uses: actions/upload-artifact@v1
               with:
