@@ -110,7 +110,9 @@ impl OsuUser {
     }
 
     pub async fn delete(user_id: i64, conn: impl Executor<'_, Database = Database>) -> Result<()> {
-        query!("DELETE FROM osu_users WHERE user_id = ?", user_id).execute(conn).await?;
+        query!("DELETE FROM osu_users WHERE user_id = ?", user_id)
+            .execute(conn)
+            .await?;
         Ok(())
     }
 }
