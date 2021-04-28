@@ -154,7 +154,7 @@ enum OrderBy {
 
 impl Default for OrderBy {
     fn default() -> Self {
-        Self::Score
+        Self::PP
     }
 }
 
