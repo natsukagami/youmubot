@@ -204,12 +204,13 @@ pub async fn handle_pagination_reaction(
                     return Ok(page)
                 }
                 ARROW_RIGHT => page + 1,
-                FAST_FORWARD => page + fast,
+                FAST_FORWARD => (pages.unwrap() as u8 - 1).min(page + fast),
                 _ => return Ok(page),
             };
-            Ok(match pager.render(new_page, ctx, message).await {
-                Err(_) => page,
-                Ok(_) => new_page,
+            Ok(if pager.render(new_page, ctx, message).await? {
+                new_page
+            } else {
+                page
             })
         }
         _ => Ok(page),
