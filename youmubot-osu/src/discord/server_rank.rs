@@ -287,31 +287,6 @@ async fn show_leaderboard(
         })
     };
 
-    // Run a check on the user once too!
-    {
-        let user = data
-            .get::<OsuSavedUsers>()
-            .unwrap()
-            .by_user_id(m.author.id)
-            .await?
-            .map(|v| v.id);
-        if let Some(id) = user {
-            let osu = data.get::<OsuClient>().unwrap();
-            if let Ok(scores) = osu
-                .scores(bm.0.beatmap_id, |f| f.user(UserID::ID(id)))
-                .await
-            {
-                if !scores.is_empty() {
-                    data.get::<OsuUserBests>()
-                        .unwrap()
-                        .save(m.author.id, mode, scores)
-                        .await
-                        .pls_ok();
-                }
-            }
-        }
-    }
-
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let scores = {
