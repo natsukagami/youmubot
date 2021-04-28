@@ -434,11 +434,12 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
 #[command]
 #[aliases("c", "chk")]
-#[usage = "[style (table or grid) = --table] / [username or tag = yourself]"]
+#[usage = "[style (table or grid) = --table] / [username or tag = yourself] / [mods to filter]"]
 #[description = "Check your own or someone else's best record on the last beatmap. Also stores the result if possible."]
-#[max_args(2)]
+#[max_args(3)]
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
+    let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
     let bm = cache::get_beatmap(&*data, msg.channel_id).await?;
 
     match bm {
@@ -449,7 +450,9 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         Some(bm) => {
             let b = &bm.0;
             let m = bm.1;
-            let style = args.single::<ScoreListStyle>().unwrap_or_default();
+            let style = args
+                .single::<ScoreListStyle>()
+                .unwrap_or(ScoreListStyle::Grid);
             let username_arg = args.single::<UsernameArg>().ok();
             let user_id = match username_arg.as_ref() {
                 Some(UsernameArg::Tagged(v)) => Some(*v),
@@ -466,7 +469,10 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 .ok_or_else(|| Error::msg("User not found"))?;
             let scores = osu
                 .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
-                .await?;
+                .await?
+                .into_iter()
+                .filter(|s| s.mods.contains(mods))
+                .collect::<Vec<_>>();
 
             if scores.is_empty() {
                 msg.reply(&ctx, "No scores found").await?;
