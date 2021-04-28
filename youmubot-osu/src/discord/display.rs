@@ -1,7 +1,126 @@
 pub use beatmapset::display_beatmapset;
-pub use scores::table::display_scores_table;
+pub use scores::ScoreListStyle;
 
 mod scores {
+    use crate::models::{Mode, Score};
+    use serenity::{framework::standard::CommandResult, model::channel::Message};
+    use youmubot_prelude::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// The style for the scores list to be displayed.
+    pub enum ScoreListStyle {
+        Table,
+        Grid,
+    }
+
+    impl Default for ScoreListStyle {
+        fn default() -> Self {
+            Self::Table
+        }
+    }
+
+    impl std::str::FromStr for ScoreListStyle {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                "--table" => Ok(Self::Table),
+                "--grid" => Ok(Self::Grid),
+                _ => Err(Error::msg("unknown value")),
+            }
+        }
+    }
+
+    impl ScoreListStyle {
+        pub async fn display_scores<'a>(
+            self,
+            scores: Vec<Score>,
+            mode: Mode,
+            ctx: &'a Context,
+            m: &'a Message,
+        ) -> CommandResult {
+            match self {
+                ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
+                ScoreListStyle::Grid => grid::display_scores_grid(scores, mode, ctx, m).await,
+            }
+        }
+    }
+
+    pub mod grid {
+        use crate::discord::{
+            cache::save_beatmap, BeatmapCache, BeatmapMetaCache, BeatmapWithMode,
+        };
+        use crate::models::{Mode, Score};
+        use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use youmubot_prelude::*;
+
+        pub async fn display_scores_grid<'a>(
+            scores: Vec<Score>,
+            mode: Mode,
+            ctx: &'a Context,
+            m: &'a Message,
+        ) -> CommandResult {
+            if scores.is_empty() {
+                m.reply(&ctx, "No plays found").await?;
+                return Ok(());
+            }
+
+            paginate_reply(
+                Paginate { scores, mode },
+                ctx,
+                m,
+                std::time::Duration::from_secs(60),
+            )
+            .await?;
+            Ok(())
+        }
+
+        pub struct Paginate {
+            scores: Vec<Score>,
+            mode: Mode,
+        }
+
+        #[async_trait]
+        impl pagination::Paginate for Paginate {
+            async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+                let data = ctx.data.read().await;
+                let client = data.get::<crate::discord::OsuClient>().unwrap();
+                let osu = data.get::<BeatmapMetaCache>().unwrap();
+                let beatmap_cache = data.get::<BeatmapCache>().unwrap();
+                let page = page as usize;
+                let score = &self.scores[page];
+
+                let hourglass = msg.react(ctx, '⌛').await?;
+                let mode = self.mode;
+                let beatmap = osu.get_beatmap(score.beatmap_id, mode).await?;
+                let content = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
+                let bm = BeatmapWithMode(beatmap, mode);
+                let user = client
+                    .user(crate::request::UserID::ID(score.user_id), |f| f)
+                    .await?
+                    .ok_or_else(|| Error::msg("user not found"))?;
+
+                msg.edit(ctx, |e| {
+                    e.embed(|e| {
+                        crate::discord::embeds::score_embed(score, &bm, &content, &user)
+                            .footer(format!("Page {}/{}", page + 1, self.scores.len()))
+                            .build(e)
+                    })
+                })
+                .await?;
+                save_beatmap(&*ctx.data.read().await, msg.channel_id, &bm).await?;
+
+                // End
+                hourglass.delete(ctx).await?;
+                Ok(true)
+            }
+
+            fn len(&self) -> Option<usize> {
+                Some(self.scores.len())
+            }
+        }
+    }
+
     pub mod table {
         use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
         use crate::models::{Mode, Score};
