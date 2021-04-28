@@ -467,15 +467,17 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 .user(user, |f| f)
                 .await?
                 .ok_or_else(|| Error::msg("User not found"))?;
-            let scores = osu
+            let mut scores = osu
                 .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
                 .await?
                 .into_iter()
                 .filter(|s| s.mods.contains(mods))
                 .collect::<Vec<_>>();
+            scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
 
             if scores.is_empty() {
                 msg.reply(&ctx, "No scores found").await?;
+                return Ok(());
             }
 
             if let Some(user_id) = user_id {

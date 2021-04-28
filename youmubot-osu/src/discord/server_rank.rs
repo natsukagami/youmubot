@@ -172,13 +172,14 @@ impl std::str::FromStr for OrderBy {
 
 #[command("leaderboard")]
 #[aliases("lb", "bmranks", "br", "cc", "updatelb")]
-#[usage = "[--score to sort by score, default to sort by pp] / [--table to show a table, --grid to show score by score]"]
+#[usage = "[--score to sort by score, default to sort by pp] / [--table to show a table, --grid to show score by score] / [mods to filter]"]
 #[description = "See the server's ranks on the last seen beatmap"]
 #[max_args(2)]
 #[only_in(guilds)]
 pub async fn update_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let sort_order = args.single::<OrderBy>().unwrap_or_default();
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
+    let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
 
     let guild = m.guild_id.unwrap();
     let data = ctx.data.read().await;
@@ -257,13 +258,14 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> C
     .await
     .ok();
     drop(update_lock);
-    show_leaderboard(ctx, m, bm, sort_order, style).await
+    show_leaderboard(ctx, m, bm, mods, sort_order, style).await
 }
 
 async fn show_leaderboard(
     ctx: &Context,
     m: &Message,
     bm: BeatmapWithMode,
+    mods: Mods,
     order: OrderBy,
     style: ScoreListStyle,
 ) -> CommandResult {
@@ -304,6 +306,7 @@ async fn show_leaderboard(
 
         let mut scores: Vec<(f64, String, Score)> = scores
             .into_iter()
+            .filter(|(_, score)| score.mods.contains(mods))
             .map(|(user_id, score)| {
                 member_cache
                     .query(&ctx, user_id, guild)
