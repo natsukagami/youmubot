@@ -47,6 +47,10 @@ pub trait Paginate: Send + Sized {
     fn len(&self) -> Option<usize> {
         None
     }
+
+    fn is_empty(&self) -> Option<bool> {
+        self.len().map(|v| v == 0)
+    }
 }
 
 #[async_trait::async_trait]

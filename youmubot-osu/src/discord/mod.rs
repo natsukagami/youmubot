@@ -1,7 +1,8 @@
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
-    discord::oppai_cache::{BeatmapCache, BeatmapInfo, OppaiAccuracy},
-    models::{Beatmap, Mode, Mods, Score, User},
+    discord::display::display_scores_table as list_scores,
+    discord::oppai_cache::{BeatmapCache, BeatmapInfo},
+    models::{Beatmap, Mode, Mods, User},
     request::UserID,
     Client as OsuHttpClient,
 };
@@ -313,202 +314,6 @@ impl FromStr for Nth {
     }
 }
 
-async fn list_plays<'a>(
-    plays: Vec<Score>,
-    mode: Mode,
-    ctx: &'a Context,
-    m: &'a Message,
-) -> CommandResult {
-    let plays = Arc::new(plays);
-    if plays.is_empty() {
-        m.reply(&ctx, "No plays found").await?;
-        return Ok(());
-    }
-
-    const ITEMS_PER_PAGE: usize = 5;
-    let total_pages = (plays.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    paginate_reply_fn(
-        move |page, ctx: &Context, msg| {
-            let plays = plays.clone();
-            Box::pin(async move {
-                let data = ctx.data.read().await;
-                let osu = data.get::<BeatmapMetaCache>().unwrap();
-                let beatmap_cache = data.get::<BeatmapCache>().unwrap();
-                let page = page as usize;
-                let start = page * ITEMS_PER_PAGE;
-                let end = plays.len().min(start + ITEMS_PER_PAGE);
-                if start >= end {
-                    return Ok(false);
-                }
-
-                let hourglass = msg.react(ctx, '⌛').await?;
-                let plays = &plays[start..end];
-                let beatmaps = plays
-                    .iter()
-                    .map(|play| async move {
-                        let beatmap = osu.get_beatmap(play.beatmap_id, mode).await?;
-                        let info = {
-                            let b = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
-                            mode.to_oppai_mode()
-                                .and_then(|mode| b.get_info_with(Some(mode), play.mods).ok())
-                        };
-                        Ok((beatmap, info)) as Result<(Beatmap, Option<BeatmapInfo>)>
-                    })
-                    .collect::<stream::FuturesOrdered<_>>()
-                    .map(|v| v.ok())
-                    .collect::<Vec<_>>();
-                let pp = plays
-                    .iter()
-                    .map(|p| async move {
-                        match p.pp.map(|pp| format!("{:.2}pp", pp)) {
-                            Some(v) => Ok(v),
-                            None => {
-                                let b = beatmap_cache.get_beatmap(p.beatmap_id).await?;
-                                let r: Result<_> = Ok(mode
-                                    .to_oppai_mode()
-                                    .and_then(|op| {
-                                        b.get_pp_from(
-                                            oppai_rs::Combo::NonFC {
-                                                max_combo: p.max_combo as u32,
-                                                misses: p.count_miss as u32,
-                                            },
-                                            OppaiAccuracy::from_hits(
-                                                p.count_100 as u32,
-                                                p.count_50 as u32,
-                                            ),
-                                            Some(op),
-                                            p.mods,
-                                        )
-                                        .ok()
-                                        .map(|pp| format!("{:.2}pp [?]", pp))
-                                    })
-                                    .unwrap_or_else(|| "-".to_owned()));
-                                r
-                            }
-                        }
-                    })
-                    .collect::<stream::FuturesOrdered<_>>()
-                    .map(|v| v.unwrap_or_else(|_| "-".to_owned()))
-                    .collect::<Vec<String>>();
-                let (beatmaps, pp) = future::join(beatmaps, pp).await;
-
-                let ranks = plays
-                    .iter()
-                    .enumerate()
-                    .map(|(i, p)| match p.rank {
-                        crate::models::Rank::F => beatmaps[i]
-                            .as_ref()
-                            .and_then(|(_, i)| i.map(|i| i.objects))
-                            .map(|total| {
-                                (p.count_300 + p.count_100 + p.count_50 + p.count_miss) as f64
-                                    / (total as f64)
-                                    * 100.0
-                            })
-                            .map(|p| format!("F [{:.0}%]", p))
-                            .unwrap_or_else(|| "F".to_owned()),
-                        v => v.to_string(),
-                    })
-                    .collect::<Vec<_>>();
-
-                let beatmaps = beatmaps
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, b)| {
-                        let play = &plays[i];
-                        b.map(|(beatmap, info)| {
-                            format!(
-                                "[{:.1}*] {} - {} [{}] ({})",
-                                info.map(|i| i.stars as f64)
-                                    .unwrap_or(beatmap.difficulty.stars),
-                                beatmap.artist,
-                                beatmap.title,
-                                beatmap.difficulty_name,
-                                beatmap.short_link(Some(mode), Some(play.mods)),
-                            )
-                        })
-                        .unwrap_or_else(|| "FETCH_FAILED".to_owned())
-                    })
-                    .collect::<Vec<_>>();
-
-                let pw = pp.iter().map(|v| v.len()).max().unwrap_or(2);
-                /*mods width*/
-                let mw = plays
-                    .iter()
-                    .map(|v| v.mods.to_string().len())
-                    .max()
-                    .unwrap()
-                    .max(4);
-                /*beatmap names*/
-                let bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
-                /* ranks width */
-                let rw = ranks.iter().map(|v| v.len()).max().unwrap().max(5);
-
-                let mut m = MessageBuilder::new();
-                // Table header
-                m.push_line(format!(
-                    " #  | {:pw$} | accuracy | {:rw$} | {:mw$} | {:bw$}",
-                    "pp",
-                    "ranks",
-                    "mods",
-                    "beatmap",
-                    rw = rw,
-                    pw = pw,
-                    mw = mw,
-                    bw = bw
-                ));
-                m.push_line(format!(
-                    "------{:-<pw$}--------------{:-<rw$}---{:-<mw$}---{:-<bw$}",
-                    "",
-                    "",
-                    "",
-                    "",
-                    rw = rw,
-                    pw = pw,
-                    mw = mw,
-                    bw = bw
-                ));
-                // Each row
-                for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
-                    m.push_line(format!(
-                        "{:>3} | {:>pw$} | {:>8} | {:^rw$} | {:mw$} | {:bw$}",
-                        id + start + 1,
-                        pp[id],
-                        format!("{:.2}%", play.accuracy(mode)),
-                        ranks[id],
-                        play.mods.to_string(),
-                        beatmap,
-                        rw = rw,
-                        pw = pw,
-                        mw = mw,
-                        bw = bw
-                    ));
-                }
-                // End
-                let table = m.build().replace("```", "\\`\\`\\`");
-                let mut m = MessageBuilder::new();
-                m.push_codeblock(table, None).push_line(format!(
-                    "Page **{}/{}**",
-                    page + 1,
-                    total_pages
-                ));
-                if mode.to_oppai_mode().is_none() {
-                    m.push_line("Note: star difficulty doesn't reflect mods applied.");
-                } else {
-                    m.push_line("[?] means pp was predicted by oppai-rs.");
-                }
-                msg.edit(ctx, |f| f.content(m.to_string())).await?;
-                hourglass.delete(ctx).await?;
-                Ok(true)
-            })
-        },
-        ctx,
-        m,
-        std::time::Duration::from_secs(60),
-    )
-    .await?;
-    Ok(())
-}
-
 #[command]
 #[description = "Gets an user's recent play"]
 #[usage = "#[the nth recent play = --all] / [mode (std, taiko, mania, catch) = std] / [username / user id = your saved id]"]
@@ -556,7 +361,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             let plays = osu
                 .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))
                 .await?;
-            list_plays(plays, mode, ctx, msg).await?;
+            list_scores(plays, mode, ctx, msg).await?;
         }
     }
     Ok(())
@@ -750,7 +555,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let plays = osu
                 .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
                 .await?;
-            list_plays(plays, mode, ctx, msg).await?;
+            list_scores(plays, mode, ctx, msg).await?;
         }
     }
     Ok(())
