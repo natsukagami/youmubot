@@ -1,5 +1,8 @@
 pub use beatmapset::display_beatmapset;
 
+// mod scores {
+// }
+
 mod beatmapset {
     use crate::{
         discord::{
@@ -71,6 +74,10 @@ mod beatmapset {
 
     #[async_trait]
     impl pagination::Paginate for Paginate {
+        fn len(&self) -> Option<usize> {
+            Some(self.maps.len())
+        }
+
         async fn render(
             &mut self,
             page: u8,
