@@ -12,6 +12,8 @@ use tokio::time as tokio_time;
 
 const ARROW_RIGHT: &str = "➡️";
 const ARROW_LEFT: &str = "⬅️";
+const REWIND: &str = "⏪";
+const FAST_FORWARD: &str = "⏩";
 
 /// A trait that provides the implementation of a paginator.
 #[async_trait::async_trait]
@@ -38,6 +40,12 @@ pub trait Paginate: Send + Sized {
         handle_pagination_reaction(page, self, ctx, message, reaction)
             .await
             .map(Some)
+    }
+
+    /// Return the number of pages, if it is known in advance.
+    /// If this is given, bounds-check will be done outside of `prerender` / `render`.
+    fn len(&self) -> Option<usize> {
+        None
     }
 }
 
@@ -91,12 +99,23 @@ async fn paginate_with_first_message(
     timeout: std::time::Duration,
 ) -> Result<()> {
     // React to the message
+    let large_count = pager.len().filter(|&p| p > 10).is_some();
+    if large_count {
+        // add >> and << buttons
+        message.react(&ctx, ReactionType::try_from(REWIND)?).await?;
+    }
     message
         .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
         .await?;
     message
         .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
         .await?;
+    if large_count {
+        // add >> and << buttons
+        message
+            .react(&ctx, ReactionType::try_from(FAST_FORWARD)?)
+            .await?;
+    }
     pager.prerender(&ctx, &mut message).await?;
     pager.render(0, ctx, &mut message).await?;
     // Build a reaction collector
@@ -167,21 +186,32 @@ pub async fn handle_pagination_reaction(
     let reaction = match reaction {
         ReactionAction::Added(v) | ReactionAction::Removed(v) => v,
     };
+    let pages = pager.len();
+    let fast = pages.map(|v| v / 10).unwrap_or(5).max(5) as u8;
     match &reaction.emoji {
-        ReactionType::Unicode(ref s) => match s.as_str() {
-            ARROW_LEFT if page == 0 => Ok(page),
-            ARROW_LEFT => Ok(if pager.render(page - 1, ctx, message).await? {
-                page - 1
-            } else {
-                page
-            }),
-            ARROW_RIGHT => Ok(if pager.render(page + 1, ctx, message).await? {
-                page + 1
-            } else {
-                page
-            }),
-            _ => Ok(page),
-        },
+        ReactionType::Unicode(ref s) => {
+            let new_page = match s.as_str() {
+                ARROW_LEFT | REWIND if page == 0 => return Ok(page),
+                ARROW_LEFT => page - 1,
+                REWIND => {
+                    if page < fast {
+                        0
+                    } else {
+                        page - fast
+                    }
+                }
+                ARROW_RIGHT if pages.filter(|&pages| page as usize + 1 >= pages).is_some() => {
+                    return Ok(page)
+                }
+                ARROW_RIGHT => page + 1,
+                FAST_FORWARD => page + fast,
+                _ => return Ok(page),
+            };
+            Ok(match pager.render(new_page, ctx, message).await {
+                Err(_) => page,
+                Ok(_) => new_page,
+            })
+        }
         _ => Ok(page),
     }
 }
