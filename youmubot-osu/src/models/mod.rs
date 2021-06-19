@@ -380,7 +380,8 @@ impl Beatmap {
                 Some(mode) if mode != self.mode => format!("/{}", mode.as_str_new_site()),
                 _ => "".to_owned(),
             },
-            mods.map(|m| format!("{}", m)).unwrap_or_else(|| "".to_owned()),
+            mods.map(|m| format!("{}", m))
+                .unwrap_or_else(|| "".to_owned()),
         )
     }
 

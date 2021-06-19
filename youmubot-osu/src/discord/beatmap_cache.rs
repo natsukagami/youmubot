@@ -43,7 +43,11 @@ impl BeatmapMetaCache {
                 f
             })
             .await
-            .and_then(|v| v.into_iter().next().ok_or_else(|| Error::msg("beatmap not found")))?;
+            .and_then(|v| {
+                v.into_iter()
+                    .next()
+                    .ok_or_else(|| Error::msg("beatmap not found"))
+            })?;
         if let ApprovalStatus::Ranked(_) = beatmap.approval {
             let mut c = Self::to_cached_beatmap(&beatmap, mode);
             c.store(&self.pool).await.pls_ok();

@@ -510,7 +510,7 @@ async fn show_leaderboard(
                 } else if order == OrderBy::PP {
                     content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
                 }
-                
+
                 m.edit(&ctx, |f| f.content(content.build())).await?;
                 Ok(true)
             })
