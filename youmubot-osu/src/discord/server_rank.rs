@@ -5,6 +5,7 @@ use super::{
 };
 use crate::{
     discord::{
+        display::ScoreListStyle,
         oppai_cache::{BeatmapCache, OppaiAccuracy},
         BeatmapWithMode,
     },
@@ -151,23 +152,34 @@ enum OrderBy {
     Score,
 }
 
-impl From<&str> for OrderBy {
-    fn from(s: &str) -> Self {
-        if s == "--score" {
-            Self::Score
-        } else {
-            Self::PP
+impl Default for OrderBy {
+    fn default() -> Self {
+        Self::PP
+    }
+}
+
+impl std::str::FromStr for OrderBy {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "--score" => Ok(OrderBy::Score),
+            "--pp" => Ok(OrderBy::PP),
+            _ => Err(Error::msg("unknown value")),
         }
     }
 }
 
-#[command("updatelb")]
-#[description = "Update the leaderboard on the last seen beatmap"]
-#[usage = "[--score to sort by score, default to sort by pp]"]
-#[max_args(1)]
+#[command("leaderboard")]
+#[aliases("lb", "bmranks", "br", "cc", "updatelb")]
+#[usage = "[--score to sort by score, default to sort by pp] / [--table to show a table, --grid to show score by score] / [mods to filter]"]
+#[description = "See the server's ranks on the last seen beatmap"]
+#[max_args(2)]
 #[only_in(guilds)]
-pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> CommandResult {
-    let sort_order = OrderBy::from(args.rest());
+pub async fn update_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+    let sort_order = args.single::<OrderBy>().unwrap_or_default();
+    let style = args.single::<ScoreListStyle>().unwrap_or_default();
+    let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
 
     let guild = m.guild_id.unwrap();
     let data = ctx.data.read().await;
@@ -246,34 +258,16 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
     .await
     .ok();
     drop(update_lock);
-    show_leaderboard(ctx, m, bm, sort_order).await
-}
-
-#[command("leaderboard")]
-#[aliases("lb", "bmranks", "br", "cc")]
-#[usage = "[--score to sort by score, default to sort by pp]"]
-#[description = "See the server's ranks on the last seen beatmap"]
-#[max_args(1)]
-#[only_in(guilds)]
-pub async fn leaderboard(ctx: &Context, m: &Message, args: Args) -> CommandResult {
-    let sort_order = OrderBy::from(args.rest());
-
-    let data = ctx.data.read().await;
-    let bm = match get_beatmap(&*data, m.channel_id).await? {
-        Some(bm) => bm,
-        None => {
-            m.reply(&ctx, "No beatmap queried on this channel.").await?;
-            return Ok(());
-        }
-    };
-    show_leaderboard(ctx, m, bm, sort_order).await
+    show_leaderboard(ctx, m, bm, mods, sort_order, style).await
 }
 
 async fn show_leaderboard(
     ctx: &Context,
     m: &Message,
     bm: BeatmapWithMode,
+    mods: Mods,
     order: OrderBy,
+    style: ScoreListStyle,
 ) -> CommandResult {
     let data = ctx.data.read().await;
 
@@ -295,31 +289,6 @@ async fn show_leaderboard(
         })
     };
 
-    // Run a check on the user once too!
-    {
-        let user = data
-            .get::<OsuSavedUsers>()
-            .unwrap()
-            .by_user_id(m.author.id)
-            .await?
-            .map(|v| v.id);
-        if let Some(id) = user {
-            let osu = data.get::<OsuClient>().unwrap();
-            if let Ok(scores) = osu
-                .scores(bm.0.beatmap_id, |f| f.user(UserID::ID(id)))
-                .await
-            {
-                if !scores.is_empty() {
-                    data.get::<OsuUserBests>()
-                        .unwrap()
-                        .save(m.author.id, mode, scores)
-                        .await
-                        .pls_ok();
-                }
-            }
-        }
-    }
-
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let scores = {
@@ -337,6 +306,7 @@ async fn show_leaderboard(
 
         let mut scores: Vec<(f64, String, Score)> = scores
             .into_iter()
+            .filter(|(_, score)| score.mods.contains(mods))
             .map(|(user_id, score)| {
                 member_cache
                     .query(&ctx, user_id, guild)
@@ -381,6 +351,19 @@ async fn show_leaderboard(
         .await?;
         return Ok(());
     }
+
+    if let ScoreListStyle::Grid = style {
+        style
+            .display_scores(
+                scores.into_iter().map(|(_, _, a)| a).collect(),
+                mode,
+                ctx,
+                m,
+            )
+            .await?;
+        return Ok(());
+    }
+
     paginate_reply_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
             const ITEMS_PER_PAGE: usize = 5;

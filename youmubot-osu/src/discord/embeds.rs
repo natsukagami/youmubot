@@ -169,6 +169,7 @@ pub(crate) struct ScoreEmbedBuilder<'a> {
     u: &'a User,
     top_record: Option<u8>,
     world_record: Option<u16>,
+    footer: Option<String>,
 }
 
 impl<'a> ScoreEmbedBuilder<'a> {
@@ -178,6 +179,10 @@ impl<'a> ScoreEmbedBuilder<'a> {
     }
     pub fn world_record(&mut self, rank: u16) -> &mut Self {
         self.world_record = Some(rank);
+        self
+    }
+    pub fn footer(&mut self, footer: impl Into<String>) -> &mut Self {
+        self.footer = Some(footer.into());
         self
     }
 }
@@ -195,12 +200,13 @@ pub(crate) fn score_embed<'a>(
         u,
         top_record: None,
         world_record: None,
+        footer: None,
     }
 }
 
 impl<'a> ScoreEmbedBuilder<'a> {
     #[allow(clippy::many_single_char_names)]
-    pub fn build<'b>(&self, m: &'b mut CreateEmbed) -> &'b mut CreateEmbed {
+    pub fn build<'b>(&mut self, m: &'b mut CreateEmbed) -> &'b mut CreateEmbed {
         let mode = self.bm.mode();
         let b = &self.bm.0;
         let s = self.s;
@@ -358,8 +364,12 @@ impl<'a> ScoreEmbedBuilder<'a> {
             )
             .field("Map stats", diff.format_info(mode, s.mods, b), false)
             .timestamp(&s.date);
+        let mut footer = self.footer.take().unwrap_or_else(String::new);
         if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
-            m.footer(|f| f.text("Star difficulty does not reflect game mods."));
+            footer += " Star difficulty does not reflect game mods.";
+        }
+        if !footer.is_empty() {
+            m.footer(|f| f.text(footer));
         }
         m
     }

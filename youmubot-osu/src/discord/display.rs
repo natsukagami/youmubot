@@ -1,4 +1,346 @@
 pub use beatmapset::display_beatmapset;
+pub use scores::ScoreListStyle;
+
+mod scores {
+    use crate::models::{Mode, Score};
+    use serenity::{framework::standard::CommandResult, model::channel::Message};
+    use youmubot_prelude::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// The style for the scores list to be displayed.
+    pub enum ScoreListStyle {
+        Table,
+        Grid,
+    }
+
+    impl Default for ScoreListStyle {
+        fn default() -> Self {
+            Self::Table
+        }
+    }
+
+    impl std::str::FromStr for ScoreListStyle {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                "--table" => Ok(Self::Table),
+                "--grid" => Ok(Self::Grid),
+                _ => Err(Error::msg("unknown value")),
+            }
+        }
+    }
+
+    impl ScoreListStyle {
+        pub async fn display_scores<'a>(
+            self,
+            scores: Vec<Score>,
+            mode: Mode,
+            ctx: &'a Context,
+            m: &'a Message,
+        ) -> CommandResult {
+            match self {
+                ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
+                ScoreListStyle::Grid => grid::display_scores_grid(scores, mode, ctx, m).await,
+            }
+        }
+    }
+
+    pub mod grid {
+        use crate::discord::{
+            cache::save_beatmap, BeatmapCache, BeatmapMetaCache, BeatmapWithMode,
+        };
+        use crate::models::{Mode, Score};
+        use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use youmubot_prelude::*;
+
+        pub async fn display_scores_grid<'a>(
+            scores: Vec<Score>,
+            mode: Mode,
+            ctx: &'a Context,
+            m: &'a Message,
+        ) -> CommandResult {
+            if scores.is_empty() {
+                m.reply(&ctx, "No plays found").await?;
+                return Ok(());
+            }
+
+            paginate_reply(
+                Paginate { scores, mode },
+                ctx,
+                m,
+                std::time::Duration::from_secs(60),
+            )
+            .await?;
+            Ok(())
+        }
+
+        pub struct Paginate {
+            scores: Vec<Score>,
+            mode: Mode,
+        }
+
+        #[async_trait]
+        impl pagination::Paginate for Paginate {
+            async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+                let data = ctx.data.read().await;
+                let client = data.get::<crate::discord::OsuClient>().unwrap();
+                let osu = data.get::<BeatmapMetaCache>().unwrap();
+                let beatmap_cache = data.get::<BeatmapCache>().unwrap();
+                let page = page as usize;
+                let score = &self.scores[page];
+
+                let hourglass = msg.react(ctx, '⌛').await?;
+                let mode = self.mode;
+                let beatmap = osu.get_beatmap(score.beatmap_id, mode).await?;
+                let content = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
+                let bm = BeatmapWithMode(beatmap, mode);
+                let user = client
+                    .user(crate::request::UserID::ID(score.user_id), |f| f)
+                    .await?
+                    .ok_or_else(|| Error::msg("user not found"))?;
+
+                msg.edit(ctx, |e| {
+                    e.embed(|e| {
+                        crate::discord::embeds::score_embed(score, &bm, &content, &user)
+                            .footer(format!("Page {}/{}", page + 1, self.scores.len()))
+                            .build(e)
+                    })
+                })
+                .await?;
+                save_beatmap(&*ctx.data.read().await, msg.channel_id, &bm).await?;
+
+                // End
+                hourglass.delete(ctx).await?;
+                Ok(true)
+            }
+
+            fn len(&self) -> Option<usize> {
+                Some(self.scores.len())
+            }
+        }
+    }
+
+    pub mod table {
+        use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
+        use crate::models::{Mode, Score};
+        use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use youmubot_prelude::*;
+
+        pub async fn display_scores_table<'a>(
+            scores: Vec<Score>,
+            mode: Mode,
+            ctx: &'a Context,
+            m: &'a Message,
+        ) -> CommandResult {
+            if scores.is_empty() {
+                m.reply(&ctx, "No plays found").await?;
+                return Ok(());
+            }
+
+            paginate_reply(
+                Paginate { scores, mode },
+                ctx,
+                m,
+                std::time::Duration::from_secs(60),
+            )
+            .await?;
+            Ok(())
+        }
+
+        pub struct Paginate {
+            scores: Vec<Score>,
+            mode: Mode,
+        }
+
+        impl Paginate {
+            fn total_pages(&self) -> usize {
+                (self.scores.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE
+            }
+        }
+
+        const ITEMS_PER_PAGE: usize = 5;
+
+        #[async_trait]
+        impl pagination::Paginate for Paginate {
+            async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+                let data = ctx.data.read().await;
+                let osu = data.get::<BeatmapMetaCache>().unwrap();
+                let beatmap_cache = data.get::<BeatmapCache>().unwrap();
+                let page = page as usize;
+                let start = page * ITEMS_PER_PAGE;
+                let end = self.scores.len().min(start + ITEMS_PER_PAGE);
+                if start >= end {
+                    return Ok(false);
+                }
+
+                let hourglass = msg.react(ctx, '⌛').await?;
+                let plays = &self.scores[start..end];
+                let mode = self.mode;
+                let beatmaps = plays
+                    .iter()
+                    .map(|play| async move {
+                        let beatmap = osu.get_beatmap(play.beatmap_id, mode).await?;
+                        let info = {
+                            let b = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
+                            mode.to_oppai_mode()
+                                .and_then(|mode| b.get_info_with(Some(mode), play.mods).ok())
+                        };
+                        Ok((beatmap, info)) as Result<(Beatmap, Option<BeatmapInfo>)>
+                    })
+                    .collect::<stream::FuturesOrdered<_>>()
+                    .map(|v| v.ok())
+                    .collect::<Vec<_>>();
+                let pp = plays
+                    .iter()
+                    .map(|p| async move {
+                        match p.pp.map(|pp| format!("{:.2}pp", pp)) {
+                            Some(v) => Ok(v),
+                            None => {
+                                let b = beatmap_cache.get_beatmap(p.beatmap_id).await?;
+                                let r: Result<_> = Ok(mode
+                                    .to_oppai_mode()
+                                    .and_then(|op| {
+                                        b.get_pp_from(
+                                            oppai_rs::Combo::NonFC {
+                                                max_combo: p.max_combo as u32,
+                                                misses: p.count_miss as u32,
+                                            },
+                                            oppai_rs::Accuracy::from_hits(
+                                                p.count_100 as u32,
+                                                p.count_50 as u32,
+                                            ),
+                                            Some(op),
+                                            p.mods,
+                                        )
+                                        .ok()
+                                        .map(|pp| format!("{:.2}pp [?]", pp))
+                                    })
+                                    .unwrap_or_else(|| "-".to_owned()));
+                                r
+                            }
+                        }
+                    })
+                    .collect::<stream::FuturesOrdered<_>>()
+                    .map(|v| v.unwrap_or_else(|_| "-".to_owned()))
+                    .collect::<Vec<String>>();
+                let (beatmaps, pp) = future::join(beatmaps, pp).await;
+
+                let ranks = plays
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| match p.rank {
+                        crate::models::Rank::F => beatmaps[i]
+                            .as_ref()
+                            .and_then(|(_, i)| i.map(|i| i.objects))
+                            .map(|total| {
+                                (p.count_300 + p.count_100 + p.count_50 + p.count_miss) as f64
+                                    / (total as f64)
+                                    * 100.0
+                            })
+                            .map(|p| format!("F [{:.0}%]", p))
+                            .unwrap_or_else(|| "F".to_owned()),
+                        v => v.to_string(),
+                    })
+                    .collect::<Vec<_>>();
+
+                let beatmaps = beatmaps
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        let play = &plays[i];
+                        b.map(|(beatmap, info)| {
+                            format!(
+                                "[{:.1}*] {} - {} [{}] ({})",
+                                info.map(|i| i.stars as f64)
+                                    .unwrap_or(beatmap.difficulty.stars),
+                                beatmap.artist,
+                                beatmap.title,
+                                beatmap.difficulty_name,
+                                beatmap.short_link(Some(self.mode), Some(play.mods)),
+                            )
+                        })
+                        .unwrap_or_else(|| "FETCH_FAILED".to_owned())
+                    })
+                    .collect::<Vec<_>>();
+
+                let pw = pp.iter().map(|v| v.len()).max().unwrap_or(2);
+                /*mods width*/
+                let mw = plays
+                    .iter()
+                    .map(|v| v.mods.to_string().len())
+                    .max()
+                    .unwrap()
+                    .max(4);
+                /*beatmap names*/
+                let bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
+                /* ranks width */
+                let rw = ranks.iter().map(|v| v.len()).max().unwrap().max(5);
+
+                let mut m = serenity::utils::MessageBuilder::new();
+                // Table header
+                m.push_line(format!(
+                    " #  | {:pw$} | accuracy | {:rw$} | {:mw$} | {:bw$}",
+                    "pp",
+                    "ranks",
+                    "mods",
+                    "beatmap",
+                    rw = rw,
+                    pw = pw,
+                    mw = mw,
+                    bw = bw
+                ));
+                m.push_line(format!(
+                    "------{:-<pw$}--------------{:-<rw$}---{:-<mw$}---{:-<bw$}",
+                    "",
+                    "",
+                    "",
+                    "",
+                    rw = rw,
+                    pw = pw,
+                    mw = mw,
+                    bw = bw
+                ));
+                // Each row
+                for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
+                    m.push_line(format!(
+                        "{:>3} | {:>pw$} | {:>8} | {:^rw$} | {:mw$} | {:bw$}",
+                        id + start + 1,
+                        pp[id],
+                        format!("{:.2}%", play.accuracy(self.mode)),
+                        ranks[id],
+                        play.mods.to_string(),
+                        beatmap,
+                        rw = rw,
+                        pw = pw,
+                        mw = mw,
+                        bw = bw
+                    ));
+                }
+                // End
+                let table = m.build().replace("```", "\\`\\`\\`");
+                let mut m = serenity::utils::MessageBuilder::new();
+                m.push_codeblock(table, None).push_line(format!(
+                    "Page **{}/{}**",
+                    page + 1,
+                    self.total_pages()
+                ));
+                if self.mode.to_oppai_mode().is_none() {
+                    m.push_line("Note: star difficulty doesn't reflect mods applied.");
+                } else {
+                    m.push_line("[?] means pp was predicted by oppai-rs.");
+                }
+                msg.edit(ctx, |f| f.content(m.to_string())).await?;
+                hourglass.delete(ctx).await?;
+                Ok(true)
+            }
+
+            fn len(&self) -> Option<usize> {
+                Some(self.total_pages())
+            }
+        }
+    }
+}
 
 mod beatmapset {
     use crate::{
@@ -71,6 +413,10 @@ mod beatmapset {
 
     #[async_trait]
     impl pagination::Paginate for Paginate {
+        fn len(&self) -> Option<usize> {
+            Some(self.maps.len())
+        }
+
         async fn render(
             &mut self,
             page: u8,
