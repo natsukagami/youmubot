@@ -62,11 +62,11 @@ impl MemberToChannels {
             .into_iter()
             .map(|(guild, channel)| {
                 member_cache
-                    .query(http.clone(), u.into(), guild)
+                    .query(http.clone(), u, guild)
                     .map(move |t| t.map(|_| channel))
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|v| ready(v))
+            .filter_map(ready)
             .collect()
             .await
     }
@@ -105,9 +105,10 @@ impl AnnouncerHandler {
         key: &'static str,
         announcer: impl Announcer + Send + Sync + 'static,
     ) -> &mut Self {
-        if let Some(_) = self
+        if self
             .announcers
             .insert(key, RwLock::new(Box::new(announcer)))
+            .is_some()
         {
             panic!(
                 "Announcer keys must be unique: another announcer with key `{}` was found",
@@ -127,7 +128,7 @@ impl AnnouncerHandler {
             .borrow()?
             .get(key)
             .map(|m| m.iter().map(|(a, b)| (*a, *b)).collect())
-            .unwrap_or_else(|| vec![]);
+            .unwrap_or_else(Vec::new);
         Ok(data)
     }
 
@@ -149,7 +150,7 @@ impl AnnouncerHandler {
     /// Start the AnnouncerHandler, looping forever.
     ///
     /// It will run all the announcers in sequence every *cooldown* seconds.
-    pub async fn scan(self, cooldown: std::time::Duration) -> () {
+    pub async fn scan(self, cooldown: std::time::Duration) {
         // First we store all the keys inside the database.
         let keys = self.announcers.keys().cloned().collect::<Vec<_>>();
         self.data.write().await.insert::<Self>(keys.clone());

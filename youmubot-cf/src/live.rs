@@ -51,7 +51,7 @@ pub async fn watch_contest(
             }
         })
         .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| future::ready(v))
+        .filter_map(future::ready)
         .collect()
         .await;
 
@@ -323,7 +323,7 @@ enum Change {
 
 fn analyze_change(contest: &Contest, old: &ProblemResult, new: &ProblemResult) -> Option<Change> {
     use Change::*;
-    if old.points == new.points {
+    if (old.points - new.points).abs() < 0.001 {
         if new.rejected_attempt_count > old.rejected_attempt_count {
             if new.result_type == ProblemResultType::Preliminary {
                 return Some(Attempted);
@@ -335,25 +335,23 @@ fn analyze_change(contest: &Contest, old: &ProblemResult, new: &ProblemResult) -
             return Some(Accepted);
         }
         None
-    } else {
-        if new.points == 0.0 {
-            if new.result_type == ProblemResultType::Preliminary {
-                if contest.phase == ContestPhase::Coding {
-                    Some(Hacked)
-                } else {
-                    None // Just changes to In Queue...
-                }
+    } else if new.points == 0.0 {
+        if new.result_type == ProblemResultType::Preliminary {
+            if contest.phase == ContestPhase::Coding {
+                Some(Hacked)
             } else {
-                Some(TestFailed)
-            }
-        } else if new.points > old.points {
-            if new.result_type == ProblemResultType::Preliminary {
-                Some(PretestsPassed)
-            } else {
-                Some(Accepted)
+                None // Just changes to In Queue...
             }
         } else {
-            Some(PretestsPassed)
+            Some(TestFailed)
         }
+    } else if new.points > old.points {
+        if new.result_type == ProblemResultType::Preliminary {
+            Some(PretestsPassed)
+        } else {
+            Some(Accepted)
+        }
+    } else {
+        Some(PretestsPassed)
     }
 }

@@ -44,11 +44,11 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                         .get(mode as usize)
                         .cloned()
                         .and_then(|pp| pp)
-                        .map(|pp| (pp, member.distinct(), osu_user.last_update.clone()))
+                        .map(|pp| (pp, member.distinct(), osu_user.last_update))
                 })
         })
         .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| future::ready(v))
+        .filter_map(future::ready)
         .collect::<Vec<_>>()
         .await;
     let last_update = users.iter().map(|(_, _, a)| a).min().cloned();
@@ -200,11 +200,9 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
             .all()
             .await?
             .into_iter()
-            .map(|osu_user| (osu_user.user_id, osu_user.id))
-            .collect::<Vec<_>>();
+            .map(|osu_user| (osu_user.user_id, osu_user.id));
         let beatmap_id = bm.0.beatmap_id;
         osu_users
-            .into_iter()
             .map(|(user_id, osu_id)| {
                 member_cache
                     .query(&ctx, user_id, guild)
@@ -325,7 +323,7 @@ async fn show_leaderboard(
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let scores = {
-        const NO_SCORES: &'static str = "No scores have been recorded for this beatmap.";
+        const NO_SCORES: &str = "No scores have been recorded for this beatmap.";
 
         let scores = data
             .get::<OsuUserBests>()
@@ -345,7 +343,7 @@ async fn show_leaderboard(
                     .map(|m| m.map(move |m| (m.distinct(), score)))
             })
             .collect::<stream::FuturesUnordered<_>>()
-            .filter_map(|v| future::ready(v))
+            .filter_map(future::ready)
             .filter_map(|(user, score)| {
                 future::ready(
                     score
@@ -392,8 +390,8 @@ async fn show_leaderboard(
                 return Box::pin(future::ready(Ok(false)));
             }
             let total_len = scores.len();
-            let scores = (&scores[start..end]).iter().cloned().collect::<Vec<_>>();
-            let bm = (bm.0.clone(), bm.1.clone());
+            let scores = (&scores[start..end]).to_vec();
+            let bm = (bm.0.clone(), bm.1);
             Box::pin(async move {
                 // username width
                 let uw = scores
@@ -425,7 +423,7 @@ async fn show_leaderboard(
                     .iter()
                     .map(|(pp, _, s)| match order {
                         OrderBy::PP => format!("{:.2}", pp),
-                        OrderBy::Score => format!("{}", crate::discord::embeds::grouped_number(s.score)),
+                        OrderBy::Score => crate::discord::embeds::grouped_number(s.score),
                     })
                     .collect::<Vec<_>>();
                 let pw = pp.iter().map(|v| v.len()).max().unwrap_or(pp_label.len());
@@ -509,11 +507,10 @@ async fn show_leaderboard(
                     (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
                 ));
                 if let crate::models::ApprovalStatus::Ranked(_) = bm.0.approval {
-                } else {
-                    if order == OrderBy::PP {
-                        content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
-                    }
+                } else if order == OrderBy::PP {
+                    content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
                 }
+                
                 m.edit(&ctx, |f| f.content(content.build())).await?;
                 Ok(true)
             })

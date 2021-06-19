@@ -43,7 +43,7 @@ bitflags::bitflags! {
     }
 }
 
-const MODS_WITH_NAMES: &[(Mods, &'static str)] = &[
+const MODS_WITH_NAMES: &[(Mods, &str)] = &[
     (Mods::NF, "NF"),
     (Mods::EZ, "EZ"),
     (Mods::TD, "TD"),
@@ -75,7 +75,7 @@ impl std::str::FromStr for Mods {
     fn from_str(mut s: &str) -> Result<Self, Self::Err> {
         let mut res = Self::default();
         // Strip leading +
-        if s.starts_with("+") {
+        if s.starts_with('+') {
             s = &s[1..];
         }
         while s.len() >= 2 {
@@ -109,7 +109,7 @@ impl std::str::FromStr for Mods {
                 v => return Err(format!("{} is not a valid mod", v)),
             }
         }
-        if s.len() > 0 {
+        if !s.is_empty() {
             Err("String of odd length is not a mod string".to_owned())
         } else {
             Ok(res)

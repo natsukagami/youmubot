@@ -291,7 +291,7 @@ async fn to_user_id_query(
         .by_user_id(id)
         .await?
         .map(|u| UserID::ID(u.id))
-        .ok_or(Error::msg("No saved account found"))
+        .ok_or_else(|| Error::msg("No saved account found"))
 }
 
 enum Nth {
@@ -304,7 +304,7 @@ impl FromStr for Nth {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "--all" || s == "-a" || s == "##" {
             Ok(Nth::All)
-        } else if !s.starts_with("#") {
+        } else if !s.starts_with('#') {
             Err(Error::msg("Not an order"))
         } else {
             let v = s.split_at("#".len()).1.parse()?;
@@ -382,13 +382,13 @@ async fn list_plays<'a>(
                                         .ok()
                                         .map(|pp| format!("{:.2}pp [?]", pp))
                                     })
-                                    .unwrap_or("-".to_owned()));
+                                    .unwrap_or_else(|| "-".to_owned()));
                                 r
                             }
                         }
                     })
                     .collect::<stream::FuturesOrdered<_>>()
-                    .map(|v| v.unwrap_or("-".to_owned()))
+                    .map(|v| v.unwrap_or_else(|_| "-".to_owned()))
                     .collect::<Vec<String>>();
                 let (beatmaps, pp) = future::join(beatmaps, pp).await;
 
@@ -491,7 +491,7 @@ async fn list_plays<'a>(
                     page + 1,
                     total_pages
                 ));
-                if let None = mode.to_oppai_mode() {
+                if mode.to_oppai_mode().is_none() {
                     m.push_line("Note: star difficulty doesn't reflect mods applied.");
                 } else {
                     m.push_line("[?] means pp was predicted by oppai-rs.");
@@ -526,7 +526,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let user = osu
         .user(user, |f| f.mode(mode))
         .await?
-        .ok_or(Error::msg("User not found"))?;
+        .ok_or_else(|| Error::msg("User not found"))?;
     match nth {
         Nth::Nth(nth) => {
             let recent_play = osu
@@ -534,14 +534,14 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?
                 .into_iter()
                 .last()
-                .ok_or(Error::msg("No such play"))?;
+                .ok_or_else(|| Error::msg("No such play"))?;
             let beatmap = meta_cache.get_beatmap(recent_play.beatmap_id, mode).await?;
             let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id
                 .send_message(&ctx, |m| {
-                    m.content(format!("Here is the play that you requested",))
+                    m.content("Here is the play that you requested".to_string())
                         .embed(|m| {
                             score_embed(&recent_play, &beatmap_mode, &content, &user).build(m)
                         })
@@ -645,7 +645,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             let m = bm.1;
             let username_arg = args.single::<UsernameArg>().ok();
             let user_id = match username_arg.as_ref() {
-                Some(UsernameArg::Tagged(v)) => Some(v.clone()),
+                Some(UsernameArg::Tagged(v)) => Some(*v),
                 None => Some(msg.author.id),
                 _ => None,
             };
@@ -659,7 +659,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             let user = osu
                 .user(user, |f| f)
                 .await?
-                .ok_or(Error::msg("User not found"))?;
+                .ok_or_else(|| Error::msg("User not found"))?;
             let scores = osu
                 .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
                 .await?;
@@ -711,7 +711,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
     let user = osu
         .user(user, |f| f.mode(mode))
         .await?
-        .ok_or(Error::msg("User not found"))?;
+        .ok_or_else(|| Error::msg("User not found"))?;
 
     match nth {
         Nth::Nth(nth) => {
@@ -724,7 +724,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let top_play = top_play
                 .into_iter()
                 .last()
-                .ok_or(Error::msg("No such play"))?;
+                .ok_or_else(|| Error::msg("No such play"))?;
             let beatmap = meta_cache.get_beatmap(top_play.beatmap_id, mode).await?;
             let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, mode);

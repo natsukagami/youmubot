@@ -23,6 +23,7 @@ impl BeatmapMetaCache {
         BeatmapMetaCache { client, pool }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn to_cached_beatmap(beatmap: &Beatmap, mode: Option<Mode>) -> models::CachedBeatmap {
         models::CachedBeatmap {
             beatmap_id: beatmap.beatmap_id as i64,
@@ -42,7 +43,7 @@ impl BeatmapMetaCache {
                 f
             })
             .await
-            .and_then(|v| v.into_iter().next().ok_or(Error::msg("beatmap not found")))?;
+            .and_then(|v| v.into_iter().next().ok_or_else(|| Error::msg("beatmap not found")))?;
         if let ApprovalStatus::Ranked(_) = beatmap.approval {
             let mut c = Self::to_cached_beatmap(&beatmap, mode);
             c.store(&self.pool).await.pls_ok();

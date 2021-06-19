@@ -51,7 +51,7 @@ impl BeatmapContent {
         oppai.mods(mods.into());
         let objects = oppai.num_objects();
         let stars = oppai.stars();
-        Ok(BeatmapInfo { stars, objects })
+        Ok(BeatmapInfo { objects, stars })
     }
 
     pub fn get_possible_pp_with(
@@ -72,7 +72,7 @@ impl BeatmapContent {
         ];
         let objects = oppai.num_objects();
         let stars = oppai.stars();
-        Ok((BeatmapInfo { stars, objects }, pp))
+        Ok((BeatmapInfo { objects, stars }, pp))
     }
 }
 

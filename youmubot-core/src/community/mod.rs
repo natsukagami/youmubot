@@ -68,7 +68,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                         })
                         .unwrap_or(false)
                 })
-                .map(|mem| future::ready(mem))
+                .map(future::ready)
                 .collect::<stream::FuturesUnordered<_>>()
                 .filter_map(|member| async move {
                     // Filter by role if provided
@@ -110,7 +110,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                     .push(" ")
                     .push(
                         role.map(|r| format!("{}s", r.mention()))
-                            .unwrap_or("potential prayers".to_owned()),
+                            .unwrap_or_else(|| "potential prayers".to_owned()),
                     )
                     .push(", ")
                     .push(winner.mention())

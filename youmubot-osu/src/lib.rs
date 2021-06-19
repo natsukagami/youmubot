@@ -39,7 +39,7 @@ impl Client {
             REQUESTS_PER_MINUTE,
             std::time::Duration::from_secs(60),
         );
-        Client { key, client }
+        Client { client, key }
     }
 
     pub(crate) async fn build_request(&self, url: &str) -> Result<reqwest::RequestBuilder> {

@@ -77,11 +77,11 @@ impl ContestCache {
     }
 
     async fn get_from_list(&self, contest_id: u64) -> Result<Contest> {
-        let last_updated = self.all_list.read().await.1.clone();
+        let last_updated = self.all_list.read().await.1;
         if Instant::now() - last_updated > std::time::Duration::from_secs(60 * 60) {
             // We update at most once an hour.
-            *self.all_list.write().await =
-                (Contest::list(&*self.http, true).await?, Instant::now());
+            let mut v = self.all_list.write().await;
+            *v = (Contest::list(&*self.http, true).await?, Instant::now());
         }
         self.all_list
             .read()
@@ -194,7 +194,7 @@ fn print_info_message<'a>(
                     problems
                         .as_ref()
                         .map(|v| format!(" | **{}** problems", v.len()))
-                        .unwrap_or("".to_owned()),
+                        .unwrap_or_else(|| "".to_owned()),
                 )
                 .push(
                     contest
@@ -203,7 +203,7 @@ fn print_info_message<'a>(
                         .map(|v| {
                             format!(" | from **{}**", Utc.timestamp(*v as i64, 0).to_rfc2822())
                         })
-                        .unwrap_or("".to_owned()),
+                        .unwrap_or_else(|| "".to_owned()),
                 )
                 .push(format!(" | duration **{}**", duration));
             if let Some(p) = &contest.prepared_by {
@@ -218,20 +218,21 @@ fn print_info_message<'a>(
     e.description(m.build())
 }
 
+#[allow(clippy::needless_lifetimes)] // Doesn't really work
 async fn parse_capture<'a>(
     contest_cache: &ContestCache,
     cap: Captures<'a>,
 ) -> Result<(ContestOrProblem, &'a str), CommandError> {
     let contest_id: u64 = cap
         .name("contest")
-        .ok_or(CommandError::from("Contest not captured"))?
+        .ok_or_else(|| CommandError::from("Contest not captured"))?
         .as_str()
         .parse()?;
     let (contest, problems) = contest_cache.get(contest_id).await?;
     match cap.name("problem") {
         Some(p) => {
-            for problem in problems.ok_or(CommandError::from("Contest hasn't started"))? {
-                if &problem.index == p.as_str() {
+            for problem in problems.ok_or_else(|| CommandError::from("Contest hasn't started"))? {
+                if problem.index == p.as_str() {
                     return Ok((
                         ContestOrProblem::Problem(problem),
                         cap.get(0).unwrap().as_str(),

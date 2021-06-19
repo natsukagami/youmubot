@@ -25,7 +25,7 @@ where
 {
     /// Load the DB from a path.
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Database<T>, DBError> {
-        Ok(Database::<T>::load_from_path(path)?)
+        Database::<T>::load_from_path(path)
     }
 
     /// Insert into a ShareMap.

@@ -10,7 +10,7 @@ pub fn name_from_userid(u: UserId) -> (&'static str, &'static str) {
     )
 }
 
-const FIRST_NAMES: [&'static str; 440] = [
+const FIRST_NAMES: [&str; 440] = [
     // A Female names
     "Ai",
     "Aiko",
@@ -473,7 +473,7 @@ const FIRST_NAMES: [&'static str; 440] = [
     "Yusuke",
 ];
 
-const LAST_NAMES: [&'static str; 1051] = [
+const LAST_NAMES: [&str; 1051] = [
     // A Surnames
     "Abe",
     "Abukara",

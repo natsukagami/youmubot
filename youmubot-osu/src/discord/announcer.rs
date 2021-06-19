@@ -21,7 +21,7 @@ use std::{convert::TryInto, sync::Arc};
 use youmubot_prelude::*;
 
 /// osu! announcer's unique announcer key.
-pub const ANNOUNCER_KEY: &'static str = "osu";
+pub const ANNOUNCER_KEY: &str = "osu";
 
 /// The announcer struct implementing youmubot_prelude::Announcer
 pub struct Announcer {
@@ -76,7 +76,7 @@ impl youmubot_prelude::Announcer for Announcer {
                     .await
                     {
                         Ok(v) => {
-                            osu_user.last_update = now.clone();
+                            osu_user.last_update = now;
                             osu_user.pp = v.try_into().unwrap();
                             data.save(osu_user).await.pls_ok();
                         }
@@ -105,7 +105,7 @@ impl Announcer {
         mode: Mode,
     ) -> Result<Option<f32>, Error> {
         let days_since_last_update = (now - osu_user.last_update).num_days() + 1;
-        let last_update = osu_user.last_update.clone();
+        let last_update = osu_user.last_update;
         let (scores, user) = {
             let scores = self.scan_user(osu_user, mode).await?;
             let user = self
@@ -115,7 +115,7 @@ impl Announcer {
                         .event_days(days_since_last_update.min(31) as u8)
                 })
                 .await?
-                .ok_or(Error::msg("user not found"))?;
+                .ok_or_else(|| Error::msg("user not found"))?;
             (scores, user)
         };
         let client = self.client.clone();
@@ -239,7 +239,7 @@ impl<'a> CollectedScore<'a> {
     async fn send_message(self, ctx: &Context) -> Result<Vec<Message>> {
         let (bm, content) = self.get_beatmap(&ctx).await?;
         self.channels
-            .into_iter()
+            .iter()
             .map(|c| self.send_message_to(*c, ctx, &bm, &content))
             .collect::<stream::FuturesUnordered<_>>()
             .try_collect()

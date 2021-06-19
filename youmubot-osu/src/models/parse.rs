@@ -82,7 +82,7 @@ impl TryFrom<raw::User> for User {
             played_time: raw
                 .total_seconds_played
                 .map(parse_duration)
-                .unwrap_or(Ok(Duration::from_secs(0)))?,
+                .unwrap_or_else(|| Ok(Duration::from_secs(0)))?,
             ranked_score: raw.ranked_score.map(parse_from_str).unwrap_or(Ok(0))?,
             total_score: raw.total_score.map(parse_from_str).unwrap_or(Ok(0))?,
             count_ss: raw.count_rank_ss.map(parse_from_str).unwrap_or(Ok(0))?,

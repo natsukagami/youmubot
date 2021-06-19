@@ -131,10 +131,7 @@ impl Difficulty {
 
     /// Format the difficulty info into a short summary.
     pub fn format_info(&self, mode: Mode, mods: Mods, original_beatmap: &Beatmap) -> String {
-        let is_not_ranked = match original_beatmap.approval {
-            ApprovalStatus::Ranked(_) => false,
-            _ => true,
-        };
+        let is_not_ranked = !matches!(original_beatmap.approval, ApprovalStatus::Ranked(_));
         let three_lines = is_not_ranked;
         let bpm = (self.bpm * 100.0).round() / 100.0;
         MessageBuilder::new()
@@ -304,7 +301,7 @@ impl Mode {
     }
 
     /// Returns the mode string in the new convention.
-    pub fn to_str_new_site(&self) -> &'static str {
+    pub fn as_str_new_site(&self) -> &'static str {
         match self {
             Mode::Std => "osu",
             Mode::Taiko => "taiko",
@@ -344,7 +341,7 @@ pub struct Beatmap {
     pub pass_count: u64,
 }
 
-const NEW_MODE_NAMES: [&'static str; 4] = ["osu", "taiko", "fruits", "mania"];
+const NEW_MODE_NAMES: [&str; 4] = ["osu", "taiko", "fruits", "mania"];
 
 impl Beatmap {
     pub fn beatmapset_link(&self) -> String {
@@ -380,10 +377,10 @@ impl Beatmap {
             "/b/{}{}{}",
             self.beatmap_id,
             match override_mode {
-                Some(mode) if mode != self.mode => format!("/{}", mode.to_str_new_site()),
+                Some(mode) if mode != self.mode => format!("/{}", mode.as_str_new_site()),
                 _ => "".to_owned(),
             },
-            mods.map(|m| format!("{}", m)).unwrap_or("".to_owned()),
+            mods.map(|m| format!("{}", m)).unwrap_or_else(|| "".to_owned()),
         )
     }
 
@@ -422,7 +419,7 @@ impl UserEvent {
         let mode: Mode = Mode::parse_from_display(captures.get(2)?.as_str())?;
         Some(UserEventRank {
             beatmap_id: self.beatmap_id?,
-            date: self.date.clone(),
+            date: self.date,
             mode,
             rank,
         })

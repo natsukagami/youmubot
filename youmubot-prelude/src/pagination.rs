@@ -10,8 +10,8 @@ use serenity::{
 use std::convert::TryFrom;
 use tokio::time as tokio_time;
 
-const ARROW_RIGHT: &'static str = "➡️";
-const ARROW_LEFT: &'static str = "⬅️";
+const ARROW_RIGHT: &str = "➡️";
+const ARROW_LEFT: &str = "⬅️";
 
 /// A trait that provides the implementation of a paginator.
 #[async_trait::async_trait]

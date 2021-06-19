@@ -199,6 +199,7 @@ pub(crate) fn score_embed<'a>(
 }
 
 impl<'a> ScoreEmbedBuilder<'a> {
+    #[allow(clippy::many_single_char_names)]
     pub fn build<'b>(&self, m: &'b mut CreateEmbed) -> &'b mut CreateEmbed {
         let mode = self.bm.mode();
         let b = &self.bm.0;
@@ -213,8 +214,8 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .as_ref()
             .map(|info| info.stars as f64)
             .unwrap_or(b.difficulty.stars);
-        let score_line = match &s.rank {
-            Rank::SS | Rank::SSH => format!("SS"),
+        let score_line = match s.rank {
+            Rank::SS | Rank::SSH => "SS".to_string(),
             _ if s.perfect => format!("{:.2}% FC", accuracy),
             Rank::F => {
                 let display = info
@@ -224,7 +225,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                             * 100.0
                     })
                     .map(|p| format!("FAILED @ {:.2}%", p))
-                    .unwrap_or("FAILED".to_owned());
+                    .unwrap_or_else(|| "FAILED".to_owned());
                 format!("{:.2}% {} combo [{}]", accuracy, s.max_combo, display)
             }
             v => format!(
@@ -267,7 +268,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     pp.as_ref()
                         .map(|(_, original)| format!("{} ({:.2}pp if FC?)", original, value))
                 })
-                .or(pp.map(|v| v.1))
+                .or_else(|| pp.map(|v| v.1))
         } else {
             pp.map(|v| v.1)
         };
@@ -295,11 +296,11 @@ impl<'a> ScoreEmbedBuilder<'a> {
         let top_record = self
             .top_record
             .map(|v| format!("| #{} top record!", v))
-            .unwrap_or("".to_owned());
+            .unwrap_or_else(|| "".to_owned());
         let world_record = self
             .world_record
             .map(|v| format!("| #{} on Global Rankings!", v))
-            .unwrap_or("".to_owned());
+            .unwrap_or_else(|| "".to_owned());
         let diff = b.difficulty.apply_mods(s.mods, Some(stars));
         let creator = if b.difficulty_name.contains("'s") {
             "".to_owned()
@@ -364,11 +365,11 @@ impl<'a> ScoreEmbedBuilder<'a> {
     }
 }
 
-pub(crate) fn user_embed<'a>(
+pub(crate) fn user_embed(
     u: User,
     best: Option<(Score, BeatmapWithMode, Option<BeatmapInfo>)>,
-    m: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
+    m: &mut CreateEmbed,
+) -> &mut CreateEmbed {
     m.title(u.username)
         .url(format!("https://osu.ppy.sh/users/{}", u.id))
         .color(0xffb6c1)
@@ -377,7 +378,7 @@ pub(crate) fn user_embed<'a>(
         .field(
             "Performance Points",
             u.pp.map(|v| format!("{:.2}pp", v))
-                .unwrap_or("Inactive".to_owned()),
+                .unwrap_or_else(|| "Inactive".to_owned()),
             false,
         )
         .field("World Rank", format!("#{}", grouped_number(u.rank)), true)
@@ -436,7 +437,7 @@ pub(crate) fn user_embed<'a>(
                         Duration(
                             (Utc::now() - v.date)
                                 .to_std()
-                                .unwrap_or(std::time::Duration::from_secs(1))
+                                .unwrap_or_else(|_| std::time::Duration::from_secs(1))
                         )
                     ))
                     .push("on ")

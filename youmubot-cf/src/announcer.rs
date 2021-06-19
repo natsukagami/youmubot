@@ -78,7 +78,7 @@ async fn update_user(
         .await?
         .into_iter()
         .next()
-        .ok_or(Error::msg("Not found"))?;
+        .ok_or_else(|| Error::msg("Not found"))?;
 
     let rating_changes = info.rating_changes(&*client).await?;
 

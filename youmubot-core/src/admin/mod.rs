@@ -80,7 +80,7 @@ async fn ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             )
             .await?;
             msg.guild_id
-                .ok_or(Error::msg("Can't get guild from message?"))? // we had a contract
+                .ok_or_else(|| Error::msg("Can't get guild from message?"))? // we had a contract
                 .ban_with_reason(&ctx.http, user, dmds, &reason)
                 .await?;
         }
@@ -88,7 +88,7 @@ async fn ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             msg.reply(&ctx, format!("🔨 Banning user {}.", user.tag()))
                 .await?;
             msg.guild_id
-                .ok_or(Error::msg("Can't get guild from message?"))? // we had a contract
+                .ok_or_else(|| Error::msg("Can't get guild from message?"))? // we had a contract
                 .ban(&ctx.http, user, dmds)
                 .await?;
         }
