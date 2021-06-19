@@ -147,7 +147,7 @@ async fn main() {
 
     println!("Starting...");
     if let Err(v) = client.start().await {
-        panic!(v)
+        panic!("{}", v)
     }
 
     println!("Hello, world!");
