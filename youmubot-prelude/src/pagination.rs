@@ -102,6 +102,12 @@ async fn paginate_with_first_message(
     mut message: Message,
     timeout: std::time::Duration,
 ) -> Result<()> {
+    pager.prerender(&ctx, &mut message).await?;
+    pager.render(0, ctx, &mut message).await?;
+    // Just quit if there is only one page
+    if pager.len().filter(|&v| v == 1).is_some() {
+        return Ok(());
+    }
     // React to the message
     let large_count = pager.len().filter(|&p| p > 10).is_some();
     if large_count {
@@ -120,8 +126,6 @@ async fn paginate_with_first_message(
             .react(&ctx, ReactionType::try_from(FAST_FORWARD)?)
             .await?;
     }
-    pager.prerender(&ctx, &mut message).await?;
-    pager.render(0, ctx, &mut message).await?;
     // Build a reaction collector
     let mut reaction_collector = message.await_reactions(&ctx).removed(true).await;
     let mut page = 0;
