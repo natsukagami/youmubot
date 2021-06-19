@@ -64,7 +64,7 @@ impl youmubot_prelude::Announcer for Announcer {
                     if channels.is_empty() {
                         return; // We don't wanna update an user without any active server
                     }
-                    let pp = match std::array::IntoIter::new([
+                    match std::array::IntoIter::new([
                         Mode::Std,
                         Mode::Taiko,
                         Mode::Catch,

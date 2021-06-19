@@ -52,7 +52,7 @@ impl TypeMapKey for OsuClient {
 ///  - Hooks. Hooks are completely opt-in.
 ///  
 pub fn setup(
-    path: &std::path::Path,
+    _path: &std::path::Path,
     data: &mut TypeMap,
     announcers: &mut AnnouncerHandler,
 ) -> CommandResult {
