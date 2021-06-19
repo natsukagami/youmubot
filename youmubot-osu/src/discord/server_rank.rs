@@ -28,12 +28,15 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let mode = args.single::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
-    let users = OsuSavedUsers::open(&*data).borrow()?.clone();
-    let users = users
+    let users = data
+        .get::<OsuSavedUsers>()
+        .unwrap()
+        .all()
+        .await?
         .into_iter()
-        .map(|(user_id, osu_user)| async move {
+        .map(|osu_user| async move {
             member_cache
-                .query(&ctx, user_id, guild)
+                .query(&ctx, osu_user.user_id, guild)
                 .await
                 .and_then(|member| {
                     osu_user
@@ -41,11 +44,11 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                         .get(mode as usize)
                         .cloned()
                         .and_then(|pp| pp)
-                        .map(|pp| (pp, member.distinct(), osu_user.last_update.clone()))
+                        .map(|pp| (pp, member.distinct(), osu_user.last_update))
                 })
         })
         .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| future::ready(v))
+        .filter_map(future::ready)
         .collect::<Vec<_>>()
         .await;
     let last_update = users.iter().map(|(_, _, a)| a).min().cloned();
@@ -176,7 +179,7 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
         }
         Some(v) => v,
     };
-    let bm = match get_beatmap(&*data, m.channel_id)? {
+    let bm = match get_beatmap(&*data, m.channel_id).await? {
         Some(bm) => bm,
         None => {
             m.reply(&ctx, "No beatmap queried on this channel.").await?;
@@ -191,15 +194,15 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
     // Run a check on everyone in the server basically.
     let all_server_users: Vec<(UserId, Vec<Score>)> = {
         let osu = data.get::<OsuClient>().unwrap();
-        let osu_users = OsuSavedUsers::open(&*data);
-        let osu_users = osu_users
-            .borrow()?
-            .iter()
-            .map(|(&user_id, osu_user)| (user_id, osu_user.id))
-            .collect::<Vec<_>>();
+        let osu_users = data
+            .get::<OsuSavedUsers>()
+            .unwrap()
+            .all()
+            .await?
+            .into_iter()
+            .map(|osu_user| (osu_user.user_id, osu_user.id));
         let beatmap_id = bm.0.beatmap_id;
         osu_users
-            .into_iter()
             .map(|(user_id, osu_id)| {
                 member_cache
                     .query(&ctx, user_id, guild)
@@ -222,12 +225,13 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, args: Args) -> Comma
     let updated_users = all_server_users.len();
     // Update everything.
     {
-        let mut osu_user_bests = OsuUserBests::open(&*data);
-        let mut osu_user_bests = osu_user_bests.borrow_mut()?;
-        let user_bests = osu_user_bests.entry((bm.0.beatmap_id, bm.1)).or_default();
-        all_server_users.into_iter().for_each(|(member, scores)| {
-            user_bests.insert(member, scores);
-        })
+        let db = data.get::<OsuUserBests>().unwrap();
+        all_server_users
+            .into_iter()
+            .map(|(u, scores)| db.save(u, mode, scores))
+            .collect::<stream::FuturesUnordered<_>>()
+            .try_collect::<()>()
+            .await?;
     }
     // Signal update complete.
     running_reaction.delete(&ctx).await.ok();
@@ -255,7 +259,7 @@ pub async fn leaderboard(ctx: &Context, m: &Message, args: Args) -> CommandResul
     let sort_order = OrderBy::from(args.rest());
 
     let data = ctx.data.read().await;
-    let bm = match get_beatmap(&*data, m.channel_id)? {
+    let bm = match get_beatmap(&*data, m.channel_id).await? {
         Some(bm) => bm,
         None => {
             m.reply(&ctx, "No beatmap queried on this channel.").await?;
@@ -272,7 +276,6 @@ async fn show_leaderboard(
     order: OrderBy,
 ) -> CommandResult {
     let data = ctx.data.read().await;
-    let mut osu_user_bests = OsuUserBests::open(&*data);
 
     // Get oppai map.
     let mode = bm.1;
@@ -294,8 +297,12 @@ async fn show_leaderboard(
 
     // Run a check on the user once too!
     {
-        let osu_users = OsuSavedUsers::open(&*data);
-        let user = osu_users.borrow()?.get(&m.author.id).map(|v| v.id);
+        let user = data
+            .get::<OsuSavedUsers>()
+            .unwrap()
+            .by_user_id(m.author.id)
+            .await?
+            .map(|v| v.id);
         if let Some(id) = user {
             let osu = data.get::<OsuClient>().unwrap();
             if let Ok(scores) = osu
@@ -303,11 +310,11 @@ async fn show_leaderboard(
                 .await
             {
                 if !scores.is_empty() {
-                    osu_user_bests
-                        .borrow_mut()?
-                        .entry((bm.0.beatmap_id, bm.1))
-                        .or_default()
-                        .insert(m.author.id, scores);
+                    data.get::<OsuUserBests>()
+                        .unwrap()
+                        .save(m.author.id, mode, scores)
+                        .await
+                        .pls_ok();
                 }
             }
         }
@@ -316,39 +323,27 @@ async fn show_leaderboard(
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let scores = {
-        const NO_SCORES: &'static str = "No scores have been recorded for this beatmap.";
+        const NO_SCORES: &str = "No scores have been recorded for this beatmap.";
 
-        let users = osu_user_bests
-            .borrow()?
-            .get(&(bm.0.beatmap_id, bm.1))
-            .cloned();
-        let users = match users {
-            None => {
-                m.reply(&ctx, NO_SCORES).await?;
-                return Ok(());
-            }
-            Some(v) if v.is_empty() => {
-                m.reply(&ctx, NO_SCORES).await?;
-                return Ok(());
-            }
-            Some(v) => v,
-        };
+        let scores = data
+            .get::<OsuUserBests>()
+            .unwrap()
+            .by_beatmap(bm.0.beatmap_id, bm.1)
+            .await?;
+        if scores.is_empty() {
+            m.reply(&ctx, NO_SCORES).await?;
+            return Ok(());
+        }
 
-        let mut scores: Vec<(f64, String, Score)> = users
+        let mut scores: Vec<(f64, String, Score)> = scores
             .into_iter()
-            .map(|(user_id, scores)| {
+            .map(|(user_id, score)| {
                 member_cache
                     .query(&ctx, user_id, guild)
-                    .map(|m| m.map(move |m| (m.distinct(), scores)))
+                    .map(|m| m.map(move |m| (m.distinct(), score)))
             })
             .collect::<stream::FuturesUnordered<_>>()
-            .filter_map(|v| future::ready(v))
-            .flat_map(|(user, scores)| {
-                scores
-                    .into_iter()
-                    .map(move |v| future::ready((user.clone(), v.clone())))
-                    .collect::<stream::FuturesUnordered<_>>()
-            })
+            .filter_map(future::ready)
             .filter_map(|(user, score)| {
                 future::ready(
                     score
@@ -395,8 +390,8 @@ async fn show_leaderboard(
                 return Box::pin(future::ready(Ok(false)));
             }
             let total_len = scores.len();
-            let scores = (&scores[start..end]).iter().cloned().collect::<Vec<_>>();
-            let bm = (bm.0.clone(), bm.1.clone());
+            let scores = (&scores[start..end]).to_vec();
+            let bm = (bm.0.clone(), bm.1);
             Box::pin(async move {
                 // username width
                 let uw = scores
@@ -428,7 +423,7 @@ async fn show_leaderboard(
                     .iter()
                     .map(|(pp, _, s)| match order {
                         OrderBy::PP => format!("{:.2}", pp),
-                        OrderBy::Score => format!("{}", crate::discord::embeds::grouped_number(s.score)),
+                        OrderBy::Score => crate::discord::embeds::grouped_number(s.score),
                     })
                     .collect::<Vec<_>>();
                 let pw = pp.iter().map(|v| v.len()).max().unwrap_or(pp_label.len());
@@ -512,11 +507,10 @@ async fn show_leaderboard(
                     (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
                 ));
                 if let crate::models::ApprovalStatus::Ranked(_) = bm.0.approval {
-                } else {
-                    if order == OrderBy::PP {
-                        content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
-                    }
+                } else if order == OrderBy::PP {
+                    content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
                 }
+
                 m.edit(&ctx, |f| f.content(content.build())).await?;
                 Ok(true)
             })

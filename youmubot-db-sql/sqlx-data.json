@@ -1,0 +1,491 @@
+{
+  "db": "SQLite",
+  "1bf34dddbe994d6124c9382c75e70e1347329e945de2eefad4bfcab5f81b73ce": {
+    "query": "SELECT\n                    channel_id as \"channel_id: i64\",\n                    beatmap,\n                    mode as \"mode: u8\"\n                FROM osu_last_beatmaps\n                WHERE channel_id = ?",
+    "describe": {
+      "columns": [
+        {
+          "name": "channel_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "beatmap",
+          "ordinal": 1,
+          "type_info": "Blob"
+        },
+        {
+          "name": "mode: u8",
+          "ordinal": 2,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "235312a1aad1a58c2f7f2d817945bbac57c38ad2c51c1924683d13d045f21ad9": {
+    "query": "SELECT\n                beatmap_id as \"beatmap_id: i64\",\n                mode as \"mode: u8\",\n                user_id as \"user_id: i64\",\n                mods as \"mods: i64\",\n                cached_at as \"cached_at: DateTime\",\n                score as \"score: Vec<u8>\"\n            FROM osu_user_best_scores\n            WHERE\n                beatmap_id = ?\n                AND mode = ?\n                AND user_id = ?",
+    "describe": {
+      "columns": [
+        {
+          "name": "beatmap_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "mode: u8",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "user_id: i64",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "mods: i64",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "cached_at: DateTime",
+          "ordinal": 4,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "score: Vec<u8>",
+          "ordinal": 5,
+          "type_info": "Blob"
+        }
+      ],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "25077e7b2657eb918fa49acc16ceba14a004ed503c174073a1db184d902ee393": {
+    "query": "\n                INSERT INTO\n                    osu_user_best_scores (beatmap_id, mode, user_id, mods, cached_at, score)\n                VALUES\n                    (?, ?, ?, ?, ?, ?)\n                ON CONFLICT (beatmap_id, mode, user_id, mods)\n                DO UPDATE\n                    SET\n                        cached_at = excluded.cached_at,\n                        score = excluded.score\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 6
+      },
+      "nullable": []
+    }
+  },
+  "27edec2f76b1bc48e87b66e6d27e6784e0b0c17dec013feb05c4b7291b8b4a5f": {
+    "query": "SELECT\n                user_id as \"user_id: i64\",\n                id as \"id: i64\",\n                last_update as \"last_update: DateTime\",\n                pp_std, pp_taiko, pp_mania, pp_catch,\n                failures as \"failures: u8\"\n            FROM osu_users WHERE id = ?",
+    "describe": {
+      "columns": [
+        {
+          "name": "user_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "id: i64",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "last_update: DateTime",
+          "ordinal": 2,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "pp_std",
+          "ordinal": 3,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_taiko",
+          "ordinal": 4,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_mania",
+          "ordinal": 5,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_catch",
+          "ordinal": 6,
+          "type_info": "Float"
+        },
+        {
+          "name": "failures: u8",
+          "ordinal": 7,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false
+      ]
+    }
+  },
+  "296c95c7ead4d747a4da007b4b6e28d3c6c1c4bb654c82cc40bf61390c3dad4b": {
+    "query": "SELECT\n                beatmap_id as \"beatmap_id: i64\",\n                cached_at as \"cached_at: DateTime\",\n                content as \"content: Vec<u8>\"\n            FROM osu_cached_beatmap_contents\n            WHERE\n                beatmap_id = ? ",
+    "describe": {
+      "columns": [
+        {
+          "name": "beatmap_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "cached_at: DateTime",
+          "ordinal": 1,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "content: Vec<u8>",
+          "ordinal": 2,
+          "type_info": "Blob"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "3c9d163aa2b752afc74e7b0909a9c1995cd019d9798a992eddc2e778f36f2d4c": {
+    "query": "SELECT\n                user_id as \"user_id: i64\",\n                id as \"id: i64\",\n                last_update as \"last_update: DateTime\",\n                pp_std, pp_taiko, pp_mania, pp_catch,\n                failures as \"failures: u8\"\n            FROM osu_users",
+    "describe": {
+      "columns": [
+        {
+          "name": "user_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "id: i64",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "last_update: DateTime",
+          "ordinal": 2,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "pp_std",
+          "ordinal": 3,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_taiko",
+          "ordinal": 4,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_mania",
+          "ordinal": 5,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_catch",
+          "ordinal": 6,
+          "type_info": "Float"
+        },
+        {
+          "name": "failures: u8",
+          "ordinal": 7,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false
+      ]
+    }
+  },
+  "4b033607229deba540f80e469753e2125b6d8134346144f462325dc025221044": {
+    "query": "SELECT\n                beatmap.beatmap_id as \"beatmap_id: i64\",\n                beatmap.mode as \"mode: u8\",\n                beatmap.cached_at as \"cached_at: DateTime\",\n                beatmap.beatmap as \"beatmap: Vec<u8>\"\n            FROM osu_cached_beatmapsets\n            INNER JOIN osu_cached_beatmaps AS beatmap\n                ON osu_cached_beatmapsets.beatmap_id = beatmap.beatmap_id\n                AND osu_cached_beatmapsets.mode = beatmap.mode\n            WHERE\n                beatmapset_id = ?\n                ",
+    "describe": {
+      "columns": [
+        {
+          "name": "beatmap_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "mode: u8",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "cached_at: DateTime",
+          "ordinal": 2,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "beatmap: Vec<u8>",
+          "ordinal": 3,
+          "type_info": "Blob"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "5210e3e5610bb968b0b11411b99956d1bf358f2c1e35c4eb5730388ce0c2fe09": {
+    "query": "INSERT INTO\n                  osu_last_beatmaps (channel_id, beatmap, mode)\n               VALUES\n                  (?, ?, ?)\n               ON CONFLICT (channel_id) DO UPDATE\n                  SET\n                    beatmap = excluded.beatmap,\n                    mode = excluded.mode",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": []
+    }
+  },
+  "55fc5c2846680c32a2c9646e45cc578cff25cde57cca19f5fb53dceacc154954": {
+    "query": "SELECT\n                user_id as \"user_id: i64\",\n                id as \"id: i64\",\n                last_update as \"last_update: DateTime\",\n                pp_std, pp_taiko, pp_mania, pp_catch,\n                failures as \"failures: u8\"\n            FROM osu_users WHERE user_id = ?",
+    "describe": {
+      "columns": [
+        {
+          "name": "user_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "id: i64",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "last_update: DateTime",
+          "ordinal": 2,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "pp_std",
+          "ordinal": 3,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_taiko",
+          "ordinal": 4,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_mania",
+          "ordinal": 5,
+          "type_info": "Float"
+        },
+        {
+          "name": "pp_catch",
+          "ordinal": 6,
+          "type_info": "Float"
+        },
+        {
+          "name": "failures: u8",
+          "ordinal": 7,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false
+      ]
+    }
+  },
+  "6125c1c187029c7ac6e1e9519445e49942ddf6068a16f000dd0750ab8a9d52c2": {
+    "query": "\n                INSERT INTO\n                    osu_cached_beatmaps (beatmap_id, mode, cached_at, beatmap)\n                VALUES\n                    (?, ?, ?, ?)\n                ON CONFLICT (beatmap_id, mode)\n                DO UPDATE\n                    SET\n                        cached_at = excluded.cached_at,\n                        beatmap = excluded.beatmap\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 4
+      },
+      "nullable": []
+    }
+  },
+  "6bfd02cb36c9b74ed4c69eb694e936ba2ee8d3864e2a43b43db78afc32a47384": {
+    "query": "\n                INSERT INTO\n                    osu_cached_beatmap_contents (beatmap_id, cached_at, content)\n                VALUES\n                    (?, ?, ?)\n                ON CONFLICT (beatmap_id)\n                DO UPDATE\n                    SET\n                        cached_at = excluded.cached_at,\n                        content = excluded.content\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": []
+    }
+  },
+  "6c95dc522e1e8490358ce4c5fea08fe50300ab4092b33eef44aba85f4a43c818": {
+    "query": "INSERT\n               INTO osu_users(user_id, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures)\n               VALUES(?, ?, ?, ?, ?, ?, ?, ?)\n               ON CONFLICT (user_id) WHERE id = ? DO UPDATE\n               SET\n                last_update = excluded.last_update,\n                pp_std = excluded.pp_std,\n                pp_taiko = excluded.pp_taiko,\n                pp_mania = excluded.pp_mania,\n                pp_catch = excluded.pp_catch,\n                failures = excluded.failures\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 9
+      },
+      "nullable": []
+    }
+  },
+  "8b9ad43442b7fa520f2eae498d2ee08264810e49c28bd8ddffaa9f444cada1b5": {
+    "query": "INSERT INTO osu_cached_beatmapsets(beatmapset_id, beatmap_id, mode)\n                VALUES (?, ?, ?)\n                ON CONFLICT DO NOTHING",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": []
+    }
+  },
+  "95541f737a8dfc7f440840617bed87ebde6dabdd70e2ba7b110ebec91e7feda7": {
+    "query": "SELECT\n                beatmap_id as \"beatmap_id: i64\",\n                mode as \"mode: u8\",\n                user_id as \"user_id: i64\",\n                mods as \"mods: i64\",\n                cached_at as \"cached_at: DateTime\",\n                score as \"score: Vec<u8>\"\n            FROM osu_user_best_scores\n            WHERE\n                beatmap_id = ?\n                AND mode = ?",
+    "describe": {
+      "columns": [
+        {
+          "name": "beatmap_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "mode: u8",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "user_id: i64",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "mods: i64",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "cached_at: DateTime",
+          "ordinal": 4,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "score: Vec<u8>",
+          "ordinal": 5,
+          "type_info": "Blob"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "c83421661626cffd81d5590035ae5283a5b0e8a03696ae479b3d275b81b8af83": {
+    "query": "DELETE FROM osu_user_best_scores WHERE user_id = ?",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
+  "d428568e88b653317cbe2c5336e6cdee0862df09faaa6c1fa09869d79438e427": {
+    "query": "DELETE FROM osu_users WHERE user_id = ?",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
+  "d7c91077f904543740a12185fac7756346aa50a63b911414ee8f7a4a0d6dd1cc": {
+    "query": "SELECT\n                beatmap_id as \"beatmap_id: i64\",\n                mode as \"mode: u8\",\n                cached_at as \"cached_at: DateTime\",\n                beatmap as \"beatmap: Vec<u8>\"\n            FROM osu_cached_beatmaps\n            WHERE\n                beatmap_id = ?\n                AND mode = ?\n                ",
+    "describe": {
+      "columns": [
+        {
+          "name": "beatmap_id: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "mode: u8",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "cached_at: DateTime",
+          "ordinal": 2,
+          "type_info": "Datetime"
+        },
+        {
+          "name": "beatmap: Vec<u8>",
+          "ordinal": 3,
+          "type_info": "Blob"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  }
+}

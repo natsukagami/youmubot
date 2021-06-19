@@ -30,15 +30,15 @@ impl<T> Ratelimit<T> {
         });
         Self {
             inner,
-            send,
             recv,
+            send,
             wait_time,
         }
     }
 
     /// Borrow the inner `T`. You can only hol this reference `count` times in `wait_time`.
     /// The clock counts from the moment the ref is dropped.
-    pub async fn borrow<'a>(&'a self) -> Result<impl Deref<Target = T> + 'a> {
+    pub async fn borrow(&self) -> Result<impl Deref<Target = T> + '_> {
         self.recv.recv_async().await?;
         Ok(RatelimitGuard {
             inner: &self.inner,
@@ -58,7 +58,7 @@ impl<'a, T> Deref for RatelimitGuard<'a, T> {
 impl<'a, T> Drop for RatelimitGuard<'a, T> {
     fn drop(&mut self) {
         let send = self.send.clone();
-        let wait_time = self.wait_time.clone();
+        let wait_time = *self.wait_time;
         tokio::spawn(async move {
             tokio::time::sleep(wait_time).await;
             send.send_async(()).await.ok();

@@ -31,12 +31,12 @@ pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbe
         .url(user.profile_url())
         .description(format!(
             "{}\n{}",
-            if name == "" {
+            if name.is_empty() {
                 "".to_owned()
             } else {
                 format!("**{}**", name)
             },
-            if place == "" {
+            if place.is_empty() {
                 "".to_owned()
             } else {
                 format!("from **{}**", place)

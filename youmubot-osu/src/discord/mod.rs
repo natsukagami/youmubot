@@ -52,14 +52,15 @@ impl TypeMapKey for OsuClient {
 ///  - Hooks. Hooks are completely opt-in.
 ///  
 pub fn setup(
-    path: &std::path::Path,
+    _path: &std::path::Path,
     data: &mut TypeMap,
     announcers: &mut AnnouncerHandler,
 ) -> CommandResult {
+    let sql_client = data.get::<SQLClient>().unwrap().clone();
     // Databases
-    OsuSavedUsers::insert_into(&mut *data, &path.join("osu_saved_users.yaml"))?;
-    OsuLastBeatmap::insert_into(&mut *data, &path.join("last_beatmaps.yaml"))?;
-    OsuUserBests::insert_into(&mut *data, &path.join("osu_user_bests.yaml"))?;
+    data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client.clone()));
+    data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client.clone()));
+    data.insert::<OsuUserBests>(OsuUserBests::new(sql_client.clone()));
 
     // Locks
     data.insert::<server_rank::update_lock::UpdateLock>(
@@ -75,9 +76,12 @@ pub fn setup(
     };
     let osu_client = Arc::new(make_client());
     data.insert::<OsuClient>(osu_client.clone());
-    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(http_client));
+    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(
+        http_client,
+        sql_client.clone(),
+    ));
     data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
-        osu_client,
+        osu_client, sql_client,
     ));
 
     // Announcer
@@ -196,7 +200,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     .await?;
                 return Ok(());
             }
-            add_user(msg.author.id, u.id, &*data)?;
+            add_user(msg.author.id, u.id, &*data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -227,7 +231,7 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
     match user {
         Some(u) => {
-            add_user(target, u.id, &*data)?;
+            add_user(target, u.id, &*data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -244,22 +248,15 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     Ok(())
 }
 
-fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &TypeMap) -> Result<()> {
-    OsuSavedUsers::open(data).borrow_mut()?.insert(
-        target,
-        OsuUser {
-            id: user_id,
-            failures: None,
-            last_update: chrono::Utc::now(),
-            pp: vec![],
-        },
-    );
-    OsuUserBests::open(data)
-        .borrow_mut()?
-        .iter_mut()
-        .for_each(|(_, r)| {
-            r.remove(&target);
-        });
+async fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &TypeMap) -> Result<()> {
+    let u = OsuUser {
+        user_id: target,
+        id: user_id,
+        failures: 0,
+        last_update: chrono::Utc::now(),
+        pp: [None, None, None, None],
+    };
+    data.get::<OsuSavedUsers>().unwrap().new_user(u).await?;
     Ok(())
 }
 
@@ -278,7 +275,7 @@ impl FromStr for ModeArg {
     }
 }
 
-fn to_user_id_query(
+async fn to_user_id_query(
     s: Option<UsernameArg>,
     data: &TypeMap,
     msg: &Message,
@@ -289,12 +286,12 @@ fn to_user_id_query(
         None => msg.author.id,
     };
 
-    let db = OsuSavedUsers::open(data);
-    let db = db.borrow()?;
-    db.get(&id)
-        .cloned()
+    data.get::<OsuSavedUsers>()
+        .unwrap()
+        .by_user_id(id)
+        .await?
         .map(|u| UserID::ID(u.id))
-        .ok_or(Error::msg("No saved account found"))
+        .ok_or_else(|| Error::msg("No saved account found"))
 }
 
 enum Nth {
@@ -307,7 +304,7 @@ impl FromStr for Nth {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "--all" || s == "-a" || s == "##" {
             Ok(Nth::All)
-        } else if !s.starts_with("#") {
+        } else if !s.starts_with('#') {
             Err(Error::msg("Not an order"))
         } else {
             let v = s.split_at("#".len()).1.parse()?;
@@ -385,13 +382,13 @@ async fn list_plays<'a>(
                                         .ok()
                                         .map(|pp| format!("{:.2}pp [?]", pp))
                                     })
-                                    .unwrap_or("-".to_owned()));
+                                    .unwrap_or_else(|| "-".to_owned()));
                                 r
                             }
                         }
                     })
                     .collect::<stream::FuturesOrdered<_>>()
-                    .map(|v| v.unwrap_or("-".to_owned()))
+                    .map(|v| v.unwrap_or_else(|_| "-".to_owned()))
                     .collect::<Vec<String>>();
                 let (beatmaps, pp) = future::join(beatmaps, pp).await;
 
@@ -494,7 +491,7 @@ async fn list_plays<'a>(
                     page + 1,
                     total_pages
                 ));
-                if let None = mode.to_oppai_mode() {
+                if mode.to_oppai_mode().is_none() {
                     m.push_line("Note: star difficulty doesn't reflect mods applied.");
                 } else {
                     m.push_line("[?] means pp was predicted by oppai-rs.");
@@ -521,7 +518,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let data = ctx.data.read().await;
     let nth = args.single::<Nth>().unwrap_or(Nth::All);
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
 
     let osu = data.get::<OsuClient>().unwrap();
     let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
@@ -529,7 +526,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let user = osu
         .user(user, |f| f.mode(mode))
         .await?
-        .ok_or(Error::msg("User not found"))?;
+        .ok_or_else(|| Error::msg("User not found"))?;
     match nth {
         Nth::Nth(nth) => {
             let recent_play = osu
@@ -537,14 +534,14 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?
                 .into_iter()
                 .last()
-                .ok_or(Error::msg("No such play"))?;
+                .ok_or_else(|| Error::msg("No such play"))?;
             let beatmap = meta_cache.get_beatmap(recent_play.beatmap_id, mode).await?;
             let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id
                 .send_message(&ctx, |m| {
-                    m.content(format!("Here is the play that you requested",))
+                    m.content("Here is the play that you requested".to_string())
                         .embed(|m| {
                             score_embed(&recent_play, &beatmap_mode, &content, &user).build(m)
                         })
@@ -553,7 +550,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*data, msg.channel_id, &beatmap_mode)?;
+            cache::save_beatmap(&*data, msg.channel_id, &beatmap_mode).await?;
         }
         Nth::All => {
             let plays = osu
@@ -585,7 +582,7 @@ impl FromStr for OptBeatmapset {
 #[max_args(2)]
 pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let b = cache::get_beatmap(&*data, msg.channel_id)?;
+    let b = cache::get_beatmap(&*data, msg.channel_id).await?;
     let beatmapset = args.find::<OptBeatmapset>().is_ok();
 
     match b {
@@ -636,7 +633,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[max_args(1)]
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let bm = cache::get_beatmap(&*data, msg.channel_id)?;
+    let bm = cache::get_beatmap(&*data, msg.channel_id).await?;
 
     match bm {
         None => {
@@ -648,11 +645,11 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             let m = bm.1;
             let username_arg = args.single::<UsernameArg>().ok();
             let user_id = match username_arg.as_ref() {
-                Some(UsernameArg::Tagged(v)) => Some(v.clone()),
+                Some(UsernameArg::Tagged(v)) => Some(*v),
                 None => Some(msg.author.id),
                 _ => None,
             };
-            let user = to_user_id_query(username_arg, &*data, msg)?;
+            let user = to_user_id_query(username_arg, &*data, msg).await?;
 
             let osu = data.get::<OsuClient>().unwrap();
             let oppai = data.get::<BeatmapCache>().unwrap();
@@ -662,7 +659,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             let user = osu
                 .user(user, |f| f)
                 .await?
-                .ok_or(Error::msg("User not found"))?;
+                .ok_or_else(|| Error::msg("User not found"))?;
             let scores = osu
                 .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
                 .await?;
@@ -681,11 +678,11 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 
             if let Some(user_id) = user_id {
                 // Save to database
-                OsuUserBests::open(&*data)
-                    .borrow_mut()?
-                    .entry((bm.0.beatmap_id, bm.1))
-                    .or_default()
-                    .insert(user_id, scores);
+                data.get::<OsuUserBests>()
+                    .unwrap()
+                    .save(user_id, m, scores)
+                    .await
+                    .pls_ok();
             }
         }
     }
@@ -706,7 +703,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .map(|ModeArg(t)| t)
         .unwrap_or(Mode::Std);
 
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
     let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
     let osu = data.get::<OsuClient>().unwrap();
 
@@ -714,7 +711,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
     let user = osu
         .user(user, |f| f.mode(mode))
         .await?
-        .ok_or(Error::msg("User not found"))?;
+        .ok_or_else(|| Error::msg("User not found"))?;
 
     match nth {
         Nth::Nth(nth) => {
@@ -727,7 +724,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let top_play = top_play
                 .into_iter()
                 .last()
-                .ok_or(Error::msg("No such play"))?;
+                .ok_or_else(|| Error::msg("No such play"))?;
             let beatmap = meta_cache.get_beatmap(top_play.beatmap_id, mode).await?;
             let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, mode);
@@ -747,7 +744,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .await?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*data, msg.channel_id, &beatmap)?;
+            cache::save_beatmap(&*data, msg.channel_id, &beatmap).await?;
         }
         Nth::All => {
             let plays = osu
@@ -761,7 +758,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
 
 async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
     let data = ctx.data.read().await;
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg)?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
     let osu = data.get::<OsuClient>().unwrap();
     let cache = data.get::<BeatmapMetaCache>().unwrap();
     let user = osu.user(user, |f| f.mode(mode)).await?;

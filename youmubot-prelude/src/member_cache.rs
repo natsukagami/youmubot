@@ -27,7 +27,7 @@ impl MemberCache {
         let now = Utc::now();
         // Check cache
         if let Some(r) = self.0.get(&(user_id, guild_id)) {
-            if &r.1 > &now {
+            if r.1 > now {
                 return r.0.clone();
             }
         }

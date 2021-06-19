@@ -40,8 +40,12 @@ jobs:
                   key: ${{ runner.os }}-rust-${{ steps.cargo.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}-lint
             - name: Run cargo check
               run: cargo check
+              env:
+                  SQLX_OFFLINE: "true"
             - name: Run clippy
               run: cargo clippy
+              env:
+                  SQLX_OFFLINE: "true"
     test:
         name: Test
         runs-on: ubuntu-latest
@@ -61,3 +65,5 @@ jobs:
                   key: ${{ runner.os }}-rust-${{ steps.cargo.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}-debug-build
             - name: Run cargo test
               run: cargo test
+              env:
+                  SQLX_OFFLINE: "true"

@@ -28,7 +28,9 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
     } else {
         Some(args.single::<args::Duration>()?)
     };
-    let guild = msg.guild_id.ok_or(Error::msg("Command is guild only"))?;
+    let guild = msg
+        .guild_id
+        .ok_or_else(|| Error::msg("Command is guild only"))?;
 
     let mut db = SoftBans::open(&*data);
     let val = db
@@ -37,7 +39,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         .map(|v| (v.role, v.periodical_bans.get(&user.id).cloned()));
     let (role, current_ban_deadline) = match val {
         None => {
-            msg.reply(&ctx, format!("⚠ This server has not enabled the soft-ban feature. Check out `y!a soft-ban-init`.")).await?;
+            msg.reply(&ctx, "⚠ This server has not enabled the soft-ban feature. Check out `y!a soft-ban-init`.").await?;
             return Ok(());
         }
         Some(v) => v,
@@ -58,7 +60,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         Some(v) => {
             // Add the duration into the ban timeout.
             let until =
-                current_ban_deadline.unwrap_or(Utc::now()) + chrono::Duration::from_std(v.0)?;
+                current_ban_deadline.unwrap_or_else(Utc::now) + chrono::Duration::from_std(v.0)?;
             msg.reply(
                 &ctx,
                 format!("⛓ Soft-banning user {} until {}.", user.tag(), until),
@@ -86,10 +88,7 @@ pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> Comm
     let guild = msg.guild(&ctx).await.unwrap();
     // Check whether the role_id is the one we wanted
     if !guild.roles.contains_key(&role_id) {
-        Err(Error::msg(format!(
-            "{} is not a role in this server.",
-            role_id
-        )))?;
+        return Err(Error::msg(format!("{} is not a role in this server.", role_id)).into());
     }
     // Check if we already set up
     let mut db = SoftBans::open(&*data);
@@ -100,7 +99,7 @@ pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> Comm
             .insert(guild.id, ServerSoftBans::new(role_id));
         msg.react(&ctx, '👌').await?;
     } else {
-        Err(Error::msg("Server already set up soft-bans."))?
+        return Err(Error::msg("Server already set up soft-bans.").into());
     }
     Ok(())
 }

@@ -17,11 +17,11 @@ use serenity::{
     },
     CacheAndHttp,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{convert::TryInto, sync::Arc};
 use youmubot_prelude::*;
 
 /// osu! announcer's unique announcer key.
-pub const ANNOUNCER_KEY: &'static str = "osu";
+pub const ANNOUNCER_KEY: &str = "osu";
 
 /// The announcer struct implementing youmubot_prelude::Announcer
 pub struct Announcer {
@@ -45,11 +45,14 @@ impl youmubot_prelude::Announcer for Announcer {
         channels: MemberToChannels,
     ) -> Result<()> {
         // For each user...
-        let data = OsuSavedUsers::open(&*d.read().await).borrow()?.clone();
+        let data = d.read().await;
+        let data = data.get::<OsuSavedUsers>().unwrap();
         let now = chrono::Utc::now();
-        let data = data
+        let users = data.all().await?;
+        users
             .into_iter()
-            .map(|(user_id, osu_user)| {
+            .map(|mut osu_user| {
+                let user_id = osu_user.user_id;
                 let channels = &channels;
                 let ctx = Context {
                     c: c.clone(),
@@ -59,62 +62,33 @@ impl youmubot_prelude::Announcer for Announcer {
                 async move {
                     let channels = channels.channels_of(ctx.c.clone(), user_id).await;
                     if channels.is_empty() {
-                        return (user_id, osu_user); // We don't wanna update an user without any active server
+                        return; // We don't wanna update an user without any active server
                     }
-                    let pp = match (&[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania])
-                        .into_iter()
-                        .map(|m| {
-                            s.handle_user_mode(&ctx, now, &osu_user, user_id, channels.clone(), *m)
-                        })
-                        .collect::<stream::FuturesOrdered<_>>()
-                        .try_collect::<Vec<_>>()
-                        .await
+                    match std::array::IntoIter::new([
+                        Mode::Std,
+                        Mode::Taiko,
+                        Mode::Catch,
+                        Mode::Mania,
+                    ])
+                    .map(|m| s.handle_user_mode(&ctx, now, &osu_user, user_id, channels.clone(), m))
+                    .collect::<stream::FuturesOrdered<_>>()
+                    .try_collect::<Vec<_>>()
+                    .await
                     {
-                        Ok(v) => v,
+                        Ok(v) => {
+                            osu_user.last_update = now;
+                            osu_user.pp = v.try_into().unwrap();
+                            data.save(osu_user).await.pls_ok();
+                        }
                         Err(e) => {
                             eprintln!("osu: Cannot update {}: {}", osu_user.id, e);
-                            return (
-                                user_id,
-                                OsuUser {
-                                    failures: Some(osu_user.failures.unwrap_or(0) + 1),
-                                    ..osu_user
-                                },
-                            );
                         }
                     };
-                    (
-                        user_id,
-                        OsuUser {
-                            pp,
-                            last_update: now,
-                            failures: None,
-                            ..osu_user
-                        },
-                    )
                 }
             })
             .collect::<stream::FuturesUnordered<_>>()
-            .collect::<HashMap<_, _>>()
+            .collect::<()>()
             .await;
-        // Update users
-        let db = &*d.read().await;
-        let mut db = OsuSavedUsers::open(db);
-        let mut db = db.borrow_mut()?;
-        data.into_iter()
-            .for_each(|(k, v)| match db.get(&k).map(|v| v.last_update.clone()) {
-                Some(d) if d > now => (),
-                _ => {
-                    if v.failures.unwrap_or(0) > 5 {
-                        eprintln!(
-                            "osu: Removing user {} [{}] due to 5 consecutive failures",
-                            k, v.id
-                        );
-                        // db.remove(&k);
-                    } else {
-                        db.insert(k, v);
-                    }
-                }
-            });
         Ok(())
     }
 }
@@ -129,9 +103,9 @@ impl Announcer {
         user_id: UserId,
         channels: Vec<ChannelId>,
         mode: Mode,
-    ) -> Result<Option<f64>, Error> {
+    ) -> Result<Option<f32>, Error> {
         let days_since_last_update = (now - osu_user.last_update).num_days() + 1;
-        let last_update = osu_user.last_update.clone();
+        let last_update = osu_user.last_update;
         let (scores, user) = {
             let scores = self.scan_user(osu_user, mode).await?;
             let user = self
@@ -141,7 +115,7 @@ impl Announcer {
                         .event_days(days_since_last_update.min(31) as u8)
                 })
                 .await?
-                .ok_or(Error::msg("user not found"))?;
+                .ok_or_else(|| Error::msg("user not found"))?;
             (scores, user)
         };
         let client = self.client.clone();
@@ -181,7 +155,7 @@ impl Announcer {
                 .await
                 .pls_ok();
         });
-        Ok(pp)
+        Ok(pp.map(|v| v as f32))
     }
 
     async fn scan_user(&self, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {
@@ -265,20 +239,14 @@ impl<'a> CollectedScore<'a> {
     async fn send_message(self, ctx: &Context) -> Result<Vec<Message>> {
         let (bm, content) = self.get_beatmap(&ctx).await?;
         self.channels
-            .into_iter()
+            .iter()
             .map(|c| self.send_message_to(*c, ctx, &bm, &content))
             .collect::<stream::FuturesUnordered<_>>()
             .try_collect()
             .await
     }
 
-    async fn get_beatmap(
-        &self,
-        ctx: &Context,
-    ) -> Result<(
-        BeatmapWithMode,
-        impl std::ops::Deref<Target = BeatmapContent>,
-    )> {
+    async fn get_beatmap(&self, ctx: &Context) -> Result<(BeatmapWithMode, BeatmapContent)> {
         let data = ctx.data.read().await;
         let cache = data.get::<BeatmapMetaCache>().unwrap();
         let oppai = data.get::<BeatmapCache>().unwrap();
@@ -314,7 +282,9 @@ impl<'a> CollectedScore<'a> {
                 })
             })
             .await?;
-        save_beatmap(&*ctx.data.read().await, channel, &bm).pls_ok();
+        save_beatmap(&*ctx.data.read().await, channel, &bm)
+            .await
+            .pls_ok();
         Ok(m)
     }
 }

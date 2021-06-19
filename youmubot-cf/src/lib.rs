@@ -56,7 +56,7 @@ pub async fn profile(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
     let data = ctx.data.read().await;
     let handle = args
         .single::<UsernameArg>()
-        .unwrap_or(UsernameArg::mention(m.author.id));
+        .unwrap_or_else(|_| UsernameArg::mention(m.author.id));
     let http = data.get::<CFClient>().unwrap();
 
     let handle = match handle {
@@ -142,9 +142,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
     let everyone = {
         let db = CfSavedUsers::open(&*data);
         let db = db.borrow()?;
-        db.iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect::<Vec<_>>()
+        db.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>()
     };
     let guild = m.guild_id.expect("Guild-only command");
     let mut ranks = everyone
@@ -216,7 +214,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                         format!("#{}", id),
                         cfu.rating
                             .map(|v| v.to_string())
-                            .unwrap_or("----".to_owned()),
+                            .unwrap_or_else(|| "----".to_owned()),
                         cfu.handle,
                         mem.distinct(),
                         hw = handle_width,
@@ -264,7 +262,7 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
                 .map(|v| v.map(|v| (cf_user.handle, v)))
         })
         .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| future::ready(v))
+        .filter_map(future::ready)
         .collect::<HashMap<_, _>>()
         .await;
     let http = data.get::<CFClient>().unwrap();
@@ -394,7 +392,7 @@ pub(crate) async fn contest_rank_table(
                         table.push(" | ");
                         if p.points > 0.0 {
                             table.push(format!("{:^4.0}", p.points));
-                        } else if let Some(_) = p.best_submission_time_seconds {
+                        } else if p.best_submission_time_seconds.is_some() {
                             table.push(format!("{:^4}", "?"));
                         } else if p.rejected_attempt_count > 0 {
                             table.push(format!("{:^4}", format!("-{}", p.rejected_attempt_count)));

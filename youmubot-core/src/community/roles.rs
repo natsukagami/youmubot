@@ -388,7 +388,7 @@ mod reaction_watcher {
                 .flat_map(|(&guild, rs)| {
                     rs.reaction_messages
                         .iter()
-                        .map(move |(m, r)| (guild, m.clone(), r.clone()))
+                        .map(move |(m, r)| (guild, *m, r.clone()))
                 })
                 .collect();
             Ok(Self {
@@ -554,11 +554,11 @@ mod reaction_watcher {
             let role = Roles::open(&*data)
                 .borrow()?
                 .get(&guild)
-                .ok_or(Error::msg("guild no longer has role list"))?
+                .ok_or_else(|| Error::msg("guild no longer has role list"))?
                 .reaction_messages
                 .get(&message)
                 .map(|msg| &msg.roles[..])
-                .ok_or(Error::msg("message is no longer a role list handler"))?
+                .ok_or_else(|| Error::msg("message is no longer a role list handler"))?
                 .iter()
                 .find_map(|(role, role_reaction)| {
                     if &reaction.as_inner_ref().emoji == role_reaction {

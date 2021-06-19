@@ -95,7 +95,7 @@ async fn pick(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             .peekable();
         // If we have the first argument as question, use it.
         let question = match choices.peek() {
-            Some(ref q) if q.starts_with("?") => Some(q.replacen("?", "", 1) + "?"),
+            Some(ref q) if q.starts_with('?') => Some(q.replacen("?", "", 1) + "?"),
             _ => None,
         };
         // If we have a question, that's not a choice.

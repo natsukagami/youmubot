@@ -93,10 +93,10 @@ mod beatmapset {
 
             let map = &self.maps[page];
             let info = match &self.infos[page] {
-                Some(info) => info.clone(),
+                Some(info) => *info,
                 None => {
                     let info = self.get_beatmap_info(ctx, map).await;
-                    self.infos[page] = Some(info.clone());
+                    self.infos[page] = Some(info);
                     info
                 }
             };
@@ -125,7 +125,8 @@ mod beatmapset {
                 m.channel_id,
                 &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),
             )
-            .ok();
+            .await
+            .pls_ok();
 
             Ok(true)
         }

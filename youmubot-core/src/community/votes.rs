@@ -87,7 +87,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let panel = channel.send_message(&ctx, |c| {
         c.content("@here").embed(|e| {
             e.author(|au| {
-                au.icon_url(author.avatar_url().unwrap_or("".to_owned()))
+                au.icon_url(author.avatar_url().unwrap_or_else(|| "".to_owned()))
                     .name(&author.name)
             })
             .title(format!("You have {} to vote!", _duration))
@@ -97,7 +97,6 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         })
     }).await?;
     msg.delete(&ctx).await?;
-    drop(msg);
 
     // React on all the choices
     choices
@@ -160,7 +159,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     result.sort_unstable_by(|(_, v), (_, w)| w.len().cmp(&v.len()));
 
-    if result.len() == 0 {
+    if result.is_empty() {
         msg.reply(
             &ctx,
             MessageBuilder::new()
@@ -227,7 +226,7 @@ fn pick_n_reactions(n: usize) -> Result<Vec<String>, Error> {
 const MAX_CHOICES: usize = 15;
 
 // All the defined reactions.
-const REACTIONS: [&'static str; 90] = [
+const REACTIONS: [&str; 90] = [
     "😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎", "😍", "😘", "🥰", "😗",
     "😙", "😚", "☺️", "🙂", "🤗", "🤩", "🤔", "🤨", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮",
     "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝", "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑",

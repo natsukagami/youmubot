@@ -11,7 +11,7 @@ mod duration {
     /// Parse a single duration unit
     fn parse_duration_string(s: &str) -> Result<StdDuration> {
         // We reject the empty case
-        if s == "" {
+        if s.is_empty() {
             return Err(Error::msg("empty strings are not valid durations"));
         }
         struct ParseStep {
@@ -59,7 +59,7 @@ mod duration {
     impl std::str::FromStr for Duration {
         type Err = Error;
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            parse_duration_string(s).map(|v| Duration(v))
+            parse_duration_string(s).map(Duration)
         }
     }
 

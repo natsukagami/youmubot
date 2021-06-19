@@ -40,6 +40,13 @@ impl TypeMapKey for HTTPClient {
     type Value = reqwest::Client;
 }
 
+/// The SQL client.
+pub struct SQLClient;
+
+impl TypeMapKey for SQLClient {
+    type Value = youmubot_db_sql::Pool;
+}
+
 pub mod prelude_commands {
     use crate::announcer::ANNOUNCERCOMMANDS_GROUP;
     use serenity::{

@@ -1,4 +1,3 @@
-use dotenv;
 use dotenv::var;
 use serenity::{
     client::bridge::gateway::GatewayIntents,
@@ -118,12 +117,19 @@ async fn main() {
     {
         let mut data = client.data.write().await;
         let db_path = var("DBPATH")
-            .map(|v| std::path::PathBuf::from(v))
+            .map(std::path::PathBuf::from)
             .unwrap_or_else(|e| {
                 println!("No DBPATH set up ({:?}), using `/data`", e);
-                std::path::PathBuf::from("data")
+                std::path::PathBuf::from("/data")
             });
-        youmubot_prelude::setup::setup_prelude(&db_path, &mut data);
+        let sql_path = var("SQLPATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|e| {
+                let res = db_path.join("youmubot.db");
+                println!("No SQLPATH set up ({:?}), using `{:?}`", e, res);
+                res
+            });
+        youmubot_prelude::setup::setup_prelude(&db_path, sql_path, &mut data).await;
         // Setup core
         #[cfg(feature = "core")]
         youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");
@@ -166,7 +172,7 @@ async fn setup_framework(token: &str) -> StandardFramework {
     let fw = StandardFramework::new()
         .configure(|c| {
             c.with_whitespace(false)
-                .prefix(&var("PREFIX").unwrap_or("y!".to_owned()))
+                .prefix(&var("PREFIX").unwrap_or_else(|_| "y!".to_owned()))
                 .delimiters(vec![" / ", "/ ", " /", "/"])
                 .owners([owner.id].iter().cloned().collect())
         })
@@ -246,7 +252,7 @@ async fn on_dispatch_error(ctx: &Context, msg: &Message, error: DispatchError) {
                 "😕 I can only handle at most **{}** arguments, but I got **{}**!",
                 max, given
             ),
-            DispatchError::OnlyForGuilds => format!("🔇 This command cannot be used in DMs."),
+            DispatchError::OnlyForGuilds => "🔇 This command cannot be used in DMs.".to_owned(),
             _ => return,
         },
     )

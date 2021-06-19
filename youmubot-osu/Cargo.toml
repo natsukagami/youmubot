@@ -16,8 +16,10 @@ lazy_static = "1"
 regex = "1"
 oppai-rs = "0.2"
 dashmap = "4"
+bincode = "1"
 
 youmubot-db = { path = "../youmubot-db" }
+youmubot-db-sql = { path = "../youmubot-db-sql" }
 youmubot-prelude = { path = "../youmubot-prelude" }
 
 [dev-dependencies]

@@ -3,3 +3,5 @@ target
 *.yaml
 cargo-remote
 .vscode
+youmubot.db
+youmubot.db-*
