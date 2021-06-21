@@ -1,13 +1,5 @@
 use crate::db::Roles as DB;
-use serenity::{
-    framework::standard::{macros::command, Args, CommandResult},
-    model::{
-        channel::{Message, ReactionType},
-        guild::Role,
-        id::RoleId,
-    },
-    utils::MessageBuilder,
-};
+use serenity::{framework::standard::{macros::command, Args, CommandResult}, model::{channel::{Message, ReactionType}, guild::Role, id::RoleId}, utils::MessageBuilder};
 use youmubot_prelude::*;
 
 pub use reaction_watcher::Watchers as ReactionWatchers;
@@ -267,7 +259,21 @@ fn role_from_string(role: &str, roles: &std::collections::HashMap<RoleId, Role>)
 #[min_args(1)]
 #[required_permissions(MANAGE_ROLES)]
 #[only_in(guilds)]
-async fn rolemessage(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+async fn rolemessage(ctx: &Context, m: &Message, args: Args) -> CommandResult {
+    let (title, roles) = match parse(ctx, m, args).await? {
+        Some(v) => v,
+        None => return Ok(())
+    };
+    let data = ctx.data.read().await;
+    let guild_id = m.guild_id.unwrap();
+    data.get::<ReactionWatchers>()
+        .unwrap()
+        .add(ctx.clone(), guild_id, m.channel_id, title, roles)
+        .await?;
+    Ok(())
+}
+
+async fn parse(ctx: &Context, m: &Message, mut args: Args) -> Result<Option<(String, Vec<(crate::db::Role, Role, ReactionType)>)>> {
     let title = args.single_quoted::<String>().unwrap();
     let data = ctx.data.read().await;
     let guild_id = m.guild_id.unwrap();
@@ -293,7 +299,7 @@ async fn rolemessage(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
             None => {
                 m.reply(&ctx, format!("Role `{}` not found", rolename))
                     .await?;
-                return Ok(());
+                return Ok(None);
             }
         };
         let role = match assignables.get(&role.id) {
@@ -305,21 +311,59 @@ async fn rolemessage(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
                         format!("Role `{}` does not have a assignable emote.", rolename),
                     )
                     .await?;
-                    return Ok(());
+                    return Ok(None);
                 }
             },
             None => {
                 m.reply(&ctx, format!("Role `{}` is not assignable.", rolename))
                     .await?;
-                return Ok(());
+                return Ok(None);
             }
         };
         roles.push(role);
     }
-    data.get::<ReactionWatchers>()
+    Ok(Some((title, roles)))
+}
+
+#[command("updaterolemessage")]
+#[description = "Update the role message to use the new list and title. All roles in the list must already be inside the set. Empty = all assignable roles."]
+#[usage = "{title}/[role]/[role]/..."]
+#[example = "Game Roles/Genshin/osu!"]
+#[min_args(1)]
+#[required_permissions(MANAGE_ROLES)]
+#[only_in(guilds)]
+async fn updaterolemessage(ctx: &Context, m: &Message, args: Args) -> CommandResult {
+    let (title, roles) = match parse(ctx, m, args).await? {
+        Some(v) => v,
+        None => return Ok(())
+    };
+    let data = ctx.data.read().await;
+    let guild_id = m.guild_id.unwrap();
+
+    let mut message = match &m.referenced_message {
+        Some(m) => m,
+        None => {
+            m.reply(&ctx, "No replied message found.").await?;
+            return Ok(());
+        }
+    }.clone();
+
+    if data
+        .get::<ReactionWatchers>()
         .unwrap()
-        .add(ctx.clone(), guild_id, m.channel_id, title, roles)
-        .await?;
+        .remove(ctx, guild_id, message.id)
+        .await?
+    {
+        data
+        .get::<ReactionWatchers>()
+        .unwrap()
+        .setup(&mut *message, ctx.clone(), guild_id, title, roles).await?;
+    } else {
+        m.reply(&ctx, "Message does not come with a reaction handler")
+            .await
+            .ok();
+    }
+
     Ok(())
 }
 
@@ -341,19 +385,18 @@ async fn rmrolemessage(ctx: &Context, m: &Message, _args: Args) -> CommandResult
         }
     };
 
-    if data
+    if !data
         .get::<ReactionWatchers>()
         .unwrap()
         .remove(ctx, guild_id, message.id)
         .await?
     {
-        message.delete(&ctx).await.ok();
-        m.react(&ctx, '👌').await.ok();
-    } else {
         m.reply(&ctx, "Message does not come with a reaction handler")
             .await
             .ok();
     }
+
+
 
     Ok(())
 }
@@ -365,7 +408,7 @@ mod reaction_watcher {
     use serenity::{
         collector::ReactionAction,
         model::{
-            channel::ReactionType,
+            channel::{Message, ReactionType},
             guild::Role as DiscordRole,
             id::{ChannelId, GuildId, MessageId},
         },
@@ -412,10 +455,21 @@ mod reaction_watcher {
             channel: ChannelId,
             title: String,
             roles: Vec<(Role, DiscordRole, ReactionType)>,
+
+        )  -> Result<()> {
+            let mut msg = channel.send_message(&ctx, |c| c.content("Youmu is setting up the message...")).await?;
+            self.setup(&mut msg, ctx, guild, title, roles).await
+        }
+        pub async fn setup(
+            &self,
+            msg: &mut Message,
+            ctx: Context,
+            guild: GuildId,
+            title: String,
+            roles: Vec<(Role, DiscordRole, ReactionType)>,
         ) -> Result<()> {
             // Send a message
-            let msg = channel
-                .send_message(&ctx, |m| {
+            msg.edit(&ctx, |m| {
                     m.content({
                         let mut builder = serenity::utils::MessageBuilder::new();
                         builder
@@ -438,16 +492,9 @@ mod reaction_watcher {
                 })
                 .await?;
             // Do reactions
-            roles
-                .iter()
-                .map(|(_, _, emoji)| {
-                    msg.react(&ctx, emoji.clone()).map(|r| {
-                        r.ok();
-                    })
-                })
-                .collect::<stream::FuturesUnordered<_>>()
-                .collect::<()>()
-                .await;
+            for (_, _, emoji) in &roles {
+                    msg.react(&ctx, emoji.clone()).await.ok();
+            }
             // Store the message into the list.
             {
                 let data = ctx.data.read().await;

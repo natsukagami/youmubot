@@ -20,7 +20,7 @@ mod roles;
 mod votes;
 
 use roles::{
-    ADD_COMMAND, LIST_COMMAND, REMOVE_COMMAND, RMROLEMESSAGE_COMMAND, ROLEMESSAGE_COMMAND,
+    ADD_COMMAND, LIST_COMMAND, REMOVE_COMMAND, RMROLEMESSAGE_COMMAND, ROLEMESSAGE_COMMAND, UPDATEROLEMESSAGE_COMMAND,
     TOGGLE_COMMAND,
 };
 use votes::VOTE_COMMAND;
@@ -30,7 +30,7 @@ pub use roles::ReactionWatchers;
 #[group]
 #[description = "Community related commands. Usually comes with some sort of delays, since it involves pinging"]
 #[only_in("guilds")]
-#[commands(choose, vote, add, list, remove, toggle, rolemessage, rmrolemessage)]
+#[commands(choose, vote, add, list, remove, toggle, rolemessage, rmrolemessage, updaterolemessage)]
 struct Community;
 
 #[command]
