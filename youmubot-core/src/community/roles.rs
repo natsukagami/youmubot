@@ -1,5 +1,13 @@
 use crate::db::Roles as DB;
-use serenity::{framework::standard::{macros::command, Args, CommandResult}, model::{channel::{Message, ReactionType}, guild::Role, id::RoleId}, utils::MessageBuilder};
+use serenity::{
+    framework::standard::{macros::command, Args, CommandResult},
+    model::{
+        channel::{Message, ReactionType},
+        guild::Role,
+        id::RoleId,
+    },
+    utils::MessageBuilder,
+};
 use youmubot_prelude::*;
 
 pub use reaction_watcher::Watchers as ReactionWatchers;
@@ -262,7 +270,7 @@ fn role_from_string(role: &str, roles: &std::collections::HashMap<RoleId, Role>)
 async fn rolemessage(ctx: &Context, m: &Message, args: Args) -> CommandResult {
     let (title, roles) = match parse(ctx, m, args).await? {
         Some(v) => v,
-        None => return Ok(())
+        None => return Ok(()),
     };
     let data = ctx.data.read().await;
     let guild_id = m.guild_id.unwrap();
@@ -273,7 +281,11 @@ async fn rolemessage(ctx: &Context, m: &Message, args: Args) -> CommandResult {
     Ok(())
 }
 
-async fn parse(ctx: &Context, m: &Message, mut args: Args) -> Result<Option<(String, Vec<(crate::db::Role, Role, ReactionType)>)>> {
+async fn parse(
+    ctx: &Context,
+    m: &Message,
+    mut args: Args,
+) -> Result<Option<(String, Vec<(crate::db::Role, Role, ReactionType)>)>> {
     let title = args.single_quoted::<String>().unwrap();
     let data = ctx.data.read().await;
     let guild_id = m.guild_id.unwrap();
@@ -335,7 +347,7 @@ async fn parse(ctx: &Context, m: &Message, mut args: Args) -> Result<Option<(Str
 async fn updaterolemessage(ctx: &Context, m: &Message, args: Args) -> CommandResult {
     let (title, roles) = match parse(ctx, m, args).await? {
         Some(v) => v,
-        None => return Ok(())
+        None => return Ok(()),
     };
     let data = ctx.data.read().await;
     let guild_id = m.guild_id.unwrap();
@@ -346,7 +358,8 @@ async fn updaterolemessage(ctx: &Context, m: &Message, args: Args) -> CommandRes
             m.reply(&ctx, "No replied message found.").await?;
             return Ok(());
         }
-    }.clone();
+    }
+    .clone();
 
     if data
         .get::<ReactionWatchers>()
@@ -354,10 +367,10 @@ async fn updaterolemessage(ctx: &Context, m: &Message, args: Args) -> CommandRes
         .remove(ctx, guild_id, message.id)
         .await?
     {
-        data
-        .get::<ReactionWatchers>()
-        .unwrap()
-        .setup(&mut *message, ctx.clone(), guild_id, title, roles).await?;
+        data.get::<ReactionWatchers>()
+            .unwrap()
+            .setup(&mut *message, ctx.clone(), guild_id, title, roles)
+            .await?;
     } else {
         m.reply(&ctx, "Message does not come with a reaction handler")
             .await
@@ -395,8 +408,6 @@ async fn rmrolemessage(ctx: &Context, m: &Message, _args: Args) -> CommandResult
             .await
             .ok();
     }
-
-
 
     Ok(())
 }
@@ -455,9 +466,10 @@ mod reaction_watcher {
             channel: ChannelId,
             title: String,
             roles: Vec<(Role, DiscordRole, ReactionType)>,
-
-        )  -> Result<()> {
-            let mut msg = channel.send_message(&ctx, |c| c.content("Youmu is setting up the message...")).await?;
+        ) -> Result<()> {
+            let mut msg = channel
+                .send_message(&ctx, |c| c.content("Youmu is setting up the message..."))
+                .await?;
             self.setup(&mut msg, ctx, guild, title, roles).await
         }
         pub async fn setup(
@@ -470,30 +482,30 @@ mod reaction_watcher {
         ) -> Result<()> {
             // Send a message
             msg.edit(&ctx, |m| {
-                    m.content({
-                        let mut builder = serenity::utils::MessageBuilder::new();
+                m.content({
+                    let mut builder = serenity::utils::MessageBuilder::new();
+                    builder
+                        .push_bold("Role Menu:")
+                        .push(" ")
+                        .push_bold_line_safe(&title)
+                        .push_line("React to give yourself a role.")
+                        .push_line("");
+                    for (role, discord_role, emoji) in &roles {
                         builder
-                            .push_bold("Role Menu:")
+                            .push(emoji)
                             .push(" ")
-                            .push_bold_line_safe(&title)
-                            .push_line("React to give yourself a role.")
+                            .push_bold_safe(&discord_role.name)
+                            .push(": ")
+                            .push_line_safe(&role.description)
                             .push_line("");
-                        for (role, discord_role, emoji) in &roles {
-                            builder
-                                .push(emoji)
-                                .push(" ")
-                                .push_bold_safe(&discord_role.name)
-                                .push(": ")
-                                .push_line_safe(&role.description)
-                                .push_line("");
-                        }
-                        builder
-                    })
+                    }
+                    builder
                 })
-                .await?;
+            })
+            .await?;
             // Do reactions
             for (_, _, emoji) in &roles {
-                    msg.react(&ctx, emoji.clone()).await.ok();
+                msg.react(&ctx, emoji.clone()).await.ok();
             }
             // Store the message into the list.
             {
