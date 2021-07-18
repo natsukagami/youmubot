@@ -314,7 +314,7 @@ impl FromStr for Nth {
 }
 
 #[command]
-#[aliases("rs", "rc")]
+#[aliases("rs", "rc", "r")]
 #[description = "Gets an user's recent play"]
 #[usage = "#[the nth recent play = --all] / [style (table or grid) = --table] / [mode (std, taiko, mania, catch) = std] / [username / user id = your saved id]"]
 #[example = "#1 / taiko / natsukagami"]
@@ -497,6 +497,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 }
 
 #[command]
+#[aliases("t")]
 #[description = "Get the n-th top record of an user."]
 #[usage = "#[n-th = --all] / [style (table or grid) = --table] / [mode (std, taiko, catch, mania)] = std / [username or user_id = your saved user id]"]
 #[example = "#2 / taiko / natsukagami"]
