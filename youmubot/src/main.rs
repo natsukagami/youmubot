@@ -172,7 +172,11 @@ async fn setup_framework(token: &str) -> StandardFramework {
     let fw = StandardFramework::new()
         .configure(|c| {
             c.with_whitespace(false)
-                .prefix(&var("PREFIX").unwrap_or_else(|_| "y!".to_owned()))
+                .prefixes(
+                    var("PREFIX")
+                        .map(|v| v.split(",").map(|v| v.trim().to_owned()).collect())
+                        .unwrap_or_else(|_| vec!["y!".to_owned(), "y2!".to_owned()]),
+                )
                 .delimiters(vec![" / ", "/ ", " /", "/"])
                 .owners([owner.id].iter().cloned().collect())
         })
