@@ -262,14 +262,36 @@ impl<'a> CollectedScore<'a> {
         bm: &BeatmapWithMode,
         content: &BeatmapContent,
     ) -> Result<Message> {
+        let guild = match channel.to_channel(&ctx.c).await?.guild() {
+            Some(gc) => gc.guild_id,
+            None => {
+                eprintln!("Not a guild channel: {}", channel);
+                return Err(Error::msg("Trying to announce to a non-server channel"));
+            }
+        };
+
+        let member = match guild.member(&ctx.c, self.discord_user).await {
+            Ok(mem) => mem,
+            Err(e) => {
+                eprintln!("Cannot get member {}: {}", self.discord_user, e);
+                return Err(e.into());
+            }
+        };
         let m = channel
             .send_message(ctx.c.http(), |c| {
                 c.content(match self.kind {
                     ScoreType::TopRecord(_) => {
                         format!("New top record from {}!", self.discord_user.mention())
                     }
-                    ScoreType::WorldRecord(_) => {
-                        format!("New best score from {}!", self.discord_user.mention())
+                    ScoreType::WorldRecord(rank) => {
+                        if rank <= 100 {
+                            format!(
+                                "New leaderboard record from {}!",
+                                self.discord_user.mention()
+                            )
+                        } else {
+                            format!("New leaderboard record from **{}**!", member.distinct())
+                        }
                     }
                 })
                 .embed(|e| {
