@@ -3,7 +3,6 @@ use crate::{
     discord::oppai_cache::{BeatmapContent, BeatmapInfo, BeatmapInfoWithPP, OppaiAccuracy},
     models::{Beatmap, Mode, Mods, Rank, Score, User},
 };
-use chrono::Utc;
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use youmubot_prelude::*;
 
@@ -331,7 +330,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .description(format!(
                 r#"**Beatmap**: {} - {} [{}]**{} **
 **Links**: [[Listing]]({}) [[Download]]({}) [[Bloodcat]]({})
-**Played on**: {}
+**Played**: {}
 {}"#,
                 b.artist,
                 b.title,
@@ -340,7 +339,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 b.link(),
                 b.download_link(false),
                 b.download_link(true),
-                s.date.format("%F %T"),
+                s.date.format("<t:%s:R>"),
                 pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
             ))
             .image(b.cover_url())
@@ -384,7 +383,7 @@ pub(crate) fn user_embed(
         .url(format!("https://osu.ppy.sh/users/{}", u.id))
         .color(0xffb6c1)
         .thumbnail(format!("https://a.ppy.sh/{}", u.id))
-        .description(format!("Member since **{}**", u.joined.format("%F %T")))
+        .description(format!("Member since **{}**", u.joined.format("<t:%s:R>")))
         .field(
             "Performance Points",
             u.pp.map(|v| format!("{:.2}pp", v))
@@ -405,8 +404,9 @@ pub(crate) fn user_embed(
         .field(
             "Play count / Play time",
             format!(
-                "{} ({})",
+                "{} / {} hours ({})",
                 grouped_number(u.play_count),
+                u.played_time.as_secs() / 3600,
                 Duration(u.played_time)
             ),
             false,
@@ -442,14 +442,7 @@ pub(crate) fn user_embed(
                         v.pp.unwrap() /*Top record should have pp*/
                     ))
                     .push(" - ")
-                    .push_line(format!(
-                        "{:.1} ago",
-                        Duration(
-                            (Utc::now() - v.date)
-                                .to_std()
-                                .unwrap_or_else(|_| std::time::Duration::from_secs(1))
-                        )
-                    ))
+                    .push_line(v.date.format("<t:%s:R>"))
                     .push("on ")
                     .push_line(format!(
                         "[{} - {} [{}]]({})**{} **",

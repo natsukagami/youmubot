@@ -30,7 +30,7 @@ pub enum ApprovalStatus {
 impl fmt::Display for ApprovalStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let ApprovalStatus::Ranked(ref d) = self {
-            write!(f, "Ranked on {}", d.format("%F %T"))
+            write!(f, "Ranked on {}", d.format("<t:%s>"))
         } else {
             write!(f, "{:?}", self)
         }
@@ -371,6 +371,11 @@ impl Beatmap {
         }
     }
 
+    /// Returns a direct link to the download (if you have supporter!)
+    pub fn osu_direct_link(&self) -> String {
+        format!("osu://b/{}", self.beatmapset_id)
+    }
+
     /// Return a parsable short link.
     pub fn short_link(&self, override_mode: Option<Mode>, mods: Option<Mods>) -> String {
         format!(
@@ -391,6 +396,11 @@ impl Beatmap {
             "https://assets.ppy.sh/beatmaps/{}/covers/cover.jpg",
             self.beatmapset_id
         )
+    }
+
+    /// Link to the cover thumbnail of the beatmap.
+    pub fn thumbnail_url(&self) -> String {
+        format!("https://b.ppy.sh/thumb/{}l.jpg", self.beatmapset_id)
     }
 }
 
