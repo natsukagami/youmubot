@@ -13,7 +13,7 @@ pub use mods::Mods;
 use serenity::utils::MessageBuilder;
 
 lazy_static::lazy_static! {
-    static ref EVENT_RANK_REGEX: Regex = Regex::new(r#"^.+achieved rank #(\d+) on .+\((.+)\)$"#).unwrap();
+    static ref EVENT_RANK_REGEX: Regex = Regex::new(r#"^.+achieved .*rank #(\d+).* on .+\((.+)\)$"#).unwrap();
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
