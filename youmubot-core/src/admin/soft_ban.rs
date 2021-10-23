@@ -110,9 +110,9 @@ pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
         // Scope so that locks are released
         {
             // Poll the data for any changes.
-            let db = data.read().await;
-            let db = SoftBans::open(&*db);
-            let mut db = db.borrow().unwrap().clone();
+            let data = data.read().await;
+            let mut data = SoftBans::open(&*data);
+            let mut db = data.borrow().unwrap().clone();
             let now = Utc::now();
             for (server_id, bans) in db.iter_mut() {
                 let server_name: String = match server_id.to_partial_guild(&*cache_http.http).await
@@ -145,6 +145,7 @@ pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
                     eprintln!("Error while scanning soft-bans list: {}", e)
                 }
             }
+            *(data.borrow_mut().unwrap()) = db;
         }
         // Sleep the thread for a minute
         tokio::time::sleep(std::time::Duration::from_secs(60)).await
