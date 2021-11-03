@@ -39,6 +39,7 @@ in
 
       environment = {
         DBPATH = cfg.databasePath;
+        SQLPATH = cfg.databasePath + "/youmubot.db";
         PREFIX = lib.strings.concatStringsSep "," cfg.prefixes;
       };
 
