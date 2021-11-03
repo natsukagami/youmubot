@@ -16,6 +16,11 @@
 
         root = ./.;
         cargoBuildOptions = opts: opts ++ [ "--package youmubot" ];
+
+        nativeBuildInputs = nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "linux" system) (with pkgs; [
+          pkg-config
+          openssl
+        ]);
       };
 
       defaultPackage = packages.youmubot;
@@ -31,5 +36,8 @@
       devShell = pkgs.mkShell {
         nativeBuildInputs = with pkgs; [ rustc cargo ];
       };
+
+      # module
+      nixosModule = import ./module.nix defaultPackage;
     });
 }
