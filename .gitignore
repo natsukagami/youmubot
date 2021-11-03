@@ -5,3 +5,5 @@ cargo-remote
 .vscode
 youmubot.db
 youmubot.db-*
+/result
+/.direnv
