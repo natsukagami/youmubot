@@ -31,5 +31,8 @@
       devShell = pkgs.mkShell {
         nativeBuildInputs = with pkgs; [ rustc cargo ];
       };
+
+      # module
+      nixosModule = import ./module.nix defaultPackage;
     });
 }
