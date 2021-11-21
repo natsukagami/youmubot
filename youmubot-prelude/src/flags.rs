@@ -1,4 +1,4 @@
-use serenity::prelude::Args;
+use serenity::framework::standard::Args;
 use std::collections::HashSet as Set;
 
 /// Handle flags parsing.
