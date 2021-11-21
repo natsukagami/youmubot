@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub mod announcer;
 pub mod args;
+pub mod flags;
 pub mod hook;
 pub mod member_cache;
 pub mod pagination;
@@ -13,6 +14,7 @@ pub mod setup;
 
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{Duration, UsernameArg};
+pub use flags::Flags;
 pub use hook::Hook;
 pub use member_cache::MemberCache;
 pub use pagination::{paginate, paginate_fn, paginate_reply, paginate_reply_fn, Paginate};

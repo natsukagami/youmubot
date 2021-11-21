@@ -51,12 +51,15 @@ Note that only online/idle users in the channel are chosen from."]
 #[bucket = "community"]
 #[max_args(2)]
 pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+    let flags = Flags::collect_from(&mut args);
     let role = args.find::<RoleId>().ok();
     let title = if args.is_empty() {
         "the chosen one".to_owned()
     } else {
         args.single::<String>()?
     };
+
+    let online_only = !flags.contains("everyone");
 
     let users: Result<Vec<_>, Error> = {
         let guild = m.guild(&ctx).await.unwrap();
@@ -69,6 +72,9 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                 .into_iter()
                 .filter(|v| !v.user.bot) // Filter out bots
                 .filter(|v| {
+                    if !online_only {
+                        return true;
+                    }
                     // Filter out only online people
                     presences
                         .get(&v.user.id)
