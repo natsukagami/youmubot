@@ -328,21 +328,12 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 world_record,
             ))
             .description(format!(
-                r#"**Beatmap**: {} - {} [{}]**{} **
-**Links**: [[Listing]]({}) [[Download]]({}) [[Bloodcat]]({})
-**Played**: {}
+                r#"**Played**: {}
 {}"#,
-                b.artist,
-                b.title,
-                b.difficulty_name,
-                s.mods,
-                b.link(),
-                b.download_link(false),
-                b.download_link(true),
                 s.date.format("<t:%s:R>"),
                 pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
             ))
-            .image(b.cover_url())
+            .thumbnail(b.thumbnail_url())
             .field(
                 "Score stats",
                 format!(
@@ -361,8 +352,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 ),
                 true,
             )
-            .field("Map stats", diff.format_info(mode, s.mods, b), false)
-            .timestamp(&s.date);
+            .field("Map stats", diff.format_info(mode, s.mods, b), false);
         let mut footer = self.footer.take().unwrap_or_else(String::new);
         if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
             footer += " Star difficulty does not reflect game mods.";
@@ -450,12 +440,14 @@ pub(crate) fn user_embed(
                         MessageBuilder::new().push_bold_safe(&map.title).build(),
                         map.difficulty_name,
                         map.link(),
-                        v.mods
+                        v.mods,
                     ))
                     .push(format!(
-                        "{:.1}⭐ | `{}`",
-                        info.map(|i| i.stars as f64).unwrap_or(map.difficulty.stars),
-                        map.short_link(Some(mode), Some(v.mods))
+                        "> {}",
+                        map.difficulty
+                            .apply_mods(v.mods, info.map(|i| i.stars as f64))
+                            .format_info(mode, v.mods, &map)
+                            .replace("\n", "\n> ")
                     ))
                     .build(),
                 false,

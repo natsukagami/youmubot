@@ -3,7 +3,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
-use youmubot_prelude::Duration as YoumuDuration;
 
 pub mod mods;
 pub mod parse;
@@ -136,8 +135,10 @@ impl Difficulty {
         let bpm = (self.bpm * 100.0).round() / 100.0;
         MessageBuilder::new()
             .push(format!(
-                "[[Link]]({}) (`{}`)",
+                "[[Link]]({}) [[DL]]({}) [[Alt]]({}) (`{}`)",
                 original_beatmap.link(),
+                original_beatmap.download_link(false),
+                original_beatmap.download_link(true),
                 original_beatmap.short_link(Some(mode), Some(mods))
             ))
             .push(if three_lines { "\n" } else { ", " })
@@ -166,7 +167,12 @@ impl Difficulty {
             .push_bold(format!("{:.1}", self.hp))
             .push(format!(", BPM**{}**", bpm))
             .push(", ⌛ ")
-            .push_bold(format!("{}", YoumuDuration(self.drain_length)))
+            .push({
+                let length = self.drain_length;
+                let minutes = length.as_secs() / 60;
+                let seconds = length.as_secs() % 60;
+                format!("**{}:{:02}** (drain)", minutes, seconds)
+            })
             .build()
     }
 }
