@@ -84,13 +84,15 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     // Ok... now we post up a nice voting panel.
     let channel = msg.channel_id;
     let author = msg.author.clone();
+    let asked = msg.timestamp;
+    let until = asked + (chrono::Duration::from_std(*duration).unwrap());
     let panel = channel.send_message(&ctx, |c| {
         c.content("@here").embed(|e| {
             e.author(|au| {
                 au.icon_url(author.avatar_url().unwrap_or_else(|| "".to_owned()))
                     .name(&author.name)
             })
-            .title(format!("You have {} to vote!", _duration))
+            .title(format!("Please vote! Poll ends {}", until.format("<t:%s:R>")))
             .thumbnail("https://images-ext-2.discordapp.net/external/BK7injOyt4XT8yNfbCDV4mAkwoRy49YPfq-3IwCc_9M/http/cdn.i.ntere.st/p/9197498/image")
             .description(MessageBuilder::new().push_bold_line_safe(&question).push("\nThis question was asked by ").push(author.mention()))
             .fields(fields.into_iter())
@@ -99,16 +101,12 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     msg.delete(&ctx).await?;
 
     // React on all the choices
-    choices
-        .iter()
-        .map(|(emote, _)| {
-            panel
-                .react(&ctx, ReactionType::try_from(&emote[..]).unwrap())
-                .map_ok(|_| ())
-        })
-        .collect::<stream::FuturesUnordered<_>>()
-        .try_collect::<()>()
-        .await?;
+    for (emote, _) in &choices {
+        panel
+            .react(&ctx, ReactionType::try_from(&emote[..]).unwrap())
+            .map_ok(|_| ())
+            .await?;
+    }
 
     // A handler for votes.
     let user_reactions: Map<String, Set<UserId>> = choices
@@ -178,8 +176,9 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 let mut content = MessageBuilder::new();
                 content
                     .push("@here, ")
+                    .push(asked.format("<t:%s:R>, "))
                     .push(author.mention())
-                    .push(" previously asked ")
+                    .push(" asked ")
                     .push_bold_safe(&question)
                     .push(", and here are the results!");
                 result.into_iter().for_each(|(emote, votes)| {
