@@ -34,7 +34,11 @@
 
       # `nix develop`
       devShell = pkgs.mkShell {
-        nativeBuildInputs = with pkgs; [ rustc cargo ];
+        nativeBuildInputs = (with pkgs; [ rustc cargo ]) ++
+          nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "darwin" system) (with pkgs; [
+            libiconv
+            darwin.apple_sdk.frameworks.Security
+          ]);
       };
 
       # module
