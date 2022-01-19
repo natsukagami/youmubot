@@ -39,7 +39,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             ("🤢".to_owned(), "No! 🤢".to_owned()),
         ]
     } else {
-        let choices: Vec<_> = args.iter().map(|v| v.unwrap()).collect();
+        let choices: Vec<_> = args.iter().quoted().trimmed().map(|v| v.unwrap()).collect();
         if choices.len() < 2 {
             // Where are the choices?
             msg.reply(
