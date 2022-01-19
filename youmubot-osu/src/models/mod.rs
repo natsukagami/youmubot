@@ -109,16 +109,16 @@ impl Difficulty {
         if mods.contains(Mods::EZ) {
             diff.apply_everything_by_ratio(0.5);
         }
-        if mods.contains(Mods::HT) {
-            diff.apply_ar_by_time_ratio(4.0 / 3.0);
-            diff.apply_od_by_time_ratio(4.0 / 3.0);
-            diff.apply_length_by_ratio(4, 3);
-        }
         if mods.contains(Mods::HR) {
             let old_cs = diff.cs;
             diff.apply_everything_by_ratio(1.4);
             // CS is changed by 1.3 tho
             diff.cs = old_cs * 1.3;
+        }
+        if mods.contains(Mods::HT) {
+            diff.apply_ar_by_time_ratio(4.0 / 3.0);
+            diff.apply_od_by_time_ratio(4.0 / 3.0);
+            diff.apply_length_by_ratio(4, 3);
         }
         if mods.contains(Mods::DT) {
             diff.apply_ar_by_time_ratio(2.0 / 3.0);
