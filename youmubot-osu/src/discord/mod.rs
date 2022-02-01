@@ -221,13 +221,14 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[description = "Save the given username as someone's username."]
 #[owners_only]
 #[usage = "[ping user]/[username or user_id]"]
+#[delimiters(" ")]
 #[num_args(2)]
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let osu = data.get::<OsuClient>().unwrap();
     let target = args.single::<serenity::model::id::UserId>()?;
 
-    let user = args.single::<String>()?;
+    let user = args.quoted().trimmed().single::<String>()?;
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
     match user {
         Some(u) => {
@@ -318,13 +319,19 @@ impl FromStr for Nth {
 #[description = "Gets an user's recent play"]
 #[usage = "#[the nth recent play = --all] / [style (table or grid) = --table] / [mode (std, taiko, mania, catch) = std] / [username / user id = your saved id]"]
 #[example = "#1 / taiko / natsukagami"]
+#[delimiters("/", " ")]
 #[max_args(4)]
 pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let nth = args.single::<Nth>().unwrap_or(Nth::All);
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
+    let user = to_user_id_query(
+        args.quoted().trimmed().single::<UsernameArg>().ok(),
+        &*data,
+        msg,
+    )
+    .await?;
 
     let osu = data.get::<OsuClient>().unwrap();
     let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
@@ -385,6 +392,7 @@ impl FromStr for OptBeatmapset {
 #[command]
 #[description = "Show information from the last queried beatmap."]
 #[usage = "[--set/-s/--beatmapset] / [mods = no mod]"]
+#[delimiters(" ")]
 #[max_args(2)]
 pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
