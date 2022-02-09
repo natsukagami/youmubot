@@ -30,7 +30,8 @@ impl Into<f64> for Accuracy {
         match self {
             Accuracy::ByValue(v, _) => v,
             Accuracy::ByCount(n300, n100, n50, nmiss) => {
-                ((6 * n300 + 2 * n100 + n50) as f64) / ((6 * (n300 + n100 + n50 + nmiss)) as f64)
+                100.0 * ((6 * n300 + 2 * n100 + n50) as f64)
+                    / ((6 * (n300 + n100 + n50 + nmiss)) as f64)
             }
         }
     }
