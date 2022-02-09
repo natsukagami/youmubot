@@ -1,77 +1,106 @@
-use std::{ffi::CString, sync::Arc};
+use crate::mods::Mods;
+use rosu_pp::{Beatmap, BeatmapExt};
+use std::sync::Arc;
 use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
-
-pub use oppai_rs::Accuracy as OppaiAccuracy;
 
 /// the information collected from a download/Oppai request.
 #[derive(Debug)]
 pub struct BeatmapContent {
     id: u64,
-    content: Arc<CString>,
+    content: Arc<Beatmap>,
 }
 
 /// the output of "one" oppai run.
 #[derive(Clone, Copy, Debug)]
 pub struct BeatmapInfo {
-    pub objects: u32,
-    pub stars: f32,
+    pub objects: usize,
+    pub stars: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Accuracy {
+    ByCount(u64, u64, u64, u64), // 300 / 100 / 50 / misses
+    #[allow(dead_code)]
+    ByValue(f64, u64),
+}
+
+impl Into<f64> for Accuracy {
+    fn into(self) -> f64 {
+        match self {
+            Accuracy::ByValue(v, _) => v,
+            Accuracy::ByCount(n300, n100, n50, nmiss) => {
+                ((6 * n300 + 2 * n100 + n50) as f64) / ((6 * (n300 + n100 + n50 + nmiss)) as f64)
+            }
+        }
+    }
+}
+
+impl Accuracy {
+    pub fn misses(&self) -> usize {
+        (match self {
+            Accuracy::ByCount(_, _, _, nmiss) => *nmiss,
+            Accuracy::ByValue(_, nmiss) => *nmiss,
+        }) as usize
+    }
 }
 
 /// Beatmap Info with attached 95/98/99/100% FC pp.
-pub type BeatmapInfoWithPP = (BeatmapInfo, [f32; 4]);
+pub type BeatmapInfoWithPP = (BeatmapInfo, [f64; 4]);
 
 impl BeatmapContent {
     /// Get pp given the combo and accuracy.
-    pub fn get_pp_from(
-        &self,
-        combo: oppai_rs::Combo,
-        accuracy: impl Into<OppaiAccuracy>,
-        mode: Option<oppai_rs::Mode>,
-        mods: impl Into<oppai_rs::Mods>,
-    ) -> Result<f32> {
-        let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
-        oppai.combo(combo)?.accuracy(accuracy)?.mods(mods.into());
-        if let Some(mode) = mode {
-            oppai.mode(mode)?;
+    pub fn get_pp_from(&self, combo: Option<usize>, accuracy: Accuracy, mods: Mods) -> Result<f64> {
+        let bm = self.content.as_ref();
+        let mut rosu = rosu_pp::OsuPP::new(bm).mods(mods.bits() as u32);
+        if let Some(combo) = combo {
+            rosu = rosu.combo(combo);
         }
-        Ok(oppai.pp())
+        if let Accuracy::ByCount(n300, n100, n50, _) = accuracy {
+            rosu = rosu
+                .n300(n300 as usize)
+                .n100(n100 as usize)
+                .n50(n50 as usize);
+        }
+        Ok(rosu
+            .misses(accuracy.misses())
+            .accuracy(accuracy.into())
+            .calculate()
+            .pp)
     }
 
     /// Get info given mods.
-    pub fn get_info_with(
-        &self,
-        mode: Option<oppai_rs::Mode>,
-        mods: impl Into<oppai_rs::Mods>,
-    ) -> Result<BeatmapInfo> {
-        let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
-        if let Some(mode) = mode {
-            oppai.mode(mode)?;
-        }
-        oppai.mods(mods.into());
-        let objects = oppai.num_objects();
-        let stars = oppai.stars();
-        Ok(BeatmapInfo { objects, stars })
+    pub fn get_info_with(&self, mods: Mods) -> Result<BeatmapInfo> {
+        let stars = self.content.stars(mods.bits() as u32, None);
+        Ok(BeatmapInfo {
+            objects: stars.max_combo().unwrap_or(0),
+            stars: stars.stars(),
+        })
     }
 
-    pub fn get_possible_pp_with(
-        &self,
-        mode: Option<oppai_rs::Mode>,
-        mods: impl Into<oppai_rs::Mods>,
-    ) -> Result<BeatmapInfoWithPP> {
-        let mut oppai = oppai_rs::Oppai::new_from_content(&self.content[..])?;
-        if let Some(mode) = mode {
-            oppai.mode(mode)?;
-        }
-        oppai.mods(mods.into()).combo(oppai_rs::Combo::PERFECT)?;
+    pub fn get_possible_pp_with(&self, mods: Mods) -> Result<BeatmapInfoWithPP> {
+        let rosu = || self.content.pp().mods(mods.bits() as u32);
+        let pp95 = rosu().accuracy(95.0).calculate();
         let pp = [
-            oppai.accuracy(95.0)?.pp(),
-            oppai.accuracy(98.0)?.pp(),
-            oppai.accuracy(99.0)?.pp(),
-            oppai.accuracy(100.0)?.pp(),
+            pp95.pp(),
+            rosu()
+                .attributes(pp95.clone())
+                .accuracy(98.0)
+                .calculate()
+                .pp(),
+            rosu()
+                .attributes(pp95.clone())
+                .accuracy(99.0)
+                .calculate()
+                .pp(),
+            rosu()
+                .attributes(pp95.clone())
+                .accuracy(100.0)
+                .calculate()
+                .pp(),
         ];
-        let objects = oppai.num_objects();
-        let stars = oppai.stars();
+        let objects = pp95.difficulty_attributes().max_combo().unwrap_or(0);
+        let stars = pp95.difficulty_attributes().stars();
         Ok((BeatmapInfo { objects, stars }, pp))
     }
 }
@@ -99,40 +128,37 @@ impl BeatmapCache {
             .await?
             .bytes()
             .await?;
-        Ok(BeatmapContent {
+        let bm = BeatmapContent {
             id,
-            content: Arc::new(CString::new(content.into_iter().collect::<Vec<_>>())?),
-        })
+            content: Arc::new(Beatmap::parse(content.as_ref())?),
+        };
+
+        let mut bc = models::CachedBeatmapContent {
+            beatmap_id: id as i64,
+            cached_at: chrono::Utc::now(),
+            content: content.as_ref().to_owned(),
+        };
+        bc.store(&self.pool).await?;
+        Ok(bm)
     }
 
     async fn get_beatmap_db(&self, id: u64) -> Result<Option<BeatmapContent>> {
         Ok(models::CachedBeatmapContent::by_id(id as i64, &self.pool)
             .await?
-            .map(|v| BeatmapContent {
-                id,
-                content: Arc::new(CString::new(v.content).unwrap()),
-            }))
-    }
-
-    async fn save_beatmap(&self, b: &BeatmapContent) -> Result<()> {
-        let mut bc = models::CachedBeatmapContent {
-            beatmap_id: b.id as i64,
-            cached_at: chrono::Utc::now(),
-            content: b.content.as_ref().clone().into_bytes(),
-        };
-        bc.store(&self.pool).await?;
-        Ok(())
+            .map(|v| {
+                Ok(BeatmapContent {
+                    id,
+                    content: Arc::new(Beatmap::parse(&v.content[..])?),
+                }) as Result<_>
+            })
+            .transpose()?)
     }
 
     /// Get a beatmap from the cache.
     pub async fn get_beatmap(&self, id: u64) -> Result<BeatmapContent> {
         match self.get_beatmap_db(id).await? {
             Some(v) => Ok(v),
-            None => {
-                let m = self.download_beatmap(id).await?;
-                self.save_beatmap(&m).await?;
-                Ok(m)
-            }
+            None => self.download_beatmap(id).await,
         }
     }
 }

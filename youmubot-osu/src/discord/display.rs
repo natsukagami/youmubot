@@ -122,6 +122,7 @@ mod scores {
     }
 
     pub mod table {
+        use crate::discord::oppai_cache::Accuracy;
         use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
         use crate::models::{Mode, Score};
         use serenity::{framework::standard::CommandResult, model::channel::Message};
@@ -183,8 +184,8 @@ mod scores {
                         let beatmap = osu.get_beatmap(play.beatmap_id, mode).await?;
                         let info = {
                             let b = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
-                            mode.to_oppai_mode()
-                                .and_then(|mode| b.get_info_with(Some(mode), play.mods).ok())
+                            (if mode == Mode::Std { Some(mode) } else { None })
+                                .and_then(|_| b.get_info_with(play.mods).ok())
                         };
                         Ok((beatmap, info)) as Result<(Beatmap, Option<BeatmapInfo>)>
                     })
@@ -198,25 +199,23 @@ mod scores {
                             Some(v) => Ok(v),
                             None => {
                                 let b = beatmap_cache.get_beatmap(p.beatmap_id).await?;
-                                let r: Result<_> = Ok(mode
-                                    .to_oppai_mode()
-                                    .and_then(|op| {
-                                        b.get_pp_from(
-                                            oppai_rs::Combo::NonFC {
-                                                max_combo: p.max_combo as u32,
-                                                misses: p.count_miss as u32,
-                                            },
-                                            oppai_rs::Accuracy::from_hits(
-                                                p.count_100 as u32,
-                                                p.count_50 as u32,
-                                            ),
-                                            Some(op),
-                                            p.mods,
-                                        )
-                                        .ok()
-                                        .map(|pp| format!("{:.2}pp [?]", pp))
-                                    })
-                                    .unwrap_or_else(|| "-".to_owned()));
+                                let r: Result<_> =
+                                    Ok((if mode == Mode::Std { Some(mode) } else { None })
+                                        .and_then(|_| {
+                                            b.get_pp_from(
+                                                Some(p.max_combo as usize),
+                                                Accuracy::ByCount(
+                                                    p.count_300,
+                                                    p.count_100,
+                                                    p.count_50,
+                                                    p.count_miss,
+                                                ),
+                                                p.mods,
+                                            )
+                                            .ok()
+                                            .map(|pp| format!("{:.2}pp [?]", pp))
+                                        })
+                                        .unwrap_or_else(|| "-".to_owned()));
                                 r
                             }
                         }
@@ -325,7 +324,7 @@ mod scores {
                     page + 1,
                     self.total_pages()
                 ));
-                if self.mode.to_oppai_mode().is_none() {
+                if self.mode != Mode::Std {
                     m.push_line("Note: star difficulty doesn't reflect mods applied.");
                 } else {
                     m.push_line("[?] means pp was predicted by oppai-rs.");
@@ -400,12 +399,12 @@ mod beatmapset {
         async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Option<BeatmapInfoWithPP> {
             let data = ctx.data.read().await;
             let cache = data.get::<BeatmapCache>().unwrap();
-            let mode = self.mode.unwrap_or(b.mode).to_oppai_mode();
             cache
                 .get_beatmap(b.beatmap_id)
                 .map(move |v| {
                     v.ok()
-                        .and_then(move |v| v.get_possible_pp_with(Some(mode?), self.mods).ok())
+                        .filter(|_| b.mode == Mode::Std)
+                        .and_then(move |v| v.get_possible_pp_with(self.mods).ok())
                 })
                 .await
         }

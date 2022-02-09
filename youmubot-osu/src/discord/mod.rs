@@ -421,7 +421,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .unwrap()
                 .get_beatmap(b.beatmap_id)
                 .await?
-                .get_possible_pp_with(m.to_oppai_mode(), mods)
+                .get_possible_pp_with(mods)
                 .ok();
             msg.channel_id
                 .send_message(&ctx, |f| {
@@ -589,14 +589,14 @@ async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> C
             {
                 Some(m) => {
                     let beatmap = cache.get_beatmap(m.beatmap_id, mode).await?;
-                    let info = match mode.to_oppai_mode() {
-                        Some(mode) => Some(
+                    let info = match mode {
+                        Mode::Std => Some(
                             oppai
                                 .get_beatmap(m.beatmap_id)
                                 .await?
-                                .get_info_with(Some(mode), m.mods)?,
+                                .get_info_with(m.mods)?,
                         ),
-                        None => None,
+                        _ => None,
                     };
                     Some((m, BeatmapWithMode(beatmap, mode), info))
                 }

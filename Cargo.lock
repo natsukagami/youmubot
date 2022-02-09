@@ -1030,17 +1030,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oppai-rs"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e060483dec5ed6590103a045f0a0fe09c06e185d582ec66efaa87e24cc1e877e"
-dependencies = [
- "bitflags",
- "cc",
- "libc",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1348,6 +1337,12 @@ dependencies = [
  "web-sys",
  "winapi",
 ]
+
+[[package]]
+name = "rosu-pp"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4efb6f419a910e96683aada6e12c14f4a4b1da286f1a205a1edc3eca3b8fa69e"
 
 [[package]]
 name = "rustbreak"
@@ -2308,9 +2303,9 @@ dependencies = [
  "chrono",
  "dashmap",
  "lazy_static",
- "oppai-rs",
  "regex",
  "reqwest",
+ "rosu-pp",
  "serde",
  "serde_json",
  "serenity",

@@ -136,9 +136,3 @@ impl fmt::Display for Mods {
         Ok(())
     }
 }
-
-impl From<Mods> for oppai_rs::Mods {
-    fn from(m: Mods) -> Self {
-        oppai_rs::Mods::from_bits_truncate(m.bits() as i32)
-    }
-}

@@ -6,7 +6,7 @@ use super::{
 use crate::{
     discord::{
         display::ScoreListStyle,
-        oppai_cache::{BeatmapCache, OppaiAccuracy},
+        oppai_cache::{Accuracy, BeatmapCache},
         BeatmapWithMode,
     },
     models::{Mode, Mods, Score},
@@ -275,18 +275,9 @@ async fn show_leaderboard(
     let mode = bm.1;
     let oppai = data.get::<BeatmapCache>().unwrap();
     let oppai_map = oppai.get_beatmap(bm.0.beatmap_id).await?;
-    let get_oppai_pp = move |combo: u64, misses: u64, acc: OppaiAccuracy, mods: Mods| {
-        mode.to_oppai_mode().and_then(|mode| {
-            oppai_map
-                .get_pp_from(
-                    oppai_rs::Combo::non_fc(combo as u32, misses as u32),
-                    acc,
-                    Some(mode),
-                    mods,
-                )
-                .ok()
-                .map(|v| v as f64)
-        })
+    let get_oppai_pp = move |combo: u64, acc: Accuracy, mods: Mods| {
+        (if mode == Mode::Std { Some(mode) } else { None })
+            .and_then(|_| oppai_map.get_pp_from(Some(combo as usize), acc, mods).ok())
     };
 
     let guild = m.guild_id.expect("Guild-only command");
@@ -321,10 +312,11 @@ async fn show_leaderboard(
                         .or_else(|| {
                             get_oppai_pp(
                                 score.max_combo,
-                                score.count_miss,
-                                OppaiAccuracy::from_hits(
-                                    score.count_100 as u32,
-                                    score.count_50 as u32,
+                                Accuracy::ByCount(
+                                    score.count_300,
+                                    score.count_100,
+                                    score.count_50,
+                                    score.count_miss,
                                 ),
                                 score.mods,
                             )

@@ -122,13 +122,13 @@ fn handle_old_links<'a>(
                         .map(|v| Mods::from_str(v.as_str()).pls_ok())
                         .flatten()
                         .unwrap_or(Mods::NOMOD);
-                    let info = match mode.unwrap_or(b.mode).to_oppai_mode() {
-                        Some(mode) => cache
+                    let info = match mode.unwrap_or(b.mode) {
+                        Mode::Std => cache
                             .get_beatmap(b.beatmap_id)
                             .await
-                            .and_then(|b| b.get_possible_pp_with(Some(mode), mods))
+                            .and_then(|b| b.get_possible_pp_with(mods))
                             .pls_ok(),
-                        None => None,
+                        _ => None,
                     };
                     Some(ToPrint {
                         embed: EmbedType::Beatmap(b, info, mods),
@@ -192,13 +192,13 @@ fn handle_new_links<'a>(
                         .name("mods")
                         .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                         .unwrap_or(Mods::NOMOD);
-                    let info = match mode.unwrap_or(beatmap.mode).to_oppai_mode() {
-                        Some(mode) => cache
+                    let info = match mode.unwrap_or(beatmap.mode) {
+                        Mode::Std => cache
                             .get_beatmap(beatmap.beatmap_id)
                             .await
-                            .and_then(|b| b.get_possible_pp_with(Some(mode), mods))
+                            .and_then(|b| b.get_possible_pp_with(mods))
                             .pls_ok(),
-                        None => None,
+                        _ => None,
                     };
                     Some(ToPrint {
                         embed: EmbedType::Beatmap(beatmap, info, mods),
@@ -258,13 +258,13 @@ fn handle_short_links<'a>(
                 .name("mods")
                 .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                 .unwrap_or(Mods::NOMOD);
-            let info = match mode.unwrap_or(beatmap.mode).to_oppai_mode() {
-                Some(mode) => cache
+            let info = match mode.unwrap_or(beatmap.mode) {
+                Mode::Std => cache
                     .get_beatmap(beatmap.beatmap_id)
                     .await
-                    .and_then(|b| b.get_possible_pp_with(Some(mode), mods))
+                    .and_then(|b| b.get_possible_pp_with(mods))
                     .pls_ok(),
-                None => None,
+                _ => None,
             };
             let r: Result<_> = Ok(ToPrint {
                 embed: EmbedType::Beatmap(beatmap, info, mods),

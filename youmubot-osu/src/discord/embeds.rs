@@ -1,6 +1,6 @@
 use super::BeatmapWithMode;
 use crate::{
-    discord::oppai_cache::{BeatmapContent, BeatmapInfo, BeatmapInfoWithPP, OppaiAccuracy},
+    discord::oppai_cache::{Accuracy, BeatmapContent, BeatmapInfo, BeatmapInfoWithPP},
     models::{Beatmap, Mode, Mods, Rank, Score, User},
 };
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
@@ -212,12 +212,14 @@ impl<'a> ScoreEmbedBuilder<'a> {
         let content = self.content;
         let u = self.u;
         let accuracy = s.accuracy(mode);
-        let info = mode
-            .to_oppai_mode()
-            .and_then(|mode| content.get_info_with(Some(mode), s.mods).ok());
+        let info = if mode == Mode::Std {
+            content.get_info_with(s.mods).ok()
+        } else {
+            None
+        };
         let stars = info
             .as_ref()
-            .map(|info| info.stars as f64)
+            .map(|info| info.stars)
             .unwrap_or(b.difficulty.stars);
         let score_line = match s.rank {
             Rank::SS | Rank::SSH => "SS".to_string(),
@@ -239,13 +241,12 @@ impl<'a> ScoreEmbedBuilder<'a> {
             ),
         };
         let pp = s.pp.map(|pp| (pp, format!("{:.2}pp", pp))).or_else(|| {
-            mode.to_oppai_mode()
-                .and_then(|op| {
+            (if mode == Mode::Std { Some(mode) } else { None })
+                .and_then(|_| {
                     content
                         .get_pp_from(
-                            oppai_rs::Combo::non_fc(s.max_combo as u32, s.count_miss as u32),
-                            OppaiAccuracy::from_hits(s.count_100 as u32, s.count_50 as u32),
-                            Some(op),
+                            Some(s.max_combo as usize),
+                            Accuracy::ByCount(s.count_300, s.count_100, s.count_50, s.count_miss),
                             s.mods,
                         )
                         .ok()
@@ -253,13 +254,17 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 .map(|pp| (pp as f64, format!("{:.2}pp [?]", pp)))
         });
         let pp = if !s.perfect {
-            mode.to_oppai_mode()
-                .and_then(|op| {
+            (if mode == Mode::Std { Some(mode) } else { None })
+                .and_then(|_| {
                     content
                         .get_pp_from(
-                            oppai_rs::Combo::FC(0),
-                            OppaiAccuracy::from_hits(s.count_100 as u32, s.count_50 as u32),
-                            Some(op),
+                            None,
+                            Accuracy::ByCount(
+                                s.count_300 + s.count_miss,
+                                s.count_100,
+                                s.count_50,
+                                0,
+                            ),
                             s.mods,
                         )
                         .ok()
@@ -354,7 +359,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
             )
             .field("Map stats", diff.format_info(mode, s.mods, b), false);
         let mut footer = self.footer.take().unwrap_or_else(String::new);
-        if mode.to_oppai_mode().is_none() && s.mods != Mods::NOMOD {
+        if mode != Mode::Std && s.mods != Mods::NOMOD {
             footer += " Star difficulty does not reflect game mods.";
         }
         if !footer.is_empty() {

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use regex::Regex;
+use rosu_pp::GameMode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -258,6 +259,17 @@ impl From<u8> for Mode {
     }
 }
 
+impl From<Mode> for GameMode {
+    fn from(n: Mode) -> Self {
+        match n {
+            Mode::Std => GameMode::STD,
+            Mode::Taiko => GameMode::TKO,
+            Mode::Catch => GameMode::CTB,
+            Mode::Mania => GameMode::MNA,
+        }
+    }
+}
+
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Mode::*;
@@ -275,15 +287,6 @@ impl fmt::Display for Mode {
 }
 
 impl Mode {
-    /// Convert to oppai mode.
-    pub fn to_oppai_mode(self) -> Option<oppai_rs::Mode> {
-        Some(match self {
-            Mode::Std => oppai_rs::Mode::Std,
-            Mode::Taiko => oppai_rs::Mode::Taiko,
-            _ => return None,
-        })
-    }
-
     /// Parse from the display output of the enum itself.
     pub fn parse_from_display(s: &str) -> Option<Self> {
         Some(match s {
