@@ -15,6 +15,7 @@ pub struct BeatmapContent {
 #[derive(Clone, Copy, Debug)]
 pub struct BeatmapInfo {
     pub objects: usize,
+    pub max_combo: usize,
     pub stars: f64,
 }
 
@@ -74,7 +75,8 @@ impl BeatmapContent {
     pub fn get_info_with(&self, mods: Mods) -> Result<BeatmapInfo> {
         let stars = self.content.stars(mods.bits() as u32, None);
         Ok(BeatmapInfo {
-            objects: stars.max_combo().unwrap_or(0),
+            max_combo: stars.max_combo().unwrap_or(0),
+            objects: self.content.hit_objects.len(),
             stars: stars.stars(),
         })
     }
@@ -100,9 +102,16 @@ impl BeatmapContent {
                 .calculate()
                 .pp(),
         ];
-        let objects = pp95.difficulty_attributes().max_combo().unwrap_or(0);
+        let max_combo = pp95.difficulty_attributes().max_combo().unwrap_or(0);
         let stars = pp95.difficulty_attributes().stars();
-        Ok((BeatmapInfo { objects, stars }, pp))
+        Ok((
+            BeatmapInfo {
+                objects: self.content.hit_objects.len(),
+                max_combo,
+                stars,
+            },
+            pp,
+        ))
     }
 }
 
