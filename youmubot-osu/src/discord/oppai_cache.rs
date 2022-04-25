@@ -128,20 +128,31 @@ impl BeatmapCache {
         BeatmapCache { client, pool }
     }
 
-    async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
+    /// Downloads the beatmap from an URL and returns it.
+    /// Does not deal with any caching.
+    pub async fn download_beatmap_from_url(
+        &self,
+        url: impl reqwest::IntoUrl,
+    ) -> Result<BeatmapContent> {
         let content = self
             .client
             .borrow()
             .await?
-            .get(&format!("https://osu.ppy.sh/osu/{}", id))
+            .get(url)
             .send()
             .await?
             .bytes()
             .await?;
-        let bm = BeatmapContent {
+        Ok(BeatmapContent {
             id,
             content: Arc::new(Beatmap::parse(content.as_ref())?),
-        };
+        })
+    }
+
+    async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
+        let bm = self
+            .download_beatmap_from_url(&format!("https://osu.ppy.sh/osu/{}", id))
+            .await?;
 
         let mut bc = models::CachedBeatmapContent {
             beatmap_id: id as i64,
