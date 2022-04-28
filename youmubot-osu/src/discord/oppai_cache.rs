@@ -1,4 +1,5 @@
 use crate::mods::Mods;
+use osuparse::MetadataSection;
 use rosu_pp::{Beatmap, BeatmapExt};
 use std::sync::Arc;
 use youmubot_db_sql::{models::osu as models, Pool};
@@ -7,7 +8,8 @@ use youmubot_prelude::*;
 /// the information collected from a download/Oppai request.
 #[derive(Debug)]
 pub struct BeatmapContent {
-    id: u64,
+    id: Option<u64>,
+    metadata: Option<MetadataSection>,
     content: Arc<Beatmap>,
 }
 
@@ -71,6 +73,10 @@ impl BeatmapContent {
             .pp)
     }
 
+    pub fn get_metadata(&self) -> &MetadataSection {
+        &self.metadata
+    }
+
     /// Get info given mods.
     pub fn get_info_with(&self, mods: Mods) -> Result<BeatmapInfo> {
         let stars = self.content.stars(mods.bits() as u32, None);
@@ -128,12 +134,25 @@ impl BeatmapCache {
         BeatmapCache { client, pool }
     }
 
+    fn parse_beatmap(content: impl AsRef<str>, id: Option<u64>) -> Result<BeatmapContent> {
+        let content = content.as_ref();
+        let metadata = osuparse::parse_beatmap(content)
+            .map_err(|e| Error::msg(format!("Cannot parse metadata: {:?}", e)))?
+            .metadata;
+        Ok(BeatmapContent {
+            id,
+            metadata,
+            content: Arc::new(Beatmap::parse(content.as_bytes())?),
+        })
+    }
+
     /// Downloads the beatmap from an URL and returns it.
     /// Does not deal with any caching.
     pub async fn download_beatmap_from_url(
         &self,
         url: impl reqwest::IntoUrl,
-    ) -> Result<BeatmapContent> {
+        id: Option<u64>,
+    ) -> Result<(BeatmapContent, String)> {
         let content = self
             .client
             .borrow()
@@ -141,23 +160,21 @@ impl BeatmapCache {
             .get(url)
             .send()
             .await?
-            .bytes()
+            .text()
             .await?;
-        Ok(BeatmapContent {
-            id,
-            content: Arc::new(Beatmap::parse(content.as_ref())?),
-        })
+        let bm = Self::parse_beatmap(&content, id)?;
+        Ok((bm, content))
     }
 
     async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
-        let bm = self
-            .download_beatmap_from_url(&format!("https://osu.ppy.sh/osu/{}", id))
+        let (bm, content) = self
+            .download_beatmap_from_url(&format!("https://osu.ppy.sh/osu/{}", id), Some(id))
             .await?;
 
         let mut bc = models::CachedBeatmapContent {
             beatmap_id: id as i64,
             cached_at: chrono::Utc::now(),
-            content: content.as_ref().to_owned(),
+            content: content.into_bytes(),
         };
         bc.store(&self.pool).await?;
         Ok(bm)
@@ -166,12 +183,7 @@ impl BeatmapCache {
     async fn get_beatmap_db(&self, id: u64) -> Result<Option<BeatmapContent>> {
         Ok(models::CachedBeatmapContent::by_id(id as i64, &self.pool)
             .await?
-            .map(|v| {
-                Ok(BeatmapContent {
-                    id,
-                    content: Arc::new(Beatmap::parse(&v.content[..])?),
-                }) as Result<_>
-            })
+            .map(|v| Self::parse_beatmap(String::from_utf8(v.content)?, Some(id)))
             .transpose()?)
     }
 
