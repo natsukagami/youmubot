@@ -7,16 +7,17 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = "0.10"
-chrono = "0.4"
-reqwest = "0.11"
-serde = { version = "1.0", features = ["derive"] }
-bitflags = "1"
-lazy_static = "1"
-regex = "1"
-rosu-pp = "0.4"
-dashmap = "4"
 bincode = "1"
+bitflags = "1"
+chrono = "0.4"
+dashmap = "4"
+lazy_static = "1"
+osuparse = { git = "https://github.com/eltrufas/osuparse", rev = "ad8f6e5e7771e7cbaa2ec96c376558f9731139af" }
+regex = "1"
+reqwest = "0.11"
+rosu-pp = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serenity = "0.10"
 
 youmubot-db = { path = "../youmubot-db" }
 youmubot-db-sql = { path = "../youmubot-db-sql" }
