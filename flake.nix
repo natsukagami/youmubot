@@ -34,16 +34,21 @@
       defaultApp = apps.youmubot;
 
       # `nix develop`
-      devShell = pkgs.mkShell {
-        nativeBuildInputs =
-          (with pkgs; [ rustc cargo rust-analyzer rustfmt ]) ++
-          nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "darwin" system) (with pkgs; [
-            libiconv
-            darwin.apple_sdk.frameworks.Security
-          ]);
-      };
-
+      devShell = pkgs.mkShell
+        {
+          nativeBuildInputs =
+            (with pkgs; [ rustc cargo rust-analyzer rustfmt ])
+            ++ nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "darwin" system) (with pkgs; [
+              libiconv
+              darwin.apple_sdk.frameworks.Security
+            ])
+            ++ nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "linux" system) (with pkgs; [
+              pkg-config
+              openssl
+            ]);
+        };
       # module
       nixosModule = import ./module.nix defaultPackage;
     });
 }
+

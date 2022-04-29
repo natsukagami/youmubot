@@ -5,7 +5,7 @@ use crate::{
 };
 use lazy_static::lazy_static;
 use regex::Regex;
-use serenity::{model::channel::Message, utils::MessageBuilder};
+use serenity::{builder::CreateEmbed, model::channel::Message, utils::MessageBuilder};
 use std::str::FromStr;
 use youmubot_prelude::*;
 
@@ -21,6 +21,101 @@ lazy_static! {
     static ref SHORT_LINK_REGEX: Regex = Regex::new(
         r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>[A-Z]+))?)"
     ).unwrap();
+}
+
+pub fn dot_osu_hook<'a>(
+    ctx: &'a Context,
+    msg: &'a Message,
+) -> std::pin::Pin<Box<dyn future::Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        if msg.author.bot {
+            return Ok(());
+        }
+
+        // Take all the .osu attachments
+        let mut osu_embeds = msg
+            .attachments
+            .iter()
+            .filter(
+                |a| a.filename.ends_with(".osu") && a.size < 1024 * 1024, /* 1mb */
+            )
+            .map(|attachment| {
+                let url = attachment.url.clone();
+
+                async move {
+                    let data = ctx.data.read().await;
+                    let oppai = data.get::<BeatmapCache>().unwrap();
+                    let (beatmap, _) = oppai.download_beatmap_from_url(&url, None).await.ok()?;
+                    let embed_fn = crate::discord::embeds::beatmap_offline_embed(
+                        &beatmap,
+                        Mode::from(beatmap.content.mode as u8), /*For now*/
+                        msg.content.trim().parse().unwrap_or(Mods::NOMOD),
+                    )
+                    .ok()?;
+
+                    let mut create_embed = CreateEmbed::default();
+                    embed_fn(&mut create_embed);
+
+                    Some(create_embed)
+                }
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .filter_map(|v| future::ready(v))
+            .collect::<Vec<_>>()
+            .await;
+
+        let osz_embeds = msg
+            .attachments
+            .iter()
+            .filter(
+                |a| a.filename.ends_with(".osz") && a.size < 20 * 1024 * 1024, /* 20mb */
+            )
+            .map(|attachment| {
+                let url = attachment.url.clone();
+                async move {
+                    let data = ctx.data.read().await;
+                    let oppai = data.get::<BeatmapCache>().unwrap();
+                    let beatmaps = oppai.download_osz_from_url(&url).await.pls_ok()?;
+                    Some(
+                        beatmaps
+                            .into_iter()
+                            .filter_map(|beatmap| {
+                                let embed_fn = crate::discord::embeds::beatmap_offline_embed(
+                                    &beatmap,
+                                    Mode::from(beatmap.content.mode as u8), /*For now*/
+                                    msg.content.trim().parse().unwrap_or(Mods::NOMOD),
+                                )
+                                .pls_ok()?;
+
+                                let mut create_embed = CreateEmbed::default();
+                                embed_fn(&mut create_embed);
+                                Some(create_embed)
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                }
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .filter_map(|v| future::ready(v))
+            .filter(|v| future::ready(v.len() > 0))
+            .collect::<Vec<_>>()
+            .await
+            .concat();
+        osu_embeds.extend(osz_embeds);
+
+        if osu_embeds.len() > 0 {
+            msg.channel_id
+                .send_message(ctx, |f| {
+                    f.reference_message(msg)
+                        .content(format!("{} attached beatmaps found", osu_embeds.len()))
+                        .add_embeds(osu_embeds)
+                })
+                .await
+                .ok();
+        }
+
+        Ok(())
+    })
 }
 
 pub fn hook<'a>(

@@ -1,9 +1,10 @@
 use super::BeatmapWithMode;
 use crate::{
     discord::oppai_cache::{Accuracy, BeatmapContent, BeatmapInfo, BeatmapInfoWithPP},
-    models::{Beatmap, Mode, Mods, Rank, Score, User},
+    models::{Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
 };
 use serenity::{builder::CreateEmbed, utils::MessageBuilder};
+use std::time::Duration;
 use youmubot_prelude::*;
 
 /// Writes a number grouped in groups of 3.
@@ -55,42 +56,54 @@ fn beatmap_description(b: &Beatmap) -> String {
         .build()
 }
 
-pub fn beatmap_embed<'a>(
-    b: &'_ Beatmap,
+pub fn beatmap_offline_embed(
+    b: &'_ crate::discord::oppai_cache::BeatmapContent,
     m: Mode,
     mods: Mods,
-    info: Option<BeatmapInfoWithPP>,
-    c: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
-    let mod_str = if mods == Mods::NOMOD {
-        "".to_owned()
+) -> Result<Box<dyn FnOnce(&mut CreateEmbed) -> &mut CreateEmbed + Send + Sync>> {
+    let bm = b.content.clone();
+    let metadata = b.metadata.clone();
+    let (info, pp) = b.get_possible_pp_with(mods)?;
+
+    let total_length = if bm.hit_objects.len() >= 1 {
+        Duration::from_millis(
+            (bm.hit_objects.last().unwrap().end_time() - bm.hit_objects.first().unwrap().start_time)
+                as u64,
+        )
     } else {
-        format!(" {}", mods)
+        Duration::from_secs(0)
     };
-    let diff = b
-        .difficulty
-        .apply_mods(mods, info.map(|(v, _)| v.stars as f64));
-    c.title(
-        MessageBuilder::new()
-            .push_bold_safe(&b.artist)
-            .push(" - ")
-            .push_bold_safe(&b.title)
-            .push(" [")
-            .push_bold_safe(&b.difficulty_name)
-            .push("]")
-            .push(&mod_str)
-            .build(),
-    )
-    .author(|a| {
-        a.name(&b.creator)
-            .url(format!("https://osu.ppy.sh/users/{}", b.creator_id))
-            .icon_url(format!("https://a.ppy.sh/{}", b.creator_id))
-    })
-    .url(b.link())
-    .image(b.cover_url())
-    .color(0xffb6c1)
-    .fields(info.map(|(_, pp)| {
-        (
+
+    let diff = Difficulty {
+        stars: info.stars,
+        aim: None,   // TODO: this is currently unused
+        speed: None, // TODO: this is currently unused
+        cs: bm.cs as f64,
+        od: bm.od as f64,
+        ar: bm.ar as f64,
+        hp: bm.hp as f64,
+        count_normal: bm.n_circles as u64,
+        count_slider: bm.n_sliders as u64,
+        count_spinner: bm.n_spinners as u64,
+        max_combo: Some(info.max_combo as u64),
+        bpm: bm.bpm(),
+        drain_length: total_length, // It's hard to calculate so maybe just skip...
+        total_length,
+    }
+    .apply_mods(mods, Some(info.stars));
+    Ok(Box::new(move |c: &mut CreateEmbed| {
+        c.title(beatmap_title(
+            &metadata.artist,
+            &metadata.title,
+            &metadata.version,
+            mods,
+        ))
+        .author(|a| {
+            a.name(&metadata.creator)
+                .url(format!("https://osu.ppy.sh/users/{}", metadata.creator))
+        })
+        .color(0xffb6c1)
+        .field(
             "Calculated pp",
             format!(
                 "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
@@ -98,15 +111,73 @@ pub fn beatmap_embed<'a>(
             ),
             false,
         )
+        .field("Information", diff.format_info(m, mods, None), false)
+        // .description(beatmap_description(b))
     }))
-    .field("Information", diff.format_info(m, mods, b), false)
-    .description(beatmap_description(b))
-    .footer(|f| {
-        if info.is_none() && mods != Mods::NOMOD {
-            f.text("Star difficulty not reflecting mods applied.");
-        }
-        f
-    })
+}
+
+// Some helper functions here
+
+/// Create a properly formatted beatmap title, in the `Artist - Title [Difficulty] +mods` format.
+fn beatmap_title(
+    artist: impl AsRef<str>,
+    title: impl AsRef<str>,
+    difficulty: impl AsRef<str>,
+    mods: Mods,
+) -> String {
+    let mod_str = if mods == Mods::NOMOD {
+        "".to_owned()
+    } else {
+        format!(" {}", mods)
+    };
+    MessageBuilder::new()
+        .push_bold_safe(artist.as_ref())
+        .push(" - ")
+        .push_bold_safe(title.as_ref())
+        .push(" [")
+        .push_bold_safe(difficulty.as_ref())
+        .push("]")
+        .push(&mod_str)
+        .build()
+}
+
+pub fn beatmap_embed<'a>(
+    b: &'_ Beatmap,
+    m: Mode,
+    mods: Mods,
+    info: Option<BeatmapInfoWithPP>,
+    c: &'a mut CreateEmbed,
+) -> &'a mut CreateEmbed {
+    let diff = b
+        .difficulty
+        .apply_mods(mods, info.map(|(v, _)| v.stars as f64));
+    c.title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
+        .author(|a| {
+            a.name(&b.creator)
+                .url(format!("https://osu.ppy.sh/users/{}", b.creator_id))
+                .icon_url(format!("https://a.ppy.sh/{}", b.creator_id))
+        })
+        .url(b.link())
+        .image(b.cover_url())
+        .color(0xffb6c1)
+        .fields(info.map(|(_, pp)| {
+            (
+                "Calculated pp",
+                format!(
+                    "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
+                    pp[0], pp[1], pp[2], pp[3]
+                ),
+                false,
+            )
+        }))
+        .field("Information", diff.format_info(m, mods, b), false)
+        .description(beatmap_description(b))
+        .footer(|f| {
+            if info.is_none() && mods != Mods::NOMOD {
+                f.text("Star difficulty not reflecting mods applied.");
+            }
+            f
+        })
 }
 
 const MAX_DIFFS: usize = 25 - 4;
