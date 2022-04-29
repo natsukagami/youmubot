@@ -82,6 +82,8 @@ async fn main() {
     // Set up hooks
     #[cfg(feature = "osu")]
     handler.push_hook(youmubot_osu::discord::hook);
+    #[cfg(feature = "osu")]
+    handler.push_hook(youmubot_osu::discord::dot_osu_hook);
     #[cfg(feature = "codeforces")]
     handler.push_hook(youmubot_cf::InfoHook);
 

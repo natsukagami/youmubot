@@ -31,7 +31,7 @@ mod server_rank;
 use db::OsuUser;
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
-pub use hook::hook;
+pub use hook::{dot_osu_hook, hook};
 use server_rank::{SERVER_RANK_COMMAND, UPDATE_LEADERBOARD_COMMAND};
 
 /// The osu! client.
