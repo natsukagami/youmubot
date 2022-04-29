@@ -130,34 +130,55 @@ impl Difficulty {
     }
 
     /// Format the difficulty info into a short summary.
-    pub fn format_info(&self, mode: Mode, mods: Mods, original_beatmap: &Beatmap) -> String {
-        let is_not_ranked = !matches!(original_beatmap.approval, ApprovalStatus::Ranked(_));
-        let three_lines = is_not_ranked;
+    pub fn format_info<'a>(
+        &self,
+        mode: Mode,
+        mods: Mods,
+        original_beatmap: impl Into<Option<&'a Beatmap>> + 'a,
+    ) -> String {
+        let original_beatmap = original_beatmap.into();
+        let is_not_ranked = !matches!(
+            original_beatmap.map(|v| v.approval),
+            Some(ApprovalStatus::Ranked(_))
+        );
+        let three_lines = original_beatmap.is_some() && is_not_ranked;
         let bpm = (self.bpm * 100.0).round() / 100.0;
         MessageBuilder::new()
-            .push(format!(
-                "[[Link]]({}) [[DL]]({}) [[Alt]]({}) (`{}`)",
-                original_beatmap.link(),
-                original_beatmap.download_link(false),
-                original_beatmap.download_link(true),
-                original_beatmap.short_link(Some(mode), Some(mods))
-            ))
+            .push(
+                original_beatmap
+                    .map(|original_beatmap| {
+                        format!(
+                            "[[Link]]({}) [[DL]]({}) [[Alt]]({}) (`{}`)",
+                            original_beatmap.link(),
+                            original_beatmap.download_link(false),
+                            original_beatmap.download_link(true),
+                            original_beatmap.short_link(Some(mode), Some(mods))
+                        )
+                    })
+                    .unwrap_or("**Uploaded**".to_owned()),
+            )
             .push(if three_lines { "\n" } else { ", " })
             .push_bold(format!("{:.2}⭐", self.stars))
             .push(", ")
             .push(
-                original_beatmap
-                    .difficulty
-                    .max_combo
+                self.max_combo
                     .map(|c| format!("max **{}x**, ", c))
                     .unwrap_or_else(|| "".to_owned()),
             )
             .push(if is_not_ranked {
-                format!("status **{}**, mode ", original_beatmap.approval)
+                format!(
+                    "status **{}**, mode ",
+                    original_beatmap
+                        .map(|v| v.approval)
+                        .unwrap_or(ApprovalStatus::WIP)
+                )
             } else {
                 "".to_owned()
             })
-            .push_bold_line(format_mode(mode, original_beatmap.mode))
+            .push_bold_line(format_mode(
+                mode,
+                original_beatmap.map(|v| v.mode).unwrap_or(mode),
+            ))
             .push("CS")
             .push_bold(format!("{:.1}", self.cs))
             .push(", AR")

@@ -9,8 +9,8 @@ use youmubot_prelude::*;
 #[derive(Debug)]
 pub struct BeatmapContent {
     id: Option<u64>,
-    metadata: Option<MetadataSection>,
-    content: Arc<Beatmap>,
+    pub metadata: MetadataSection,
+    pub content: Arc<Beatmap>,
 }
 
 /// the output of "one" oppai run.
@@ -73,10 +73,6 @@ impl BeatmapContent {
             .pp)
     }
 
-    pub fn get_metadata(&self) -> &MetadataSection {
-        &self.metadata
-    }
-
     /// Get info given mods.
     pub fn get_info_with(&self, mods: Mods) -> Result<BeatmapInfo> {
         let stars = self.content.stars(mods.bits() as u32, None);
@@ -134,7 +130,7 @@ impl BeatmapCache {
         BeatmapCache { client, pool }
     }
 
-    fn parse_beatmap(content: impl AsRef<str>, id: Option<u64>) -> Result<BeatmapContent> {
+    pub fn parse_beatmap(content: impl AsRef<str>, id: Option<u64>) -> Result<BeatmapContent> {
         let content = content.as_ref();
         let metadata = osuparse::parse_beatmap(content)
             .map_err(|e| Error::msg(format!("Cannot parse metadata: {:?}", e)))?
