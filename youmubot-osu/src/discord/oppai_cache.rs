@@ -1,6 +1,7 @@
 use crate::mods::Mods;
 use osuparse::MetadataSection;
 use rosu_pp::{Beatmap, BeatmapExt};
+use std::io::Read;
 use std::sync::Arc;
 use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
@@ -130,7 +131,7 @@ impl BeatmapCache {
         BeatmapCache { client, pool }
     }
 
-    pub fn parse_beatmap(content: impl AsRef<str>, id: Option<u64>) -> Result<BeatmapContent> {
+    fn parse_beatmap(content: impl AsRef<str>, id: Option<u64>) -> Result<BeatmapContent> {
         let content = content.as_ref();
         let metadata = osuparse::parse_beatmap(content)
             .map_err(|e| Error::msg(format!("Cannot parse metadata: {:?}", e)))?
@@ -140,6 +141,41 @@ impl BeatmapCache {
             metadata,
             content: Arc::new(Beatmap::parse(content.as_bytes())?),
         })
+    }
+
+    /// Downloads the given osz and try to parse every osu file in there (limited to <1mb files)
+    pub async fn download_osz_from_url(
+        &self,
+        url: impl reqwest::IntoUrl,
+    ) -> Result<Vec<BeatmapContent>> {
+        let osz = self
+            .client
+            .borrow()
+            .await?
+            .get(url)
+            .send()
+            .await?
+            .bytes()
+            .await?;
+
+        let mut osz = zip::read::ZipArchive::new(std::io::Cursor::new(osz.as_ref()))?;
+        let osu_files = osz.file_names().map(|v| v.to_owned()).collect::<Vec<_>>();
+        let osu_files = osu_files
+            .into_iter()
+            .filter(|n| n.ends_with(".osu"))
+            .filter_map(|v| {
+                let mut v = osz.by_name(&v[..]).ok()?;
+                if v.size() > 1024 * 1024
+                /*1mb*/
+                {
+                    return None;
+                };
+                let mut content = String::new();
+                v.read_to_string(&mut content).pls_ok()?;
+                Self::parse_beatmap(content, None).pls_ok()
+            })
+            .collect::<Vec<_>>();
+        Ok(osu_files)
     }
 
     /// Downloads the beatmap from an URL and returns it.

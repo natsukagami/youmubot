@@ -33,7 +33,7 @@ pub fn dot_osu_hook<'a>(
         }
 
         // Take all the .osu attachments
-        let embeds = msg
+        let mut osu_embeds = msg
             .attachments
             .iter()
             .filter(
@@ -64,12 +64,51 @@ pub fn dot_osu_hook<'a>(
             .collect::<Vec<_>>()
             .await;
 
-        if embeds.len() > 0 {
+        let osz_embeds = msg
+            .attachments
+            .iter()
+            .filter(
+                |a| a.filename.ends_with(".osz") && a.size < 20 * 1024 * 1024, /* 20mb */
+            )
+            .map(|attachment| {
+                let url = attachment.url.clone();
+                async move {
+                    let data = ctx.data.read().await;
+                    let oppai = data.get::<BeatmapCache>().unwrap();
+                    let beatmaps = oppai.download_osz_from_url(&url).await.pls_ok()?;
+                    Some(
+                        beatmaps
+                            .into_iter()
+                            .filter_map(|beatmap| {
+                                let embed_fn = crate::discord::embeds::beatmap_offline_embed(
+                                    &beatmap,
+                                    Mode::from(beatmap.content.mode as u8), /*For now*/
+                                    msg.content.trim().parse().unwrap_or(Mods::NOMOD),
+                                )
+                                .pls_ok()?;
+
+                                let mut create_embed = CreateEmbed::default();
+                                embed_fn(&mut create_embed);
+                                Some(create_embed)
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                }
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .filter_map(|v| future::ready(v))
+            .filter(|v| future::ready(v.len() > 0))
+            .collect::<Vec<_>>()
+            .await
+            .concat();
+        osu_embeds.extend(osz_embeds);
+
+        if osu_embeds.len() > 0 {
             msg.channel_id
                 .send_message(ctx, |f| {
                     f.reference_message(msg)
-                        .content(format!("{} attached beatmaps found", embeds.len()))
-                        .add_embeds(embeds)
+                        .content(format!("{} attached beatmaps found", osu_embeds.len()))
+                        .add_embeds(osu_embeds)
                 })
                 .await
                 .ok();
