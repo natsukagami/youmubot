@@ -1,8 +1,9 @@
 {
   description = "A discord bot for Dự Tuyển Tổng Hợp server";
   inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/21.11";
     naersk.url = "github:nix-community/naersk";
-    naersk.inputs.nixpkgs.url = "github:nixos/nixpkgs";
+    naersk.inputs.nixpkgs.follows = "nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
   };
   outputs = { self, nixpkgs, naersk, flake-utils }: flake-utils.lib.eachDefaultSystem (system:
