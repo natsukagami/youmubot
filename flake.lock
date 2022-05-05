@@ -51,11 +51,27 @@
         "type": "github"
       }
     },
+    "nixpkgs-unstable": {
+      "locked": {
+        "lastModified": 1651773324,
+        "narHash": "sha256-+tzXzgZQMCxacRmEDRjdbYulorD40BI+YK6aWBwgCcM=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "a1439bc96590dae913369f4515ca3df6ca1a1556",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
         "naersk": "naersk",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "nixpkgs-unstable": "nixpkgs-unstable"
       }
     }
   },

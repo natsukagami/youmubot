@@ -2,13 +2,15 @@
   description = "A discord bot for Dự Tuyển Tổng Hợp server";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/21.11";
+    nixpkgs-unstable.url = "github:nixos/nixpkgs";
     naersk.url = "github:nix-community/naersk";
     naersk.inputs.nixpkgs.follows = "nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
   };
-  outputs = { self, nixpkgs, naersk, flake-utils }: flake-utils.lib.eachDefaultSystem (system:
+  outputs = { self, nixpkgs, nixpkgs-unstable, naersk, flake-utils }: flake-utils.lib.eachDefaultSystem (system:
     let
       pkgs = nixpkgs.legacyPackages."${system}";
+      pkgs-unstable = nixpkgs-unstable.legacyPackages."${system}";
       naersk-lib = naersk.lib."${system}";
     in
     rec {
@@ -38,7 +40,8 @@
       devShell = pkgs.mkShell
         {
           nativeBuildInputs =
-            (with pkgs; [ rustc cargo rust-analyzer rustfmt ])
+            (with pkgs; [ rustc cargo ])
+            ++ (with pkgs-unstable; [ rust-analyzer rustfmt ])
             ++ nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "darwin" system) (with pkgs; [
               libiconv
               darwin.apple_sdk.frameworks.Security
