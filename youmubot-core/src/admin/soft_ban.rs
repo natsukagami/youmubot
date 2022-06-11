@@ -85,7 +85,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
 pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let role_id = args.single::<RoleId>()?;
     let data = ctx.data.read().await;
-    let guild = msg.guild(&ctx).await.unwrap();
+    let guild = msg.guild(&ctx).unwrap();
     // Check whether the role_id is the one we wanted
     if !guild.roles.contains_key(&role_id) {
         return Err(Error::msg(format!("{} is not a role in this server.", role_id)).into());

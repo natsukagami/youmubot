@@ -127,7 +127,7 @@ async fn paginate_with_first_message(
             .await?;
     }
     // Build a reaction collector
-    let mut reaction_collector = message.await_reactions(&ctx).removed(true).await;
+    let mut reaction_collector = message.await_reactions(&ctx).removed(true).build();
     let mut page = 0;
 
     // Loop the handler function.

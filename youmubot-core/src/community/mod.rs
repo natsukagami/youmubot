@@ -62,7 +62,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
     let online_only = !flags.contains("everyone");
 
     let users: Result<Vec<_>, Error> = {
-        let guild = m.guild(&ctx).await.unwrap();
+        let guild = m.guild(&ctx).unwrap();
         let presences = &guild.presences;
         let channel = m.channel_id.to_channel(&ctx).await?;
         if let Channel::Guild(channel) = channel {

@@ -36,7 +36,7 @@ async fn clean(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let channel = msg.channel_id.to_channel(&ctx).await?;
     match &channel {
         Channel::Private(_) => {
-            let self_id = ctx.http.get_current_application_info().await?.id;
+            let self_id = ctx.http.get_current_user().await?.id;
             messages
                 .into_iter()
                 .filter(|v| v.author.id == self_id)

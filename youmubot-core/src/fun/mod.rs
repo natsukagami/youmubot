@@ -172,7 +172,7 @@ async fn name(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     };
 
     // Rule out a couple of cases
-    if user_id == ctx.http.get_current_application_info().await?.id {
+    if user_id == ctx.http.get_current_user().await?.id {
         // This is my own user_id
         msg.reply(&ctx, "😠 My name is **Youmu Konpaku**!").await?;
         return Ok(());

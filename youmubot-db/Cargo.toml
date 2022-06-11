@@ -2,15 +2,15 @@
 name = "youmubot-db"
 version = "0.1.0"
 authors = ["Natsu Kagami <natsukagami@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = "0.10"
-dotenv = "0.15"
-serde = { version = "1.0", features = ["derive"] }
-chrono = "0.4.9"
+serenity = "0.11.2"
+dotenv = "0.15.0"
+serde = { version = "1.0.137", features = ["derive"] }
+chrono = "0.4.19"
 
 [dependencies.rustbreak]
 version = "2.0.0"

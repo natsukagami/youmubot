@@ -2,20 +2,20 @@
 name = "youmubot-cf"
 version = "0.1.0"
 authors = ["Natsu Kagami <natsukagami@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["time"] }
-reqwest = "0.11"
-serenity = "0.10"
-Inflector = "0.11"
-codeforces = "0.3"
-regex = "1"
-lazy_static = "1"
-chrono = { version = "0.4", features = ["serde"] }
-dashmap = "4"
+serde = { version = "1.0.137", features = ["derive"] }
+tokio = { version = "1.19.2", features = ["time"] }
+reqwest = "0.11.10"
+serenity = "0.11.2"
+Inflector = "0.11.4"
+codeforces = "0.3.1"
+regex = "1.5.6"
+lazy_static = "1.4.0"
+chrono = { version = "0.4.19", features = ["serde"] }
+dashmap = "5.3.4"
 
 youmubot-prelude = { path = "../youmubot-prelude" }
 youmubot-db = { path = "../youmubot-db" }

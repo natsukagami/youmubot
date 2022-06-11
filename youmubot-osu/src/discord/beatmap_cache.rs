@@ -73,7 +73,7 @@ impl BeatmapMetaCache {
 
     /// Get a beatmap without a mode...
     pub async fn get_beatmap_default(&self, id: u64) -> Result<Beatmap> {
-        for mode in std::array::IntoIter::new([Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]) {
+        for mode in [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania].into_iter() {
             if let Ok(Some(bm)) = self.get_beatmap_db(id, mode).await {
                 if bm.mode == mode {
                     return Ok(bm);

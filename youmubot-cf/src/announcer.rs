@@ -56,7 +56,7 @@ impl youmubot_prelude::Announcer for Announcer {
                             "Codeforces: Removing user {} - {}: failures count too high",
                             key, user.handle,
                         );
-                        db.remove(&key);
+                        // db.remove(&key);
                     } else {
                         db.insert(key, user);
                     }

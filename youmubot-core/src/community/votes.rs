@@ -85,7 +85,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let channel = msg.channel_id;
     let author = msg.author.clone();
     let asked = msg.timestamp;
-    let until = asked + (chrono::Duration::from_std(*duration).unwrap());
+    let until = *asked + (chrono::Duration::from_std(*duration).unwrap());
     let panel = channel.send_message(&ctx, |c| {
         c.content("@here").embed(|e| {
             e.author(|au| {
@@ -119,7 +119,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .await_reactions(&ctx)
         .removed(true)
         .timeout(*duration)
-        .await
+        .build()
         .fold(user_reactions, |mut set, reaction| async move {
             let (reaction, is_add) = match &*reaction {
                 ReactionAction::Added(r) => (r, true),

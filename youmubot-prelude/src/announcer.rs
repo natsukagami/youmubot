@@ -241,7 +241,7 @@ pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> C
         .await?;
         return Ok(());
     }
-    let guild = m.guild(&ctx).await.expect("Guild-only command");
+    let guild = m.guild(&ctx).expect("Guild-only command");
     let channel = m.channel_id.to_channel(&ctx).await?;
     AnnouncerChannels::open(&*data)
         .borrow_mut()?
@@ -284,7 +284,7 @@ pub async fn remove_announcer(ctx: &Context, m: &Message, mut args: Args) -> Com
         .await?;
         return Ok(());
     }
-    let guild = m.guild(&ctx).await.expect("Guild-only command");
+    let guild = m.guild(&ctx).expect("Guild-only command");
     AnnouncerChannels::open(&*data)
         .borrow_mut()?
         .entry(key.clone())

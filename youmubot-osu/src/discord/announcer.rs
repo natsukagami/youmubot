@@ -64,16 +64,14 @@ impl youmubot_prelude::Announcer for Announcer {
                     if channels.is_empty() {
                         return; // We don't wanna update an user without any active server
                     }
-                    match std::array::IntoIter::new([
-                        Mode::Std,
-                        Mode::Taiko,
-                        Mode::Catch,
-                        Mode::Mania,
-                    ])
-                    .map(|m| s.handle_user_mode(&ctx, now, &osu_user, user_id, channels.clone(), m))
-                    .collect::<stream::FuturesOrdered<_>>()
-                    .try_collect::<Vec<_>>()
-                    .await
+                    match [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
+                        .into_iter()
+                        .map(|m| {
+                            s.handle_user_mode(&ctx, now, &osu_user, user_id, channels.clone(), m)
+                        })
+                        .collect::<stream::FuturesOrdered<_>>()
+                        .try_collect::<Vec<_>>()
+                        .await
                     {
                         Ok(v) => {
                             osu_user.last_update = now;

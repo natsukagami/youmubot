@@ -26,7 +26,7 @@ pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbe
         .join(", ");
     e.color(user.color())
         .author(|a| a.name(&rank))
-        .thumbnail(format!("https:{}", user.title_photo))
+        .thumbnail(format!("{}", user.title_photo))
         .title(&user.handle)
         .url(user.profile_url())
         .description(format!(
@@ -90,7 +90,7 @@ pub fn rating_change_embed<'a>(
     };
 
     e.author(|a| {
-        a.icon_url(format!("http:{}", &user.avatar))
+        a.icon_url(format!("{}", &user.avatar))
             .url(user.profile_url())
             .name(&user.handle)
     })

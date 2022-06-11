@@ -76,7 +76,7 @@ impl BeatmapContent {
 
     /// Get info given mods.
     pub fn get_info_with(&self, mods: Mods) -> Result<BeatmapInfo> {
-        let stars = self.content.stars(mods.bits() as u32, None);
+        let stars = self.content.stars().mods(mods.bits() as u32).calculate();
         Ok(BeatmapInfo {
             max_combo: stars.max_combo().unwrap_or(0),
             objects: self.content.hit_objects.len(),

@@ -1,6 +1,5 @@
 use dotenv::var;
 use serenity::{
-    client::bridge::gateway::GatewayIntents,
     framework::standard::{macros::hook, CommandResult, DispatchError, StandardFramework},
     model::{
         channel::{Channel, Message},
@@ -63,7 +62,6 @@ async fn is_not_channel_mod(ctx: &Context, msg: &Message) -> bool {
     match msg.channel_id.to_channel(&ctx).await {
         Ok(Channel::Guild(gc)) => gc
             .permissions_for_user(&ctx, msg.author.id)
-            .await
             .map(|perms| !perms.contains(Permissions::MANAGE_MESSAGES))
             .unwrap_or(true),
         _ => true,
@@ -95,19 +93,18 @@ async fn main() {
     // Sets up a client
     let mut client = {
         // Attempt to connect and set up a framework
-        Client::builder(token)
+        let intents = GatewayIntents::GUILDS
+            | GatewayIntents::GUILD_BANS
+            | GatewayIntents::MESSAGE_CONTENT
+            | GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::GUILD_MESSAGE_REACTIONS
+            | GatewayIntents::GUILD_PRESENCES
+            | GatewayIntents::GUILD_MEMBERS
+            | GatewayIntents::DIRECT_MESSAGES
+            | GatewayIntents::DIRECT_MESSAGE_REACTIONS;
+        Client::builder(token, intents)
             .framework(fw)
             .event_handler(handler)
-            .intents(
-                GatewayIntents::GUILDS
-                    | GatewayIntents::GUILD_BANS
-                    | GatewayIntents::GUILD_MESSAGES
-                    | GatewayIntents::GUILD_MESSAGE_REACTIONS
-                    | GatewayIntents::GUILD_PRESENCES
-                    | GatewayIntents::GUILD_MEMBERS
-                    | GatewayIntents::DIRECT_MESSAGES
-                    | GatewayIntents::DIRECT_MESSAGE_REACTIONS,
-            )
             .await
             .unwrap()
     };
@@ -163,7 +160,7 @@ async fn main() {
 
 // Sets up a framework for a client
 async fn setup_framework(token: &str) -> StandardFramework {
-    let http = serenity::http::Http::new_with_token(token);
+    let http = serenity::http::Http::new(token);
     // Collect owners
     let owner = http
         .get_current_application_info()
@@ -240,7 +237,7 @@ async fn after_hook(ctx: &Context, msg: &Message, command_name: &str, error: Com
 }
 
 #[hook]
-async fn on_dispatch_error(ctx: &Context, msg: &Message, error: DispatchError) {
+async fn on_dispatch_error(ctx: &Context, msg: &Message, error: DispatchError, _cmd_name: &str) {
     msg.reply(
         &ctx,
         &match error {
