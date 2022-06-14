@@ -201,7 +201,12 @@ fn print_info_message<'a>(
                         .start_time_seconds
                         .as_ref()
                         .map(|v| {
-                            format!(" | from **{}**", Utc.timestamp(*v as i64, 0).to_rfc2822())
+                            let ts = Utc.timestamp(*v as i64, 0);
+                            format!(
+                                " | from {} ({})",
+                                ts.format("<t:%s:F>"),
+                                ts.format("<t:%s:R>")
+                            )
                         })
                         .unwrap_or_else(|| "".to_owned()),
                 )
