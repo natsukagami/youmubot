@@ -7,6 +7,7 @@ use serenity::{
     builder::CreateEmbed, framework::standard::CommandError, model::channel::Message,
     utils::MessageBuilder,
 };
+use std::collections::HashMap as StdHashMap;
 use std::time::Instant;
 use youmubot_prelude::*;
 
@@ -31,7 +32,7 @@ enum ContestOrProblem {
 /// Caches the contest list.
 pub struct ContestCache {
     contests: HashMap<u64, (Contest, Option<Vec<Problem>>)>,
-    all_list: RwLock<(Vec<Contest>, Instant)>,
+    all_list: RwLock<(StdHashMap<u64, Contest>, Instant)>,
     http: Client,
 }
 
@@ -42,12 +43,25 @@ impl TypeMapKey for ContestCache {
 impl ContestCache {
     /// Creates a new, empty cache.
     pub(crate) async fn new(http: Client) -> Result<Self> {
-        let contests_list = Contest::list(&*http, true).await?;
+        let contests_list = Self::fetch_contest_list(http.clone()).await?;
         Ok(Self {
             contests: HashMap::new(),
             all_list: RwLock::new((contests_list, Instant::now())),
             http,
         })
+    }
+
+    async fn fetch_contest_list(http: Client) -> Result<StdHashMap<u64, Contest>> {
+        log::info!("Fetching contest list, this might take a few seconds to complete...");
+        let gyms = Contest::list(&*http, true).await?;
+        let contests = Contest::list(&*http, false).await?;
+        let r: StdHashMap<u64, Contest> = gyms
+            .into_iter()
+            .chain(contests.into_iter())
+            .map(|v| (v.id, v))
+            .collect();
+        log::info!("Contest list fetched, {} contests indexed", r.len());
+        Ok(r)
     }
 
     /// Gets a contest from the cache, fetching from upstream if possible.
@@ -81,14 +95,16 @@ impl ContestCache {
         if Instant::now() - last_updated > std::time::Duration::from_secs(60 * 60) {
             // We update at most once an hour.
             let mut v = self.all_list.write().await;
-            *v = (Contest::list(&*self.http, true).await?, Instant::now());
+            *v = (
+                Self::fetch_contest_list(self.http.clone()).await?,
+                Instant::now(),
+            );
         }
         self.all_list
             .read()
             .await
             .0
-            .iter()
-            .find(|v| v.id == contest_id)
+            .get(&contest_id)
             .cloned()
             .ok_or_else(|| Error::msg("Contest not found"))
     }

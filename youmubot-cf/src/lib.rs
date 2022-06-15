@@ -36,6 +36,7 @@ pub async fn setup(path: &std::path::Path, data: &mut TypeMap, announcers: &mut 
     let client = Arc::new(codeforces::Client::new());
     data.insert::<hook::ContestCache>(hook::ContestCache::new(client.clone()).await.unwrap());
     data.insert::<CFClient>(client);
+    data.insert::<live::WatchData>(live::WatchData::new());
     announcers.add("codeforces", announcer::Announcer);
 }
 

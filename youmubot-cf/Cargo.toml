@@ -16,6 +16,7 @@ regex = "1.5.6"
 lazy_static = "1.4.0"
 chrono = { version = "0.4.19", features = ["serde"] }
 dashmap = "5.3.4"
+log = "0.4"
 
 youmubot-prelude = { path = "../youmubot-prelude" }
 youmubot-db = { path = "../youmubot-db" }

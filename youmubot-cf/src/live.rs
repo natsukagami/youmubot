@@ -1,4 +1,5 @@
-use crate::{db::CfSavedUsers, CFClient};
+use crate::{db::CfSavedUsers, hook::ContestCache, CFClient};
+use chrono::TimeZone;
 use codeforces::{Contest, ContestPhase, Problem, ProblemResult, ProblemResultType, RanklistRow};
 use serenity::{
     model::{
@@ -7,13 +8,51 @@ use serenity::{
     },
     utils::MessageBuilder,
 };
-use std::collections::HashMap;
+use std::collections::HashSet as Set;
+use std::{collections::HashMap, sync::Arc, sync::Mutex as SyncMutex};
 use youmubot_prelude::*;
 
 struct MemberResult {
     member: Member,
     handle: String,
     row: Option<RanklistRow>,
+}
+
+/// The structure storing watch-specific stored data.
+#[derive(Debug, Clone)]
+pub(crate) struct WatchData {
+    /// Lists of contests being watched.
+    watching_list: Arc<SyncMutex<Set<u64>>>,
+}
+
+impl TypeMapKey for WatchData {
+    type Value = WatchData;
+}
+
+struct CreateContest(u64, Arc<SyncMutex<Set<u64>>>);
+
+impl Drop for CreateContest {
+    fn drop(&mut self) {
+        self.1.lock().unwrap().remove(&self.0);
+    }
+}
+
+impl WatchData {
+    pub fn new() -> Self {
+        Self {
+            watching_list: Arc::new(SyncMutex::new(Set::new())),
+        }
+    }
+
+    fn watch(&self, contest_id: u64) -> Option<CreateContest> {
+        let mut s = self.watching_list.lock().unwrap();
+        if s.contains(&contest_id) {
+            None
+        } else {
+            s.insert(contest_id);
+            Some(CreateContest(contest_id, self.watching_list.clone()))
+        }
+    }
 }
 
 /// Watch and commentate a contest.
@@ -28,9 +67,67 @@ pub async fn watch_contest(
     let data = ctx.data.read().await;
     let db = CfSavedUsers::open(&*data).borrow()?.clone();
     let member_cache = data.get::<member_cache::MemberCache>().unwrap().clone();
+
+    let watch_data = data.get::<WatchData>().unwrap().clone();
+    let _lock = match watch_data.watch(contest_id) {
+        Some(t) => t,
+        None => {
+            channel
+                .send_message(ctx, |f| {
+                    f.content(format!("Contest is already being watched: {}", contest_id))
+                })
+                .await?;
+            return Ok(());
+        }
+    };
+
+    let contest = match data.get::<ContestCache>().unwrap().get(contest_id).await {
+        Ok((p, _)) => p,
+        Err(e) => {
+            channel
+                .send_message(ctx, |f| {
+                    f.content(format!("Cannot get info about contest: {}", e))
+                })
+                .await?;
+            return Ok(());
+        }
+    };
+
+    if contest.phase == ContestPhase::Before {
+        let start_time = match contest.start_time_seconds {
+            Some(s) => chrono::Utc.timestamp(s as i64, 0),
+            None => {
+                channel
+                    .send_message(ctx, |f| {
+                        f.content(format!(
+                            "Contest **{}** found, but we don't know when it will begin!",
+                            contest.name
+                        ))
+                    })
+                    .await?;
+                return Ok(());
+            }
+        };
+        channel
+                .send_message(ctx, |f| {
+                    f.content(format!("Contest **{}** found, but has not started yet. Youmu will start watching as soon as it begins! (which is in about {})", contest.name, start_time.format("<t:%s:R>")))
+                })
+                .await?;
+        tokio::time::sleep(
+            (start_time - chrono::Utc::now() + chrono::Duration::seconds(30))
+                .to_std()
+                .unwrap(),
+        )
+        .await
+    }
+
     let mut msg = channel
         .send_message(&ctx, |e| e.content("Youmu is building the member list..."))
         .await?;
+
+    let http = data.get::<CFClient>().unwrap();
+    let (mut contest, problems, _) =
+        Contest::standings(&*http, contest_id, |f| f.limit(1, 1)).await?;
     // Collect an initial member list.
     // This never changes during the scan.
     let mut member_results: HashMap<UserId, MemberResult> = db
@@ -54,10 +151,6 @@ pub async fn watch_contest(
         .filter_map(future::ready)
         .collect()
         .await;
-
-    let http = data.get::<CFClient>().unwrap();
-    let (mut contest, problems, _) =
-        Contest::standings(&*http, contest_id, |f| f.limit(1, 1)).await?;
 
     msg.edit(&ctx, |e| {
         e.content(format!(
