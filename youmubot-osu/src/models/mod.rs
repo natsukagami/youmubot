@@ -283,10 +283,10 @@ impl From<u8> for Mode {
 impl From<Mode> for GameMode {
     fn from(n: Mode) -> Self {
         match n {
-            Mode::Std => GameMode::STD,
-            Mode::Taiko => GameMode::TKO,
-            Mode::Catch => GameMode::CTB,
-            Mode::Mania => GameMode::MNA,
+            Mode::Std => GameMode::Osu,
+            Mode::Taiko => GameMode::Taiko,
+            Mode::Catch => GameMode::Catch,
+            Mode::Mania => GameMode::Mania,
         }
     }
 }
