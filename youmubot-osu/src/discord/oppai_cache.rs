@@ -68,7 +68,7 @@ impl BeatmapContent {
                 .n50(n50 as usize);
         }
         Ok(rosu
-            .misses(accuracy.misses())
+            .n_misses(accuracy.misses())
             .accuracy(accuracy.into())
             .calculate()
             .pp)
@@ -78,7 +78,7 @@ impl BeatmapContent {
     pub fn get_info_with(&self, mods: Mods) -> Result<BeatmapInfo> {
         let stars = self.content.stars().mods(mods.bits() as u32).calculate();
         Ok(BeatmapInfo {
-            max_combo: stars.max_combo().unwrap_or(0),
+            max_combo: stars.max_combo(),
             objects: self.content.hit_objects.len(),
             stars: stars.stars(),
         })
@@ -105,7 +105,7 @@ impl BeatmapContent {
                 .calculate()
                 .pp(),
         ];
-        let max_combo = pp95.difficulty_attributes().max_combo().unwrap_or(0);
+        let max_combo = pp95.difficulty_attributes().max_combo();
         let stars = pp95.difficulty_attributes().stars();
         Ok((
             BeatmapInfo {

@@ -5,25 +5,41 @@
     nixpkgs-unstable.url = "github:nixos/nixpkgs";
     naersk.url = "github:nix-community/naersk";
     naersk.inputs.nixpkgs.follows = "nixpkgs";
+    nixpkgs-mozilla = {
+      url = github:mozilla/nixpkgs-mozilla;
+      flake = false;
+    };
     flake-utils.url = "github:numtide/flake-utils";
   };
-  outputs = { self, nixpkgs, nixpkgs-unstable, naersk, flake-utils }: flake-utils.lib.eachDefaultSystem (system:
+  outputs = { self, nixpkgs, nixpkgs-unstable, naersk, flake-utils, nixpkgs-mozilla }: flake-utils.lib.eachDefaultSystem (system:
     let
-      pkgs = nixpkgs.legacyPackages."${system}";
-      pkgs-unstable = nixpkgs-unstable.legacyPackages."${system}";
-      naersk-lib = naersk.lib."${system}";
+      pkgs = import nixpkgs { inherit system; overlays = [ (import nixpkgs-mozilla) ]; };
+      pkgs-unstable = import nixpkgs-unstable { inherit system; };
+
+      rust-toolchain = (pkgs.rustChannelOf {
+        channel = "1.64.0";
+        sha256 = "sha256-8len3i8oTwJSOJZMosGGXHBL5BVuGQnWOT2St5YAUFU=";
+      });
+
+      naersk' = pkgs.callPackage naersk {
+        cargo = rust-toolchain.rust;
+        rustc = rust-toolchain.rust;
+      };
     in
     rec {
-      packages.youmubot = naersk-lib.buildPackage {
+      packages.youmubot = naersk'.buildPackage {
         name = "youmubot";
         version = "0.1.0";
 
         root = ./.;
         cargoBuildOptions = opts: opts ++ [ "--package youmubot" ];
 
-        nativeBuildInputs = nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "linux" system) (with pkgs; [
-          pkg-config
+        buildInputs = with pkgs; [
           openssl
+        ];
+
+        nativeBuildInputs = nixpkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+          pkg-config
         ]);
       };
 
@@ -39,17 +55,24 @@
       # `nix develop`
       devShell = pkgs.mkShell
         {
-          nativeBuildInputs =
-            (with pkgs; [ rustc cargo ])
-            ++ (with pkgs-unstable; [ rust-analyzer rustfmt ])
-            ++ nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "darwin" system) (with pkgs; [
+          buildInputs =
+            with rust-toolchain; [ rust ]
+              ++ (with pkgs-unstable; [ rustfmt ])
+              ++ nixpkgs.lib.optionals pkgs.stdenv.isDarwin (with pkgs; [
               libiconv
               darwin.apple_sdk.frameworks.Security
             ])
-            ++ nixpkgs.lib.optionals (nixpkgs.lib.strings.hasSuffix "linux" system) (with pkgs; [
-              pkg-config
+              ++ (with pkgs; [
               openssl
             ]);
+
+          nativeBuildInputs = nixpkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+            pkg-config
+          ]);
+
+          shellHook = ''
+            export RUST_SRC_PATH="${rust-toolchain.rust-src}/lib/rustlib/src/rust/library";
+          '';
         };
       # module
       nixosModule = import ./module.nix defaultPackage;
