@@ -3,7 +3,7 @@ use crate::{
     discord::display::ScoreListStyle,
     discord::oppai_cache::{BeatmapCache, BeatmapInfo},
     models::{Beatmap, Mode, Mods, User},
-    request::UserID,
+    request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
 use serenity::{
@@ -31,6 +31,7 @@ mod server_rank;
 use db::OsuUser;
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
+use hook::SHORT_LINK_REGEX;
 pub use hook::{dot_osu_hook, hook};
 use server_rank::{SERVER_RANK_COMMAND, UPDATE_LEADERBOARD_COMMAND};
 
@@ -389,6 +390,61 @@ impl FromStr for OptBeatmapset {
     }
 }
 
+/// Load the mentioned beatmap from the given message.
+pub(crate) async fn load_beatmap(
+    ctx: &Context,
+    msg: &Message,
+) -> Option<(BeatmapWithMode, Option<Mods>)> {
+    let data = ctx.data.read().await;
+
+    if let Some(replied) = &msg.referenced_message {
+        // Try to look for a mention of the replied message.
+        let beatmap_id = SHORT_LINK_REGEX.captures(&replied.content).or_else(|| {
+            msg.embeds.iter().find_map(|e| {
+                e.description
+                    .as_ref()
+                    .and_then(|v| SHORT_LINK_REGEX.captures(&v))
+                    .or_else(|| {
+                        e.fields
+                            .iter()
+                            .find_map(|f| SHORT_LINK_REGEX.captures(&f.value))
+                    })
+            })
+        });
+        if let Some(caps) = beatmap_id {
+            let id: u64 = caps.name("id").unwrap().as_str().parse().unwrap();
+            let mode = caps
+                .name("mode")
+                .and_then(|m| Mode::parse_from_new_site(m.as_str()));
+            let mods = caps
+                .name("mods")
+                .and_then(|m| m.as_str().parse::<Mods>().ok());
+            let osu = data.get::<OsuClient>().unwrap();
+            let bms = osu
+                .beatmaps(BeatmapRequestKind::Beatmap(id), |f| f.maybe_mode(mode))
+                .await
+                .ok()
+                .and_then(|v| v.into_iter().next());
+            if let Some(beatmap) = bms {
+                let bm_mode = beatmap.mode.clone();
+                let bm = BeatmapWithMode(beatmap, mode.unwrap_or(bm_mode));
+                // Store the beatmap in history
+                cache::save_beatmap(&*data, msg.channel_id, &bm)
+                    .await
+                    .pls_ok();
+
+                return Some((bm, mods));
+            }
+        }
+    }
+
+    let b = cache::get_beatmap(&*data, msg.channel_id)
+        .await
+        .ok()
+        .flatten();
+    b.map(|b| (b, None))
+}
+
 #[command]
 #[description = "Show information from the last queried beatmap."]
 #[usage = "[--set/-s/--beatmapset] / [mods = no mod]"]
@@ -396,12 +452,12 @@ impl FromStr for OptBeatmapset {
 #[max_args(2)]
 pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let b = cache::get_beatmap(&*data, msg.channel_id).await?;
+    let b = load_beatmap(ctx, msg).await;
     let beatmapset = args.find::<OptBeatmapset>().is_ok();
 
     match b {
-        Some(BeatmapWithMode(b, m)) => {
-            let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
+        Some((BeatmapWithMode(b, m), mods_def)) => {
+            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
             if beatmapset {
                 let beatmap_cache = data.get::<BeatmapMetaCache>().unwrap();
                 let beatmapset = beatmap_cache.get_beatmapset(b.beatmapset_id).await?;
@@ -447,15 +503,15 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[max_args(3)]
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
-    let bm = cache::get_beatmap(&*data, msg.channel_id).await?;
+    let bm = load_beatmap(ctx, msg).await;
 
     match bm {
         None => {
             msg.reply(&ctx, "No beatmap queried on this channel.")
                 .await?;
         }
-        Some(bm) => {
+        Some((bm, mods_def)) => {
+            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
             let b = &bm.0;
             let m = bm.1;
             let style = args

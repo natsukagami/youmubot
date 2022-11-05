@@ -12,13 +12,13 @@ use youmubot_prelude::*;
 use super::embeds::beatmap_embed;
 
 lazy_static! {
-    static ref OLD_LINK_REGEX: Regex = Regex::new(
+    pub(crate) static ref OLD_LINK_REGEX: Regex = Regex::new(
         r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>\d))?(?:\+(?P<mods>[A-Z]+))?"
     ).unwrap();
-    static ref NEW_LINK_REGEX: Regex = Regex::new(
+    pub(crate) static ref NEW_LINK_REGEX: Regex = Regex::new(
         r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:\+(?P<mods>[A-Z]+))?"
     ).unwrap();
-    static ref SHORT_LINK_REGEX: Regex = Regex::new(
+    pub(crate) static ref SHORT_LINK_REGEX: Regex = Regex::new(
         r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>[A-Z]+))?)"
     ).unwrap();
 }

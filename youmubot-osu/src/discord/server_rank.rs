@@ -1,5 +1,4 @@
 use super::{
-    cache::get_beatmap,
     db::{OsuSavedUsers, OsuUserBests},
     ModeArg, OsuClient,
 };
@@ -179,7 +178,6 @@ impl std::str::FromStr for OrderBy {
 pub async fn update_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let sort_order = args.single::<OrderBy>().unwrap_or_default();
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
-    let mods = args.find::<Mods>().unwrap_or(Mods::NOMOD);
 
     let guild = m.guild_id.unwrap();
     let data = ctx.data.read().await;
@@ -191,8 +189,11 @@ pub async fn update_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> C
         }
         Some(v) => v,
     };
-    let bm = match get_beatmap(&*data, m.channel_id).await? {
-        Some(bm) => bm,
+    let (bm, mods) = match super::load_beatmap(ctx, m).await {
+        Some((bm, mods_def)) => {
+            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
+            (bm, mods)
+        }
         None => {
             m.reply(&ctx, "No beatmap queried on this channel.").await?;
             return Ok(());

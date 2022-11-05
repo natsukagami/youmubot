@@ -108,6 +108,14 @@ pub mod builders {
             self
         }
 
+        pub fn maybe_mode(&mut self, mode: Option<Mode>) -> &mut Self {
+            if let Some(m) = mode {
+                self.mode(m, true)
+            } else {
+                self
+            }
+        }
+
         pub fn mode(&mut self, mode: Mode, converted: bool) -> &mut Self {
             self.mode = Some((mode, converted));
             self
