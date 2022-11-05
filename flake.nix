@@ -17,8 +17,8 @@
       pkgs-unstable = import nixpkgs-unstable { inherit system; };
 
       rust-toolchain = (pkgs.rustChannelOf {
-        channel = "1.64.0";
-        sha256 = "sha256-8len3i8oTwJSOJZMosGGXHBL5BVuGQnWOT2St5YAUFU=";
+        channel = "1.65.0";
+        sha256 = "sha256-DzNEaW724O8/B8844tt5AVHmSjSQ3cmzlU4BP90oRlY=";
       });
 
       naersk' = pkgs.callPackage naersk {
