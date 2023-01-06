@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 serde = { version = "1.0.137", features = ["derive"] }
-tokio = { version = "1.19.2", features = ["time"] }
+tokio = { version = "1.23.1", features = ["time"] }
 reqwest = "0.11.10"
 serenity = "0.11.2"
 Inflector = "0.11.4"
