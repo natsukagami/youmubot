@@ -13,7 +13,7 @@ serde = { version = "1.0.137", features = ["derive"] }
 chrono = "0.4.19"
 static_assertions = "1.1.0"
 futures-util = "0.3.21"
-tokio = { version = "1.19.2", features = ["time"] }
+tokio = { version = "1.24.2", features = ["time"] }
 flume = "0.10.13"
 dashmap = "5.3.4"
 
