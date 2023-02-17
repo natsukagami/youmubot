@@ -7,10 +7,10 @@ pub struct OsuUser {
     pub user_id: i64,
     pub id: i64,
     pub last_update: DateTime,
-    pub pp_std: Option<f32>,
-    pub pp_taiko: Option<f32>,
-    pub pp_mania: Option<f32>,
-    pub pp_catch: Option<f32>,
+    pub pp_std: Option<f64>,
+    pub pp_taiko: Option<f64>,
+    pub pp_mania: Option<f64>,
+    pub pp_catch: Option<f64>,
     /// Number of consecutive update failures
     pub failures: u8,
 }

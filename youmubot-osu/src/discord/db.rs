@@ -153,7 +153,7 @@ pub struct OsuUser {
     pub user_id: UserId,
     pub id: u64,
     pub last_update: DateTime<Utc>,
-    pub pp: [Option<f32>; 4],
+    pub pp: [Option<f64>; 4],
     /// More than 5 failures => gone
     pub failures: u8,
 }

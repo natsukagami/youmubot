@@ -101,7 +101,7 @@ impl Announcer {
         user_id: UserId,
         channels: Vec<ChannelId>,
         mode: Mode,
-    ) -> Result<Option<f32>, Error> {
+    ) -> Result<Option<f64>, Error> {
         let days_since_last_update = (now - osu_user.last_update).num_days() + 1;
         let last_update = osu_user.last_update;
         let (scores, user) = {
@@ -153,7 +153,7 @@ impl Announcer {
                 .await
                 .pls_ok();
         });
-        Ok(pp.map(|v| v as f32))
+        Ok(pp)
     }
 
     async fn scan_user(&self, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {

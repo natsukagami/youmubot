@@ -94,8 +94,11 @@ pub async fn watch_contest(
     };
 
     if contest.phase == ContestPhase::Before {
-        let start_time = match contest.start_time_seconds {
-            Some(s) => chrono::Utc.timestamp(s as i64, 0),
+        let start_time = match contest
+            .start_time_seconds
+            .and_then(|x| chrono::Utc.timestamp_opt(x as i64, 0).earliest())
+        {
+            Some(s) => s,
             None => {
                 channel
                     .send_message(ctx, |f| {

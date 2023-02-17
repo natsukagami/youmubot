@@ -45,7 +45,7 @@ impl ToQuery for (&'static str, String) {
 
 impl ToQuery for (&'static str, DateTime<Utc>) {
     fn to_query(&self) -> Vec<(&'static str, String)> {
-        vec![(self.0, format!("{}", self.1.date().format("%Y-%m-%d")))]
+        vec![(self.0, format!("{}", self.1.format("%Y-%m-%d")))]
     }
 }
 

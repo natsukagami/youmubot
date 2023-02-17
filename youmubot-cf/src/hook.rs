@@ -216,8 +216,8 @@ fn print_info_message<'a>(
                     contest
                         .start_time_seconds
                         .as_ref()
-                        .map(|v| {
-                            let ts = Utc.timestamp(*v as i64, 0);
+                        .and_then(|v| Utc.timestamp_opt(*v as i64, 0).earliest())
+                        .map(|ts| {
                             format!(
                                 " | from {} ({})",
                                 ts.format("<t:%s:F>"),
