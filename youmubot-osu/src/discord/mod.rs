@@ -400,7 +400,7 @@ pub(crate) async fn load_beatmap(
     if let Some(replied) = &msg.referenced_message {
         // Try to look for a mention of the replied message.
         let beatmap_id = SHORT_LINK_REGEX.captures(&replied.content).or_else(|| {
-            msg.embeds.iter().find_map(|e| {
+            replied.embeds.iter().find_map(|e| {
                 e.description
                     .as_ref()
                     .and_then(|v| SHORT_LINK_REGEX.captures(&v))
@@ -446,6 +446,7 @@ pub(crate) async fn load_beatmap(
 }
 
 #[command]
+#[aliases("map")]
 #[description = "Show information from the last queried beatmap."]
 #[usage = "[--set/-s/--beatmapset] / [mods = no mod]"]
 #[delimiters(" ")]
