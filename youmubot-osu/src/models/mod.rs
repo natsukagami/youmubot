@@ -313,8 +313,8 @@ impl Mode {
         Some(match s {
             "osu!" => Mode::Std,
             "osu!taiko" => Mode::Taiko,
-            "osu!mania" => Mode::Catch,
-            "osu!catch" => Mode::Mania,
+            "osu!mania" => Mode::Mania,
+            "osu!catch" => Mode::Catch,
             _ => return None,
         })
     }
