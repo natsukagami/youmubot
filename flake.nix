@@ -6,6 +6,10 @@
     naersk.inputs.nixpkgs.follows = "nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
   };
+  nixConfig = {
+    extra-substituters = [ "https://natsukagami.cachix.org" ];
+    trusted-public-keys = [ "natsukagami.cachix.org-1:3U6GV8i8gWEaXRUuXd2S4ASfYgdl2QFPWg4BKPbmYiQ=" ];
+  };
   outputs = { self, nixpkgs, naersk, flake-utils, ... }: flake-utils.lib.eachDefaultSystem (system:
     let
       pkgs = import nixpkgs { inherit system; };
@@ -27,6 +31,8 @@
         nativeBuildInputs = nixpkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
           pkg-config
         ]);
+
+        SQLX_OFFLINE = "true";
       };
 
       defaultPackage = packages.youmubot;

@@ -67,3 +67,23 @@ jobs:
               run: cargo test
               env:
                   SQLX_OFFLINE: "true"
+    build:
+        name: Build
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - uses: cachix/install-nix-action@v20
+              with:
+                github_access_token: ${{ secrets.GITHUB_TOKEN }}
+            - uses: actions-rs/toolchain@v1
+              id: cargo
+              with:
+                  toolchain: stable
+                  components: clippy
+            - uses: cachix/cachix-action@v12
+              with:
+                name: natsukagami
+                # If you chose API tokens for write access OR if you have a private cache
+                authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+            - name: Run nix build
+              run: nix build
