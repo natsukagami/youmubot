@@ -1,4 +1,4 @@
-youmubot: { config, pkgs, lib, ... }:
+{ config, pkgs, lib, ... }:
 
 with lib;
 let
@@ -7,10 +7,7 @@ in
 {
   options.services.youmubot = {
     enable = mkEnableOption "Enable youmubot, the discord bot made with Rust.";
-    package = mkOption {
-      type = types.package;
-      default = youmubot;
-    };
+    package = mkPackageOption pkgs "youmubot" { };
 
     envFile = mkOption {
       type = types.path;
