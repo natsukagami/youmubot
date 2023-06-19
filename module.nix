@@ -7,6 +7,10 @@ in
 {
   options.services.youmubot = {
     enable = mkEnableOption "Enable youmubot, the discord bot made with Rust.";
+    package = mkOption {
+      type = types.package;
+      default = youmubot;
+    };
 
     envFile = mkOption {
       type = types.path;
@@ -35,7 +39,7 @@ in
       description = "the discord bot made with Rust";
       documentation = [ "https://github.com/natsukagami/youmubot" ];
 
-      script = "${youmubot}/bin/youmubot";
+      script = "${cfg.package}/bin/youmubot";
 
       environment = {
         DBPATH = cfg.databasePath;

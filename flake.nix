@@ -21,6 +21,12 @@
 
       defaultPackage = packages.youmubot;
 
+      overlays.default = final: prev: {
+        youmubot = final.callPackage ./package.nix {
+          naersk = final.callPackage inputs.naersk { };
+        };
+      };
+
       # `nix run`
       apps.youmubot = flake-utils.lib.mkApp {
         drv = packages.youmubot;
