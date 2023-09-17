@@ -45,7 +45,7 @@ pub fn dot_osu_hook<'a>(
                 async move {
                     let data = ctx.data.read().await;
                     let oppai = data.get::<BeatmapCache>().unwrap();
-                    let (beatmap, _) = oppai.download_beatmap_from_url(&url, None).await.ok()?;
+                    let (beatmap, _) = oppai.download_beatmap_from_url(&url).await.ok()?;
                     let embed_fn = crate::discord::embeds::beatmap_offline_embed(
                         &beatmap,
                         Mode::from(beatmap.content.mode as u8), /*For now*/

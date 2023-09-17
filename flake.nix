@@ -41,6 +41,7 @@
               ++ (with pkgs; [
                 openssl
                 cargo
+                rustc
                 rustfmt
               ]);
 

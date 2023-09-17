@@ -9,7 +9,6 @@ use youmubot_prelude::*;
 /// the information collected from a download/Oppai request.
 #[derive(Debug)]
 pub struct BeatmapContent {
-    id: Option<u64>,
     pub metadata: MetadataSection,
     pub content: Arc<Beatmap>,
 }
@@ -131,13 +130,12 @@ impl BeatmapCache {
         BeatmapCache { client, pool }
     }
 
-    fn parse_beatmap(content: impl AsRef<str>, id: Option<u64>) -> Result<BeatmapContent> {
+    fn parse_beatmap(content: impl AsRef<str>) -> Result<BeatmapContent> {
         let content = content.as_ref();
         let metadata = osuparse::parse_beatmap(content)
             .map_err(|e| Error::msg(format!("Cannot parse metadata: {:?}", e)))?
             .metadata;
         Ok(BeatmapContent {
-            id,
             metadata,
             content: Arc::new(Beatmap::parse(content.as_bytes())?),
         })
@@ -172,7 +170,7 @@ impl BeatmapCache {
                 };
                 let mut content = String::new();
                 v.read_to_string(&mut content).pls_ok()?;
-                Self::parse_beatmap(content, None).pls_ok()
+                Self::parse_beatmap(content).pls_ok()
             })
             .collect::<Vec<_>>();
         Ok(osu_files)
@@ -183,7 +181,6 @@ impl BeatmapCache {
     pub async fn download_beatmap_from_url(
         &self,
         url: impl reqwest::IntoUrl,
-        id: Option<u64>,
     ) -> Result<(BeatmapContent, String)> {
         let content = self
             .client
@@ -194,13 +191,13 @@ impl BeatmapCache {
             .await?
             .text()
             .await?;
-        let bm = Self::parse_beatmap(&content, id)?;
+        let bm = Self::parse_beatmap(&content)?;
         Ok((bm, content))
     }
 
     async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
         let (bm, content) = self
-            .download_beatmap_from_url(&format!("https://osu.ppy.sh/osu/{}", id), Some(id))
+            .download_beatmap_from_url(&format!("https://osu.ppy.sh/osu/{}", id))
             .await?;
 
         let mut bc = models::CachedBeatmapContent {
@@ -215,7 +212,7 @@ impl BeatmapCache {
     async fn get_beatmap_db(&self, id: u64) -> Result<Option<BeatmapContent>> {
         Ok(models::CachedBeatmapContent::by_id(id as i64, &self.pool)
             .await?
-            .map(|v| Self::parse_beatmap(String::from_utf8(v.content)?, Some(id)))
+            .map(|v| Self::parse_beatmap(String::from_utf8(v.content)?))
             .transpose()?)
     }
 
