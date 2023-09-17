@@ -166,8 +166,8 @@ impl From<OsuUser> for model::OsuUser {
             last_update: u.last_update,
             pp_std: u.pp[Mode::Std as usize],
             pp_taiko: u.pp[Mode::Taiko as usize],
-            pp_mania: u.pp[Mode::Mania as usize],
             pp_catch: u.pp[Mode::Catch as usize],
+            pp_mania: u.pp[Mode::Mania as usize],
             failures: u.failures,
         }
     }
@@ -179,7 +179,12 @@ impl From<model::OsuUser> for OsuUser {
             user_id: UserId(u.user_id as u64),
             id: u.id as u64,
             last_update: u.last_update,
-            pp: [u.pp_std, u.pp_taiko, u.pp_mania, u.pp_catch],
+            pp: [0, 1, 2, 3].map(|v| match Mode::from(v) {
+                Mode::Std => u.pp_std,
+                Mode::Taiko => u.pp_taiko,
+                Mode::Catch => u.pp_catch,
+                Mode::Mania => u.pp_mania,
+            }),
             failures: u.failures,
         }
     }
