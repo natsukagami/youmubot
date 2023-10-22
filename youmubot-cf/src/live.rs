@@ -159,7 +159,9 @@ pub async fn watch_contest(
         e.content(format!(
             "Youmu is watching contest **{}**, with the following members: {}",
             contest.name,
-            member_results.values().map(|m| serenity::utils::MessageBuilder::new()
+            member_results
+                .values()
+                .map(|m| serenity::utils::MessageBuilder::new()
                     .push_safe(m.member.distinct())
                     .push(" (")
                     .push_mono_safe(&m.handle)

@@ -292,7 +292,7 @@ fn parse_date(date: impl AsRef<str>) -> ParseResult<DateTime<Utc>> {
             Item::Literal(":"),
             Item::Numeric(Numeric::Second, Pad::Zero),
         ]
-            .iter(),
+        .iter(),
     )
     .map_err(ParseError::DateParseError)?;
     parsed
