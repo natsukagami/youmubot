@@ -249,8 +249,7 @@ mod scores {
                         b.map(|(beatmap, info)| {
                             format!(
                                 "[{:.1}*] {} - {} [{}] ({})",
-                                info.map(|i| i.stars)
-                                    .unwrap_or(beatmap.difficulty.stars),
+                                info.map(|i| i.stars).unwrap_or(beatmap.difficulty.stars),
                                 beatmap.artist,
                                 beatmap.title,
                                 beatmap.difficulty_name,
@@ -322,11 +321,7 @@ mod scores {
                     page + 1,
                     self.total_pages()
                 ));
-                if self.mode != Mode::Std {
-                    m.push_line("Note: star difficulty doesn't reflect mods applied.");
-                } else {
-                    m.push_line("[?] means pp was predicted by oppai-rs.");
-                }
+                m.push_line("[?] means pp was predicted by oppai-rs.");
                 msg.edit(ctx, |f| f.content(m.to_string())).await?;
                 hourglass.delete(ctx).await?;
                 Ok(true)
