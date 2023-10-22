@@ -32,22 +32,15 @@
         # `nix develop`
         devShell = pkgs.mkShell
           {
-            buildInputs =
-              nixpkgs.lib.optionals pkgs.stdenv.isDarwin
-                (with pkgs; [
-                  libiconv
-                  darwin.apple_sdk.frameworks.Security
-                ])
-              ++ (with pkgs; [
-                openssl
-                cargo
-                rustc
-                rustfmt
-              ]);
+            inputsFrom = [ packages.youmubot ];
+
+            buildInputs = with pkgs; [ rustc rustfmt clippy ];
 
             nativeBuildInputs = nixpkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
               pkg-config
             ]);
+
+            RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
           };
       }) // {
     overlays.default = final: prev: {
