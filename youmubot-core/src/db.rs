@@ -64,7 +64,7 @@ pub fn load_role_list(
     match legacy::RolesV1::load_from_path(v1_path.as_ref()) {
         Ok(v1) => {
             Roles::insert_into(map, path)?;
-            *Roles::open(&map).borrow_mut()? = v1
+            *Roles::open(map).borrow_mut()? = v1
                 .get_data(true)?
                 .into_iter()
                 .map(|(guild, roles)| {

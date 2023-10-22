@@ -159,7 +159,7 @@ impl AnnouncerHandler {
             let after = tokio::time::sleep_until(tokio::time::Instant::now() + cooldown);
             join_all(self.announcers.iter().map(|(key, announcer)| {
                 eprintln!(" - scanning key `{}`", key);
-                Self::announce(self.data.clone(), self.cache_http.clone(), *key, announcer).map(
+                Self::announce(self.data.clone(), self.cache_http.clone(), key, announcer).map(
                     move |v| {
                         if let Err(e) = v {
                             eprintln!(" - key `{}`: {:?}", *key, e)
@@ -241,9 +241,9 @@ pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> C
         .await?;
         return Ok(());
     }
-    let guild = m.guild(&ctx).expect("Guild-only command");
+    let guild = m.guild(ctx).expect("Guild-only command");
     let channel = m.channel_id.to_channel(&ctx).await?;
-    AnnouncerChannels::open(&*data)
+    AnnouncerChannels::open(&data)
         .borrow_mut()?
         .entry(key.clone())
         .or_default()
@@ -284,8 +284,8 @@ pub async fn remove_announcer(ctx: &Context, m: &Message, mut args: Args) -> Com
         .await?;
         return Ok(());
     }
-    let guild = m.guild(&ctx).expect("Guild-only command");
-    AnnouncerChannels::open(&*data)
+    let guild = m.guild(ctx).expect("Guild-only command");
+    AnnouncerChannels::open(&data)
         .borrow_mut()?
         .entry(key.clone())
         .and_modify(|m| {

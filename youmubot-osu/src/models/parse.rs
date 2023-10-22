@@ -279,7 +279,7 @@ fn parse_date(date: impl AsRef<str>) -> ParseResult<DateTime<Utc>> {
     parse(
         &mut parsed,
         date.as_ref(),
-        (&[
+        [
             Item::Numeric(Numeric::Year, Pad::Zero),
             Item::Literal("-"),
             Item::Numeric(Numeric::Month, Pad::Zero),
@@ -291,7 +291,7 @@ fn parse_date(date: impl AsRef<str>) -> ParseResult<DateTime<Utc>> {
             Item::Numeric(Numeric::Minute, Pad::Zero),
             Item::Literal(":"),
             Item::Numeric(Numeric::Second, Pad::Zero),
-        ])
+        ]
             .iter(),
     )
     .map_err(ParseError::DateParseError)?;

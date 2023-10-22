@@ -249,7 +249,7 @@ mod scores {
                         b.map(|(beatmap, info)| {
                             format!(
                                 "[{:.1}*] {} - {} [{}] ({})",
-                                info.map(|i| i.stars as f64)
+                                info.map(|i| i.stars)
                                     .unwrap_or(beatmap.difficulty.stars),
                                 beatmap.artist,
                                 beatmap.title,

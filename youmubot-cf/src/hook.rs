@@ -53,8 +53,8 @@ impl ContestCache {
 
     async fn fetch_contest_list(http: Client) -> Result<StdHashMap<u64, Contest>> {
         log::info!("Fetching contest list, this might take a few seconds to complete...");
-        let gyms = Contest::list(&*http, true).await?;
-        let contests = Contest::list(&*http, false).await?;
+        let gyms = Contest::list(&http, true).await?;
+        let contests = Contest::list(&http, false).await?;
         let r: StdHashMap<u64, Contest> = gyms
             .into_iter()
             .chain(contests.into_iter())
@@ -78,7 +78,7 @@ impl ContestCache {
         &self,
         contest_id: u64,
     ) -> Result<(Contest, Option<Vec<Problem>>)> {
-        let (c, p) = match Contest::standings(&*self.http, contest_id, |f| f.limit(1, 1)).await {
+        let (c, p) = match Contest::standings(&self.http, contest_id, |f| f.limit(1, 1)).await {
             Ok((c, p, _)) => (c, Some(p)),
             Err(codeforces::Error::Codeforces(s)) if s.ends_with("has not started") => {
                 let c = self.get_from_list(contest_id).await?;

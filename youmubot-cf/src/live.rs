@@ -65,7 +65,7 @@ pub async fn watch_contest(
     contest_id: u64,
 ) -> Result<()> {
     let data = ctx.data.read().await;
-    let db = CfSavedUsers::open(&*data).borrow()?.clone();
+    let db = CfSavedUsers::open(&data).borrow()?.clone();
     let member_cache = data.get::<member_cache::MemberCache>().unwrap().clone();
 
     let watch_data = data.get::<WatchData>().unwrap().clone();
@@ -130,7 +130,7 @@ pub async fn watch_contest(
 
     let http = data.get::<CFClient>().unwrap();
     let (mut contest, problems, _) =
-        Contest::standings(&*http, contest_id, |f| f.limit(1, 1)).await?;
+        Contest::standings(http, contest_id, |f| f.limit(1, 1)).await?;
     // Collect an initial member list.
     // This never changes during the scan.
     let mut member_results: HashMap<UserId, MemberResult> = db
@@ -159,9 +159,7 @@ pub async fn watch_contest(
         e.content(format!(
             "Youmu is watching contest **{}**, with the following members: {}",
             contest.name,
-            member_results
-                .iter()
-                .map(|(_, m)| serenity::utils::MessageBuilder::new()
+            member_results.values().map(|m| serenity::utils::MessageBuilder::new()
                     .push_safe(m.member.distinct())
                     .push(" (")
                     .push_mono_safe(&m.handle)
@@ -175,7 +173,7 @@ pub async fn watch_contest(
     msg.pin(ctx).await.ok();
 
     loop {
-        if let Ok(messages) = scan_changes(&*http, &mut member_results, &mut contest).await {
+        if let Ok(messages) = scan_changes(http, &mut member_results, &mut contest).await {
             for message in messages {
                 channel
                     .send_message(&ctx, |e| {
@@ -204,7 +202,7 @@ pub async fn watch_contest(
     ranks.sort_by(|(_, _, a), (_, _, b)| a.rank.cmp(&b.rank));
 
     msg.unpin(ctx).await.ok();
-    crate::contest_rank_table(&ctx, &msg, contest, problems, ranks).await?;
+    crate::contest_rank_table(ctx, &msg, contest, problems, ranks).await?;
     Ok(())
 }
 
@@ -230,7 +228,7 @@ async fn scan_changes(
             .iter()
             .map(|(_, h)| h.handle.clone())
             .collect::<Vec<_>>();
-        Contest::standings(&http, contest.id, |f| f.handles(handles)).await?
+        Contest::standings(http, contest.id, |f| f.handles(handles)).await?
     };
     // Change of phase.
     if contest.phase != updated_contest.phase {
@@ -282,7 +280,7 @@ async fn scan_changes(
                     .iter()
                     .zip(row.problem_results.iter()),
             ) {
-                if let Some(message) = analyze_change(&contest, old, new).map(|c| {
+                if let Some(message) = analyze_change(contest, old, new).map(|c| {
                     translate_change(
                         contest.phase,
                         member_result.handle.as_str(),

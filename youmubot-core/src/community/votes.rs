@@ -116,7 +116,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     // Collect reactions...
     let user_reactions = panel
-        .await_reactions(&ctx)
+        .await_reactions(ctx)
         .removed(true)
         .timeout(*duration)
         .build()

@@ -19,7 +19,7 @@ pub use reaction_watcher::Watchers as ReactionWatchers;
 async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
     let guild_id = m.guild_id.unwrap(); // only_in(guilds)
     let data = ctx.data.read().await;
-    let db = DB::open(&*data);
+    let db = DB::open(&data);
     let roles = db
         .borrow()?
         .get(&guild_id)
@@ -190,7 +190,7 @@ async fn add(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             m.reply(&ctx, "No such role exists").await?;
         }
         Some(role) => {
-            DB::open(&*data)
+            DB::open(&data)
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
@@ -227,7 +227,7 @@ async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             m.reply(&ctx, "No such role exists").await?;
         }
         Some(role)
-            if !DB::open(&*data)
+            if !DB::open(&data)
                 .borrow()?
                 .get(&guild_id)
                 .map(|g| g.roles.contains_key(&role.id))
@@ -237,7 +237,7 @@ async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
                 .await?;
         }
         Some(role) => {
-            DB::open(&*data)
+            DB::open(&data)
                 .borrow_mut()?
                 .entry(guild_id)
                 .or_default()
@@ -289,7 +289,7 @@ async fn parse(
     let title = args.single_quoted::<String>().unwrap();
     let data = ctx.data.read().await;
     let guild_id = m.guild_id.unwrap();
-    let assignables = DB::open(&*data)
+    let assignables = DB::open(&data)
         .borrow()?
         .get(&guild_id)
         .filter(|v| !v.roles.is_empty())
@@ -369,7 +369,7 @@ async fn updaterolemessage(ctx: &Context, m: &Message, args: Args) -> CommandRes
     {
         data.get::<ReactionWatchers>()
             .unwrap()
-            .setup(&mut *message, ctx.clone(), guild_id, title, roles)
+            .setup(&mut message, ctx.clone(), guild_id, title, roles)
             .await?;
     } else {
         m.reply(&ctx, "Message does not come with a reaction handler")
@@ -436,7 +436,7 @@ mod reaction_watcher {
 
     impl Watchers {
         pub fn new(data: &TypeMap) -> Result<Self> {
-            let init = Roles::open(&*data)
+            let init = Roles::open(data)
                 .borrow()?
                 .iter()
                 .flat_map(|(&guild, rs)| {
@@ -510,7 +510,7 @@ mod reaction_watcher {
             // Store the message into the list.
             {
                 let data = ctx.data.read().await;
-                Roles::open(&*data)
+                Roles::open(&data)
                     .borrow_mut()?
                     .entry(guild)
                     .or_default()
@@ -537,7 +537,7 @@ mod reaction_watcher {
             message: MessageId,
         ) -> Result<bool> {
             let data = ctx.data.read().await;
-            Roles::open(&*data)
+            Roles::open(&data)
                 .borrow_mut()?
                 .entry(guild)
                 .or_default()
@@ -583,7 +583,7 @@ mod reaction_watcher {
                     }
                 };
                 eprintln!("{:?}", reaction);
-                if let Err(e) = Self::handle_reaction(&ctx, guild, message, &*reaction).await {
+                if let Err(e) = Self::handle_reaction(&ctx, guild, message, &reaction).await {
                     eprintln!("Handling {:?}: {}", reaction, e);
                     break;
                 }
@@ -610,7 +610,7 @@ mod reaction_watcher {
                 return Ok(());
             }
             // Get the role list.
-            let role = Roles::open(&*data)
+            let role = Roles::open(&data)
                 .borrow()?
                 .get(&guild)
                 .ok_or_else(|| Error::msg("guild no longer has role list"))?

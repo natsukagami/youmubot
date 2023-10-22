@@ -42,9 +42,9 @@ pub enum Accuracy {
     ByValue(f64, u64),
 }
 
-impl Into<f64> for Accuracy {
-    fn into(self) -> f64 {
-        match self {
+impl From<Accuracy> for f64 {
+    fn from(val: Accuracy) -> Self {
+        match val {
             Accuracy::ByValue(v, _) => v,
             Accuracy::ByCount(n300, n100, n50, nmiss) => {
                 100.0 * ((6 * n300 + 2 * n100 + n50) as f64)
@@ -396,10 +396,10 @@ impl BeatmapCache {
     }
 
     async fn get_beatmap_db(&self, id: u64) -> Result<Option<BeatmapContent>> {
-        Ok(models::CachedBeatmapContent::by_id(id as i64, &self.pool)
+        models::CachedBeatmapContent::by_id(id as i64, &self.pool)
             .await?
             .map(|v| Self::parse_beatmap(String::from_utf8(v.content)?))
-            .transpose()?)
+            .transpose()
     }
 
     /// Get a beatmap from the cache.

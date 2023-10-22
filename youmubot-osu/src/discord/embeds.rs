@@ -7,6 +7,8 @@ use serenity::{builder::CreateEmbed, utils::MessageBuilder};
 use std::time::Duration;
 use youmubot_prelude::*;
 
+type CreateEmbedFn = dyn FnOnce(&mut CreateEmbed) -> &mut CreateEmbed + Send + Sync;
+
 /// Writes a number grouped in groups of 3.
 pub(crate) fn grouped_number(num: u64) -> String {
     let s = num.to_string();
@@ -22,7 +24,7 @@ pub(crate) fn grouped_number(num: u64) -> String {
 
 fn beatmap_description(b: &Beatmap) -> String {
     MessageBuilder::new()
-        .push_bold_line(&b.approval)
+        .push_bold_line(b.approval)
         .push({
             let link = b.download_link(false);
             format!(
@@ -34,9 +36,9 @@ fn beatmap_description(b: &Beatmap) -> String {
         })
         .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
         .push("Language: ")
-        .push_bold(&b.language)
+        .push_bold(b.language)
         .push(" | Genre: ")
-        .push_bold_line(&b.genre)
+        .push_bold_line(b.genre)
         .push(
             b.source
                 .as_ref()
@@ -60,12 +62,12 @@ pub fn beatmap_offline_embed(
     b: &'_ crate::discord::oppai_cache::BeatmapContent,
     m: Mode,
     mods: Mods,
-) -> Result<Box<dyn FnOnce(&mut CreateEmbed) -> &mut CreateEmbed + Send + Sync>> {
+) -> Result<Box<CreateEmbedFn>> {
     let bm = b.content.clone();
     let metadata = b.metadata.clone();
     let (info, pp) = b.get_possible_pp_with(m, mods)?;
 
-    let total_length = if bm.hit_objects.len() >= 1 {
+    let total_length = if !bm.hit_objects.is_empty() {
         Duration::from_millis(
             (bm.hit_objects.last().unwrap().end_time() - bm.hit_objects.first().unwrap().start_time)
                 as u64,
@@ -309,7 +311,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     s.mods,
                 )
                 .ok()
-                .map(|pp| (pp as f64, format!("{:.2}pp [?]", pp)))
+                .map(|pp| (pp, format!("{:.2}pp [?]", pp)))
         });
         let pp = if !s.perfect {
             content
@@ -320,11 +322,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     s.mods,
                 )
                 .ok()
-                .filter(|&v| {
-                    pp.as_ref()
-                        .map(|&(origin, _)| origin < v as f64)
-                        .unwrap_or(false)
-                })
+                .filter(|&v| pp.as_ref().map(|&(origin, _)| origin < v).unwrap_or(false))
                 .and_then(|value| {
                     pp.as_ref()
                         .map(|(_, original)| format!("{} ({:.2}pp if FC?)", original, value))
@@ -409,7 +407,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 true,
             )
             .field("Map stats", diff.format_info(mode, s.mods, b), false);
-        let mut footer = self.footer.take().unwrap_or_else(String::new);
+        let mut footer = self.footer.take().unwrap_or_default();
         if mode != Mode::Std && s.mods != Mods::NOMOD {
             footer += " Star difficulty does not reflect game mods.";
         }
@@ -501,9 +499,9 @@ pub(crate) fn user_embed(
                     .push(format!(
                         "> {}",
                         map.difficulty
-                            .apply_mods(v.mods, info.stars as f64)
+                            .apply_mods(v.mods, info.stars)
                             .format_info(mode, v.mods, &map)
-                            .replace("\n", "\n> ")
+                            .replace('\n', "\n> ")
                     ))
                     .build(),
                 false,

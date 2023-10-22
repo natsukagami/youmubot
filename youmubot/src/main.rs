@@ -61,7 +61,7 @@ impl EventHandler for Handler {
 async fn is_not_channel_mod(ctx: &Context, msg: &Message) -> bool {
     match msg.channel_id.to_channel(&ctx).await {
         Ok(Channel::Guild(gc)) => gc
-            .permissions_for_user(&ctx, msg.author.id)
+            .permissions_for_user(ctx, msg.author.id)
             .map(|perms| !perms.contains(Permissions::MANAGE_MESSAGES))
             .unwrap_or(true),
         _ => true,
@@ -173,7 +173,7 @@ async fn setup_framework(token: &str) -> StandardFramework {
             c.with_whitespace(false)
                 .prefixes(
                     var("PREFIX")
-                        .map(|v| v.split(",").map(|v| v.trim().to_owned()).collect())
+                        .map(|v| v.split(',').map(|v| v.trim().to_owned()).collect())
                         .unwrap_or_else(|_| vec!["y!".to_owned(), "y2!".to_owned()]),
                 )
                 .delimiters(vec![" / ", "/ ", " /", "/"])

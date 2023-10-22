@@ -367,7 +367,7 @@ async fn show_leaderboard(
                 return Box::pin(future::ready(Ok(false)));
             }
             let total_len = scores.len();
-            let scores = (&scores[start..end]).to_vec();
+            let scores = scores[start..end].to_vec();
             let bm = (bm.0.clone(), bm.1);
             Box::pin(async move {
                 // username width

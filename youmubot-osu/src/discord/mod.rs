@@ -207,7 +207,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     .await?;
                 return Ok(());
             }
-            add_user(msg.author.id, u.id, &*data).await?;
+            add_user(msg.author.id, u.id, &data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -239,7 +239,7 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
     match user {
         Some(u) => {
-            add_user(target, u.id, &*data).await?;
+            add_user(target, u.id, &data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -335,7 +335,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
     let user = to_user_id_query(
         args.quoted().trimmed().single::<UsernameArg>().ok(),
-        &*data,
+        &data,
         msg,
     )
     .await?;
@@ -370,7 +370,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*data, msg.channel_id, &beatmap_mode).await?;
+            cache::save_beatmap(&data, msg.channel_id, &beatmap_mode).await?;
         }
         Nth::All => {
             let plays = osu
@@ -409,7 +409,7 @@ pub(crate) async fn load_beatmap(
             replied.embeds.iter().find_map(|e| {
                 e.description
                     .as_ref()
-                    .and_then(|v| SHORT_LINK_REGEX.captures(&v))
+                    .and_then(|v| SHORT_LINK_REGEX.captures(v))
                     .or_else(|| {
                         e.fields
                             .iter()
@@ -432,10 +432,10 @@ pub(crate) async fn load_beatmap(
                 .ok()
                 .and_then(|v| v.into_iter().next());
             if let Some(beatmap) = bms {
-                let bm_mode = beatmap.mode.clone();
+                let bm_mode = beatmap.mode;
                 let bm = BeatmapWithMode(beatmap, mode.unwrap_or(bm_mode));
                 // Store the beatmap in history
-                cache::save_beatmap(&*data, msg.channel_id, &bm)
+                cache::save_beatmap(&data, msg.channel_id, &bm)
                     .await
                     .pls_ok();
 
@@ -444,7 +444,7 @@ pub(crate) async fn load_beatmap(
         }
     }
 
-    let b = cache::get_beatmap(&*data, msg.channel_id)
+    let b = cache::get_beatmap(&data, msg.channel_id)
         .await
         .ok()
         .flatten();
@@ -529,7 +529,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 None => Some(msg.author.id),
                 _ => None,
             };
-            let user = to_user_id_query(username_arg, &*data, msg).await?;
+            let user = to_user_id_query(username_arg, &data, msg).await?;
 
             let osu = data.get::<OsuClient>().unwrap();
 
@@ -581,7 +581,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .map(|ModeArg(t)| t)
         .unwrap_or(Mode::Std);
 
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &data, msg).await?;
     let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
     let osu = data.get::<OsuClient>().unwrap();
 
@@ -622,7 +622,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .await?;
 
             // Save the beatmap...
-            cache::save_beatmap(&*data, msg.channel_id, &beatmap).await?;
+            cache::save_beatmap(&data, msg.channel_id, &beatmap).await?;
         }
         Nth::All => {
             let plays = osu
@@ -636,7 +636,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
 
 async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> CommandResult {
     let data = ctx.data.read().await;
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &*data, msg).await?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &data, msg).await?;
     let osu = data.get::<OsuClient>().unwrap();
     let cache = data.get::<BeatmapMetaCache>().unwrap();
     let user = osu.user(user, |f| f.mode(mode)).await?;

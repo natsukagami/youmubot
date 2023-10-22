@@ -26,7 +26,7 @@ pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbe
         .join(", ");
     e.color(user.color())
         .author(|a| a.name(&rank))
-        .thumbnail(format!("{}", user.title_photo))
+        .thumbnail(user.title_photo.to_string())
         .title(&user.handle)
         .url(user.profile_url())
         .description(format!(
@@ -63,7 +63,7 @@ pub fn rating_change_embed<'a>(
     user_id: serenity::model::id::UserId,
     e: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
-    let delta = (rating_change.new_rating as i64) - (rating_change.old_rating as i64);
+    let delta = rating_change.new_rating - rating_change.old_rating;
     let color = if delta < 0 { 0xff0000 } else { 0x00ff00 };
     let message = if delta > 0 {
         MessageBuilder::new()
@@ -90,7 +90,7 @@ pub fn rating_change_embed<'a>(
     };
 
     e.author(|a| {
-        a.icon_url(format!("{}", &user.avatar))
+        a.icon_url(user.avatar.to_string())
             .url(user.profile_url())
             .name(&user.handle)
     })

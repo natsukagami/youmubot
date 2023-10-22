@@ -138,12 +138,12 @@ mod duration {
             let tests = [
                 (
                     "2D2h1m",
-                    StdDuration::from_secs(2 * 60 * 60 * 24 + 2 * 60 * 60 + 1 * 60),
+                    StdDuration::from_secs(2 * 60 * 60 * 24 + 2 * 60 * 60 + 60),
                 ),
                 (
                     "1W2D3h4m5s",
                     StdDuration::from_secs(
-                        1 * 7 * 24 * 60 * 60 + // 1W
+                        7 * 24 * 60 * 60 + // 1W
                         2 * 24 * 60 * 60 + // 2D
                         3 * 60 * 60 + // 3h
                         4 * 60  + // 4m
@@ -153,7 +153,7 @@ mod duration {
                 (
                     "1W2D3h4m5s6W",
                     StdDuration::from_secs(
-                        1 * 7 * 24 * 60 * 60 + // 1W
+                        7 * 24 * 60 * 60 + // 1W
                         2 * 24 * 60 * 60 + // 2D
                         3 * 60 * 60  + // 3h
                         4 * 60  + // 4m

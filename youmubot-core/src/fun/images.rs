@@ -103,7 +103,7 @@ async fn get_image(
     // Fix the tags: change whitespaces to +
     let tags = tags.split_whitespace().collect::<Vec<_>>().join("_");
     let req = client
-        .get(&format!(
+        .get(format!(
             "https://danbooru.donmai.us/posts.json?tags=rating:{}+{}",
             rating.to_string(),
             tags

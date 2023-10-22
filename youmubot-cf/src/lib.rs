@@ -63,7 +63,7 @@ pub async fn profile(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
     let handle = match handle {
         UsernameArg::Raw(s) => s,
         UsernameArg::Tagged(u) => {
-            let db = CfSavedUsers::open(&*data);
+            let db = CfSavedUsers::open(&data);
             let user = db.borrow()?.get(&u).map(|u| u.handle.clone());
             match user {
                 Some(v) => v,
@@ -75,7 +75,7 @@ pub async fn profile(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
         }
     };
 
-    let account = codeforces::User::info(&*http, &[&handle[..]])
+    let account = codeforces::User::info(http, &[&handle[..]])
         .await?
         .into_iter()
         .next();
@@ -107,7 +107,7 @@ pub async fn save(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let handle = args.single::<String>()?;
     let http = data.get::<CFClient>().unwrap();
 
-    let account = codeforces::User::info(&*http, &[&handle[..]])
+    let account = codeforces::User::info(http, &[&handle[..]])
         .await?
         .into_iter()
         .next();
@@ -119,8 +119,8 @@ pub async fn save(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
         }
         Some(acc) => {
             // Collect rating changes data.
-            let rating_changes = acc.rating_changes(&*http).await?;
-            let mut db = CfSavedUsers::open(&*data);
+            let rating_changes = acc.rating_changes(http).await?;
+            let mut db = CfSavedUsers::open(&data);
             m.reply(
                 &ctx,
                 format!("account `{}` has been linked to your account.", &acc.handle),
@@ -141,7 +141,7 @@ pub async fn save(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
 pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
     let data = ctx.data.read().await;
     let everyone = {
-        let db = CfSavedUsers::open(&*data);
+        let db = CfSavedUsers::open(&data);
         let db = db.borrow()?;
         db.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>()
     };
@@ -254,7 +254,7 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
     let contest_id: u64 = args.single()?;
     let guild = m.guild_id.unwrap(); // Guild-only command
     let member_cache = data.get::<MemberCache>().unwrap();
-    let members = CfSavedUsers::open(&*data).borrow()?.clone();
+    let members = CfSavedUsers::open(&data).borrow()?.clone();
     let members = members
         .into_iter()
         .map(|(user_id, cf_user)| {
@@ -267,8 +267,8 @@ pub async fn contestranks(ctx: &Context, m: &Message, mut args: Args) -> Command
         .collect::<HashMap<_, _>>()
         .await;
     let http = data.get::<CFClient>().unwrap();
-    let (contest, problems, ranks) = Contest::standings(&*http, contest_id, |f| {
-        f.handles(members.iter().map(|(k, _)| k.clone()).collect())
+    let (contest, problems, ranks) = Contest::standings(http, contest_id, |f| {
+        f.handles(members.keys().cloned().collect())
     })
     .await?;
 

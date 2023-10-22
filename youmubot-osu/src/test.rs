@@ -9,7 +9,7 @@ fn parse_beatmaps() {
     parse_str::<Vec<RawBeatmap>>(INPUT)
         .unwrap()
         .into_iter()
-        .map(|v| Beatmap::try_from(v))
+        .map(Beatmap::try_from)
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 }

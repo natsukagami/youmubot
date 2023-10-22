@@ -60,7 +60,7 @@ pub fn dot_osu_hook<'a>(
                 }
             })
             .collect::<stream::FuturesUnordered<_>>()
-            .filter_map(|v| future::ready(v))
+            .filter_map(future::ready)
             .collect::<Vec<_>>()
             .await;
 
@@ -96,14 +96,14 @@ pub fn dot_osu_hook<'a>(
                 }
             })
             .collect::<stream::FuturesUnordered<_>>()
-            .filter_map(|v| future::ready(v))
-            .filter(|v| future::ready(v.len() > 0))
+            .filter_map(future::ready)
+            .filter(|v| future::ready(!v.is_empty()))
             .collect::<Vec<_>>()
             .await
             .concat();
         osu_embeds.extend(osz_embeds);
 
-        if osu_embeds.len() > 0 {
+        if !osu_embeds.is_empty() {
             msg.channel_id
                 .send_message(ctx, |f| {
                     f.reference_message(msg)
@@ -129,7 +129,7 @@ pub fn hook<'a>(
         let (old_links, new_links, short_links) = (
             handle_old_links(ctx, &msg.content),
             handle_new_links(ctx, &msg.content),
-            handle_short_links(ctx, &msg, &msg.content),
+            handle_short_links(ctx, msg, &msg.content),
         );
         stream::select(old_links, stream::select(new_links, short_links))
             .then(|l| async move {
@@ -139,7 +139,7 @@ pub fn hook<'a>(
                             .await
                             .pls_ok();
                         let mode = l.mode.unwrap_or(b.mode);
-                        let bm = super::BeatmapWithMode(b, mode);
+                        let bm = super::BeatmapWithMode(*b, mode);
                         crate::discord::cache::save_beatmap(
                             &*ctx.data.read().await,
                             msg.channel_id,
@@ -163,7 +163,7 @@ pub fn hook<'a>(
 }
 
 enum EmbedType {
-    Beatmap(Beatmap, BeatmapInfoWithPP, Mods),
+    Beatmap(Box<Beatmap>, BeatmapInfoWithPP, Mods),
     Beatmapset(Vec<Beatmap>),
 }
 
@@ -210,12 +210,11 @@ fn handle_old_links<'a>(
             }
             let r: Result<_> = Ok(match req_type {
                 "b" => {
-                    let b = beatmaps.into_iter().next().unwrap();
+                    let b = Box::new(beatmaps.into_iter().next().unwrap());
                     // collect beatmap info
                     let mods = capture
                         .name("mods")
-                        .map(|v| Mods::from_str(v.as_str()).pls_ok())
-                        .flatten()
+                        .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                         .unwrap_or(Mods::NOMOD);
                     let info = {
                         let mode = mode.unwrap_or(b.mode);
@@ -280,7 +279,7 @@ fn handle_new_links<'a>(
             }
             let r: Result<_> = Ok(match capture.name("beatmap_id") {
                 Some(_) => {
-                    let beatmap = beatmaps.into_iter().next().unwrap();
+                    let beatmap = Box::new(beatmaps.into_iter().next().unwrap());
                     // collect beatmap info
                     let mods = capture
                         .name("mods")
@@ -359,7 +358,7 @@ fn handle_short_links<'a>(
                     .and_then(|b| b.get_possible_pp_with(mode, mods))?
             };
             let r: Result<_> = Ok(ToPrint {
-                embed: EmbedType::Beatmap(beatmap, info, mods),
+                embed: EmbedType::Beatmap(Box::new(beatmap), info, mods),
                 link: capture.name("main").unwrap().as_str(),
                 mode,
             });
@@ -410,7 +409,7 @@ async fn handle_beatmapset<'a, 'b>(
     reply_to: &Message,
 ) -> Result<()> {
     crate::discord::display::display_beatmapset(
-        &ctx,
+        ctx,
         beatmaps,
         mode,
         None,

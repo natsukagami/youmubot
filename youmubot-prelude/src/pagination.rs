@@ -102,7 +102,7 @@ async fn paginate_with_first_message(
     mut message: Message,
     timeout: std::time::Duration,
 ) -> Result<()> {
-    pager.prerender(&ctx, &mut message).await?;
+    pager.prerender(ctx, &mut message).await?;
     pager.render(0, ctx, &mut message).await?;
     // Just quit if there is only one page
     if pager.len().filter(|&v| v == 1).is_some() {
@@ -127,7 +127,7 @@ async fn paginate_with_first_message(
             .await?;
     }
     // Build a reaction collector
-    let mut reaction_collector = message.await_reactions(&ctx).removed(true).build();
+    let mut reaction_collector = message.await_reactions(ctx).removed(true).build();
     let mut page = 0;
 
     // Loop the handler function.

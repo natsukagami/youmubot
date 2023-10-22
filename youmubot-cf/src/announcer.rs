@@ -24,14 +24,14 @@ impl youmubot_prelude::Announcer for Announcer {
     ) -> Result<()> {
         let data = data.read().await;
         let client = data.get::<CFClient>().unwrap();
-        let mut users = CfSavedUsers::open(&*data).borrow()?.clone();
+        let mut users = CfSavedUsers::open(&data).borrow()?.clone();
         users
             .iter_mut()
             .map(|(user_id, cfu)| {
                 let http = http.clone();
                 let channels = &channels;
                 async move {
-                    if let Err(e) = update_user(http, &channels, &client, *user_id, cfu).await {
+                    if let Err(e) = update_user(http, channels, client, *user_id, cfu).await {
                         cfu.failures += 1;
                         eprintln!(
                             "Codeforces: cannot update user {}: {} [{} failures]",
@@ -45,7 +45,7 @@ impl youmubot_prelude::Announcer for Announcer {
             .collect::<stream::FuturesUnordered<_>>()
             .collect::<()>()
             .await;
-        let mut db = CfSavedUsers::open(&*data);
+        let mut db = CfSavedUsers::open(&data);
         let mut db = db.borrow_mut()?;
         for (key, user) in users {
             match db.get(&key).map(|v| v.last_update) {
@@ -74,13 +74,13 @@ async fn update_user(
     user_id: UserId,
     cfu: &mut CfUser,
 ) -> Result<()> {
-    let info = User::info(&*client, &[cfu.handle.as_str()])
+    let info = User::info(client, &[cfu.handle.as_str()])
         .await?
         .into_iter()
         .next()
         .ok_or_else(|| Error::msg("Not found"))?;
 
-    let rating_changes = info.rating_changes(&*client).await?;
+    let rating_changes = info.rating_changes(client).await?;
 
     let channels_list = channels.channels_of(&http, user_id).await;
     cfu.last_update = Utc::now();
@@ -119,7 +119,7 @@ async fn update_user(
                     return Ok(());
                 }
                 let (contest, _, _) =
-                    codeforces::Contest::standings(&*client, rc.contest_id, |f| f.limit(1, 1))
+                    codeforces::Contest::standings(client, rc.contest_id, |f| f.limit(1, 1))
                         .await?;
                 channels
                     .iter()

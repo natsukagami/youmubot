@@ -23,7 +23,7 @@ impl Flags {
     pub fn collect_from(args: &mut Args) -> Flags {
         let mut set = Set::new();
         loop {
-            if let Some(Flag(s)) = args.find().ok() {
+            if let Ok(Flag(s)) = args.find() {
                 set.insert(s);
             } else {
                 break Flags(set);

@@ -32,7 +32,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         .guild_id
         .ok_or_else(|| Error::msg("Command is guild only"))?;
 
-    let mut db = SoftBans::open(&*data);
+    let mut db = SoftBans::open(&data);
     let val = db
         .borrow()?
         .get(&guild)
@@ -85,13 +85,13 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
 pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let role_id = args.single::<RoleId>()?;
     let data = ctx.data.read().await;
-    let guild = msg.guild(&ctx).unwrap();
+    let guild = msg.guild(ctx).unwrap();
     // Check whether the role_id is the one we wanted
     if !guild.roles.contains_key(&role_id) {
         return Err(Error::msg(format!("{} is not a role in this server.", role_id)).into());
     }
     // Check if we already set up
-    let mut db = SoftBans::open(&*data);
+    let mut db = SoftBans::open(&data);
     let set_up = db.borrow()?.contains_key(&guild.id);
 
     if !set_up {
@@ -111,7 +111,7 @@ pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
         {
             // Poll the data for any changes.
             let data = data.read().await;
-            let mut data = SoftBans::open(&*data);
+            let mut data = SoftBans::open(&data);
             let mut db = data.borrow().unwrap().clone();
             let now = Utc::now();
             for (server_id, bans) in db.iter_mut() {
@@ -131,7 +131,7 @@ pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
                     .map(|user_id| {
                         bans.periodical_bans.remove(&user_id);
                         lift_soft_ban_for(
-                            &*cache_http,
+                            &cache_http,
                             *server_id,
                             &server_name[..],
                             bans.role,

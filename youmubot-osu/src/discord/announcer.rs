@@ -125,7 +125,7 @@ impl Announcer {
                 .iter()
                 .filter_map(|u| u.to_event_rank())
                 .filter(|u| u.mode == mode && u.date > last_update && u.date <= now)
-                .map(|ev| CollectedScore::from_event(&*client, &user, ev, user_id, &channels[..]))
+                .map(|ev| CollectedScore::from_event(&client, &user, ev, user_id, &channels[..]))
                 .collect::<stream::FuturesUnordered<_>>()
                 .filter_map(|u| future::ready(u.pls_ok()))
                 .collect::<Vec<_>>()
@@ -235,7 +235,7 @@ impl<'a> CollectedScore<'a> {
 
 impl<'a> CollectedScore<'a> {
     async fn send_message(self, ctx: &Context) -> Result<Vec<Message>> {
-        let (bm, content) = self.get_beatmap(&ctx).await?;
+        let (bm, content) = self.get_beatmap(ctx).await?;
         self.channels
             .iter()
             .map(|c| self.send_message_to(*c, ctx, &bm, &content))
@@ -293,7 +293,7 @@ impl<'a> CollectedScore<'a> {
                     }
                 })
                 .embed(|e| {
-                    let mut b = score_embed(&self.score, &bm, content, self.user);
+                    let mut b = score_embed(&self.score, bm, content, self.user);
                     match self.kind {
                         ScoreType::TopRecord(rank) => b.top_record(rank),
                         ScoreType::WorldRecord(rank) => b.world_record(rank),
@@ -302,7 +302,7 @@ impl<'a> CollectedScore<'a> {
                 })
             })
             .await?;
-        save_beatmap(&*ctx.data.read().await, channel, &bm)
+        save_beatmap(&*ctx.data.read().await, channel, bm)
             .await
             .pls_ok();
         Ok(m)

@@ -58,7 +58,7 @@ impl Client {
     ) -> Result<Vec<Beatmap>> {
         let mut r = BeatmapRequestBuilder::new(kind);
         f(&mut r);
-        let res: Vec<raw::Beatmap> = r.build(&self).await?.json().await?;
+        let res: Vec<raw::Beatmap> = r.build(self).await?.json().await?;
         Ok(vec_try_into(res)?)
     }
 
@@ -69,7 +69,7 @@ impl Client {
     ) -> Result<Option<User>, Error> {
         let mut r = UserRequestBuilder::new(user);
         f(&mut r);
-        let res: Vec<raw::User> = r.build(&self).await?.json().await?;
+        let res: Vec<raw::User> = r.build(self).await?.json().await?;
         let res = vec_try_into(res)?;
         Ok(res.into_iter().next())
     }
@@ -81,7 +81,7 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
-        let res: Vec<raw::Score> = r.build(&self).await?.json().await?;
+        let res: Vec<raw::Score> = r.build(self).await?.json().await?;
         let mut res: Vec<Score> = vec_try_into(res)?;
 
         // with a scores request you need to fill the beatmap ids yourself
@@ -115,7 +115,7 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
-        let res: Vec<raw::Score> = r.build(&self).await?.json().await?;
+        let res: Vec<raw::Score> = r.build(self).await?.json().await?;
         let res = vec_try_into(res)?;
         Ok(res)
     }
