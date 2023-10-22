@@ -184,8 +184,7 @@ mod scores {
                         let beatmap = osu.get_beatmap(play.beatmap_id, mode).await?;
                         let info = {
                             let b = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
-                            (if mode == Mode::Std { Some(mode) } else { None })
-                                .and_then(|_| b.get_info_with(play.mods).ok())
+                            b.get_info_with(mode, play.mods).ok()
                         };
                         Ok((beatmap, info)) as Result<(Beatmap, Option<BeatmapInfo>)>
                     })
@@ -199,23 +198,22 @@ mod scores {
                             Some(v) => Ok(v),
                             None => {
                                 let b = beatmap_cache.get_beatmap(p.beatmap_id).await?;
-                                let r: Result<_> =
-                                    Ok((if mode == Mode::Std { Some(mode) } else { None })
-                                        .and_then(|_| {
-                                            b.get_pp_from(
-                                                Some(p.max_combo as usize),
-                                                Accuracy::ByCount(
-                                                    p.count_300,
-                                                    p.count_100,
-                                                    p.count_50,
-                                                    p.count_miss,
-                                                ),
-                                                p.mods,
-                                            )
-                                            .ok()
-                                            .map(|pp| format!("{:.2}pp [?]", pp))
-                                        })
-                                        .unwrap_or_else(|| "-".to_owned()));
+                                let r: Result<_> = Ok({
+                                    b.get_pp_from(
+                                        mode,
+                                        Some(p.max_combo as usize),
+                                        Accuracy::ByCount(
+                                            p.count_300,
+                                            p.count_100,
+                                            p.count_50,
+                                            p.count_miss,
+                                        ),
+                                        p.mods,
+                                    )
+                                    .ok()
+                                    .map(|pp| format!("{:.2}pp [?]", pp))
+                                }
+                                .unwrap_or_else(|| "-".to_owned()));
                                 r
                             }
                         }
@@ -389,24 +387,20 @@ mod beatmapset {
 
     struct Paginate {
         maps: Vec<Beatmap>,
-        infos: Vec<Option<Option<BeatmapInfoWithPP>>>,
+        infos: Vec<Option<BeatmapInfoWithPP>>,
         mode: Option<Mode>,
         mods: Mods,
         message: String,
     }
 
     impl Paginate {
-        async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Option<BeatmapInfoWithPP> {
+        async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Result<BeatmapInfoWithPP> {
             let data = ctx.data.read().await;
             let cache = data.get::<BeatmapCache>().unwrap();
             cache
                 .get_beatmap(b.beatmap_id)
-                .map(move |v| {
-                    v.ok()
-                        .filter(|_| b.mode == Mode::Std)
-                        .and_then(move |v| v.get_possible_pp_with(self.mods).ok())
-                })
                 .await
+                .and_then(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), self.mods))
         }
     }
 
@@ -440,7 +434,7 @@ mod beatmapset {
             let info = match &self.infos[page] {
                 Some(info) => *info,
                 None => {
-                    let info = self.get_beatmap_info(ctx, map).await;
+                    let info = self.get_beatmap_info(ctx, map).await?;
                     self.infos[page] = Some(info);
                     info
                 }

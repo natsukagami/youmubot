@@ -99,9 +99,9 @@ impl Difficulty {
     }
     /// Apply mods to the given difficulty.
     /// Note that `stars`, `aim` and `speed` cannot be calculated from this alone.
-    pub fn apply_mods(&self, mods: Mods, updated_stars: Option<f64>) -> Difficulty {
+    pub fn apply_mods(&self, mods: Mods, updated_stars: f64) -> Difficulty {
         let mut diff = Difficulty {
-            stars: updated_stars.unwrap_or(self.stars),
+            stars: updated_stars,
             ..self.clone()
         };
 

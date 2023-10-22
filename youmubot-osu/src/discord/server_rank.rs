@@ -277,8 +277,9 @@ async fn show_leaderboard(
     let oppai = data.get::<BeatmapCache>().unwrap();
     let oppai_map = oppai.get_beatmap(bm.0.beatmap_id).await?;
     let get_oppai_pp = move |combo: u64, acc: Accuracy, mods: Mods| {
-        (if mode == Mode::Std { Some(mode) } else { None })
-            .and_then(|_| oppai_map.get_pp_from(Some(combo as usize), acc, mods).ok())
+        oppai_map
+            .get_pp_from(mode, Some(combo as usize), acc, mods)
+            .ok()
     };
 
     let guild = m.guild_id.expect("Guild-only command");

@@ -163,7 +163,7 @@ pub fn hook<'a>(
 }
 
 enum EmbedType {
-    Beatmap(Beatmap, Option<BeatmapInfoWithPP>, Mods),
+    Beatmap(Beatmap, BeatmapInfoWithPP, Mods),
     Beatmapset(Vec<Beatmap>),
 }
 
@@ -217,13 +217,12 @@ fn handle_old_links<'a>(
                         .map(|v| Mods::from_str(v.as_str()).pls_ok())
                         .flatten()
                         .unwrap_or(Mods::NOMOD);
-                    let info = match mode.unwrap_or(b.mode) {
-                        Mode::Std => cache
+                    let info = {
+                        let mode = mode.unwrap_or(b.mode);
+                        cache
                             .get_beatmap(b.beatmap_id)
                             .await
-                            .and_then(|b| b.get_possible_pp_with(mods))
-                            .pls_ok(),
-                        _ => None,
+                            .and_then(|b| b.get_possible_pp_with(mode, mods))?
                     };
                     Some(ToPrint {
                         embed: EmbedType::Beatmap(b, info, mods),
@@ -287,13 +286,12 @@ fn handle_new_links<'a>(
                         .name("mods")
                         .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                         .unwrap_or(Mods::NOMOD);
-                    let info = match mode.unwrap_or(beatmap.mode) {
-                        Mode::Std => cache
+                    let info = {
+                        let mode = mode.unwrap_or(beatmap.mode);
+                        cache
                             .get_beatmap(beatmap.beatmap_id)
                             .await
-                            .and_then(|b| b.get_possible_pp_with(mods))
-                            .pls_ok(),
-                        _ => None,
+                            .and_then(|b| b.get_possible_pp_with(mode, mods))?
                     };
                     Some(ToPrint {
                         embed: EmbedType::Beatmap(beatmap, info, mods),
@@ -353,13 +351,12 @@ fn handle_short_links<'a>(
                 .name("mods")
                 .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                 .unwrap_or(Mods::NOMOD);
-            let info = match mode.unwrap_or(beatmap.mode) {
-                Mode::Std => cache
+            let info = {
+                let mode = mode.unwrap_or(beatmap.mode);
+                cache
                     .get_beatmap(beatmap.beatmap_id)
                     .await
-                    .and_then(|b| b.get_possible_pp_with(mods))
-                    .pls_ok(),
-                _ => None,
+                    .and_then(|b| b.get_possible_pp_with(mode, mods))?
             };
             let r: Result<_> = Ok(ToPrint {
                 embed: EmbedType::Beatmap(beatmap, info, mods),
@@ -383,7 +380,7 @@ fn handle_short_links<'a>(
 async fn handle_beatmap<'a, 'b>(
     ctx: &Context,
     beatmap: &Beatmap,
-    info: Option<BeatmapInfoWithPP>,
+    info: BeatmapInfoWithPP,
     link: &'_ str,
     mode: Option<Mode>,
     mods: Mods,

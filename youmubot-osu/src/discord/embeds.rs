@@ -63,7 +63,7 @@ pub fn beatmap_offline_embed(
 ) -> Result<Box<dyn FnOnce(&mut CreateEmbed) -> &mut CreateEmbed + Send + Sync>> {
     let bm = b.content.clone();
     let metadata = b.metadata.clone();
-    let (info, pp) = b.get_possible_pp_with(mods)?;
+    let (info, pp) = b.get_possible_pp_with(m, mods)?;
 
     let total_length = if bm.hit_objects.len() >= 1 {
         Duration::from_millis(
@@ -90,7 +90,7 @@ pub fn beatmap_offline_embed(
         drain_length: total_length, // It's hard to calculate so maybe just skip...
         total_length,
     }
-    .apply_mods(mods, Some(info.stars));
+    .apply_mods(mods, info.stars);
     Ok(Box::new(move |c: &mut CreateEmbed| {
         c.title(beatmap_title(
             &metadata.artist,
@@ -145,12 +145,10 @@ pub fn beatmap_embed<'a>(
     b: &'_ Beatmap,
     m: Mode,
     mods: Mods,
-    info: Option<BeatmapInfoWithPP>,
+    info: BeatmapInfoWithPP,
     c: &'a mut CreateEmbed,
 ) -> &'a mut CreateEmbed {
-    let diff = b
-        .difficulty
-        .apply_mods(mods, info.map(|(v, _)| v.stars as f64));
+    let diff = b.difficulty.apply_mods(mods, info.0.stars);
     c.title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
         .author(|a| {
             a.name(&b.creator)
@@ -160,24 +158,19 @@ pub fn beatmap_embed<'a>(
         .url(b.link())
         .image(b.cover_url())
         .color(0xffb6c1)
-        .fields(info.map(|(_, pp)| {
-            (
+        .fields({
+            let pp = info.1;
+            std::iter::once((
                 "Calculated pp",
                 format!(
                     "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
                     pp[0], pp[1], pp[2], pp[3]
                 ),
                 false,
-            )
-        }))
+            ))
+        })
         .field("Information", diff.format_info(m, mods, b), false)
         .description(beatmap_description(b))
-        .footer(|f| {
-            if info.is_none() && mods != Mods::NOMOD {
-                f.text("Star difficulty not reflecting mods applied.");
-            }
-            f
-        })
 }
 
 const MAX_DIFFS: usize = 25 - 4;
@@ -283,11 +276,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
         let content = self.content;
         let u = self.u;
         let accuracy = s.accuracy(mode);
-        let info = if mode == Mode::Std {
-            content.get_info_with(s.mods).ok()
-        } else {
-            None
-        };
+        let info = content.get_info_with(mode, s.mods).ok();
         let stars = info
             .as_ref()
             .map(|info| info.stars)
@@ -312,34 +301,25 @@ impl<'a> ScoreEmbedBuilder<'a> {
             ),
         };
         let pp = s.pp.map(|pp| (pp, format!("{:.2}pp", pp))).or_else(|| {
-            (if mode == Mode::Std { Some(mode) } else { None })
-                .and_then(|_| {
-                    content
-                        .get_pp_from(
-                            Some(s.max_combo as usize),
-                            Accuracy::ByCount(s.count_300, s.count_100, s.count_50, s.count_miss),
-                            s.mods,
-                        )
-                        .ok()
-                })
+            content
+                .get_pp_from(
+                    mode,
+                    Some(s.max_combo as usize),
+                    Accuracy::ByCount(s.count_300, s.count_100, s.count_50, s.count_miss),
+                    s.mods,
+                )
+                .ok()
                 .map(|pp| (pp as f64, format!("{:.2}pp [?]", pp)))
         });
         let pp = if !s.perfect {
-            (if mode == Mode::Std { Some(mode) } else { None })
-                .and_then(|_| {
-                    content
-                        .get_pp_from(
-                            None,
-                            Accuracy::ByCount(
-                                s.count_300 + s.count_miss,
-                                s.count_100,
-                                s.count_50,
-                                0,
-                            ),
-                            s.mods,
-                        )
-                        .ok()
-                })
+            content
+                .get_pp_from(
+                    mode,
+                    None,
+                    Accuracy::ByCount(s.count_300 + s.count_miss, s.count_100, s.count_50, 0),
+                    s.mods,
+                )
+                .ok()
                 .filter(|&v| {
                     pp.as_ref()
                         .map(|&(origin, _)| origin < v as f64)
@@ -382,7 +362,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .world_record
             .map(|v| format!("| #{} on Global Rankings!", v))
             .unwrap_or_else(|| "".to_owned());
-        let diff = b.difficulty.apply_mods(s.mods, Some(stars));
+        let diff = b.difficulty.apply_mods(s.mods, stars);
         let creator = if b.difficulty_name.contains("'s") {
             "".to_owned()
         } else {
@@ -442,7 +422,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
 
 pub(crate) fn user_embed(
     u: User,
-    best: Option<(Score, BeatmapWithMode, Option<BeatmapInfo>)>,
+    best: Option<(Score, BeatmapWithMode, BeatmapInfo)>,
     m: &mut CreateEmbed,
 ) -> &mut CreateEmbed {
     m.title(u.username)
@@ -521,7 +501,7 @@ pub(crate) fn user_embed(
                     .push(format!(
                         "> {}",
                         map.difficulty
-                            .apply_mods(v.mods, info.map(|i| i.stars as f64))
+                            .apply_mods(v.mods, info.stars as f64)
                             .format_info(mode, v.mods, &map)
                             .replace("\n", "\n> ")
                     ))

@@ -194,9 +194,15 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     .into_iter()
                     .next()
                     .unwrap();
+                let info = data
+                    .get::<BeatmapCache>()
+                    .unwrap()
+                    .get_beatmap(beatmap.beatmap_id)
+                    .await?
+                    .get_possible_pp_with(Mode::Std, Mods::NOMOD)?;
                 msg.await?
                     .edit(&ctx, |f| {
-                        f.embed(|e| beatmap_embed(&beatmap, Mode::Std, Mods::NOMOD, None, e))
+                        f.embed(|e| beatmap_embed(&beatmap, Mode::Std, Mods::NOMOD, info, e))
                     })
                     .await?;
                 return Ok(());
@@ -478,8 +484,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .unwrap()
                 .get_beatmap(b.beatmap_id)
                 .await?
-                .get_possible_pp_with(mods)
-                .ok();
+                .get_possible_pp_with(m, mods)?;
             msg.channel_id
                 .send_message(&ctx, |f| {
                     f.content("Here is the beatmap you requested!")
@@ -646,15 +651,10 @@ async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> C
             {
                 Some(m) => {
                     let beatmap = cache.get_beatmap(m.beatmap_id, mode).await?;
-                    let info = match mode {
-                        Mode::Std => Some(
-                            oppai
-                                .get_beatmap(m.beatmap_id)
-                                .await?
-                                .get_info_with(m.mods)?,
-                        ),
-                        _ => None,
-                    };
+                    let info = oppai
+                        .get_beatmap(m.beatmap_id)
+                        .await?
+                        .get_info_with(mode, m.mods)?;
                     Some((m, BeatmapWithMode(beatmap, mode), info))
                 }
                 None => None,
