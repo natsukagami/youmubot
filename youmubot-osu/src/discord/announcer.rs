@@ -58,12 +58,13 @@ impl youmubot_prelude::Announcer for Announcer {
                     c: c.clone(),
                     data: d.clone(),
                 };
-                let s = &self;
+                let s = &*self;
                 async move {
                     let channels = channels.channels_of(ctx.c.clone(), user_id).await;
                     if channels.is_empty() {
                         return; // We don't wanna update an user without any active server
                     }
+                    println!("scanning {}", osu_user.id);
                     match [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
                         .into_iter()
                         .map(|m| {
@@ -74,6 +75,7 @@ impl youmubot_prelude::Announcer for Announcer {
                         .await
                     {
                         Ok(v) => {
+                            println!("scanning {} done", osu_user.id);
                             osu_user.last_update = now;
                             osu_user.pp = v.try_into().unwrap();
                             data.save(osu_user).await.pls_ok();

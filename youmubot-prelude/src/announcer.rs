@@ -163,6 +163,8 @@ impl AnnouncerHandler {
                     move |v| {
                         if let Err(e) = v {
                             eprintln!(" - key `{}`: {:?}", *key, e)
+                        } else {
+                            eprintln!(" - key `{}`: complete", *key)
                         }
                     },
                 )
