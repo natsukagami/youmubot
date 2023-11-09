@@ -33,9 +33,9 @@ fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::
 
 impl Client {
     /// Create a new client from the given API key.
-    pub fn new(key: String) -> Client {
+    pub fn new(key: String, client: HTTPClient) -> Client {
         let client = Ratelimit::new(
-            HTTPClient::new(),
+            client,
             REQUESTS_PER_MINUTE,
             std::time::Duration::from_secs(60),
         );

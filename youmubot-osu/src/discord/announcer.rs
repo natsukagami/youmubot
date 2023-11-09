@@ -29,10 +29,8 @@ pub struct Announcer {
 }
 
 impl Announcer {
-    pub fn new(client: Osu) -> Self {
-        Self {
-            client: Arc::new(client),
-        }
+    pub fn new(client: Arc<Osu>) -> Self {
+        Self { client }
     }
 }
 
@@ -45,10 +43,12 @@ impl youmubot_prelude::Announcer for Announcer {
         channels: MemberToChannels,
     ) -> Result<()> {
         // For each user...
-        let data = d.read().await;
-        let data = data.get::<OsuSavedUsers>().unwrap();
+        let users = {
+            let data = d.read().await;
+            let data = data.get::<OsuSavedUsers>().unwrap();
+            data.all().await?
+        };
         let now = chrono::Utc::now();
-        let users = data.all().await?;
         users
             .into_iter()
             .map(|mut osu_user| {
@@ -58,7 +58,7 @@ impl youmubot_prelude::Announcer for Announcer {
                     c: c.clone(),
                     data: d.clone(),
                 };
-                let s = &self;
+                let s = &*self;
                 async move {
                     let channels = channels.channels_of(ctx.c.clone(), user_id).await;
                     if channels.is_empty() {
@@ -76,7 +76,16 @@ impl youmubot_prelude::Announcer for Announcer {
                         Ok(v) => {
                             osu_user.last_update = now;
                             osu_user.pp = v.try_into().unwrap();
-                            data.save(osu_user).await.pls_ok();
+                            let id = osu_user.id;
+                            ctx.data
+                                .read()
+                                .await
+                                .get::<OsuSavedUsers>()
+                                .unwrap()
+                                .save(osu_user)
+                                .await
+                                .pls_ok();
+                            println!("updating {} done", id);
                         }
                         Err(e) => {
                             eprintln!("osu: Cannot update {}: {}", osu_user.id, e);

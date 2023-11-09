@@ -148,7 +148,7 @@ async fn main() {
     #[cfg(feature = "codeforces")]
     println!("codeforces enabled.");
 
-    tokio::spawn(announcers.scan(std::time::Duration::from_secs(120)));
+    tokio::spawn(announcers.scan(std::time::Duration::from_secs(300)));
 
     println!("Starting...");
     if let Err(v) = client.start().await {

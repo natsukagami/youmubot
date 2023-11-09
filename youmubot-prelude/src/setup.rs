@@ -1,5 +1,5 @@
 use serenity::prelude::*;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 /// Set up the prelude libraries.
 ///
@@ -22,7 +22,13 @@ pub async fn setup_prelude(
         .expect("SQL database set up");
 
     // Set up the HTTP client.
-    data.insert::<crate::HTTPClient>(reqwest::Client::new());
+    data.insert::<crate::HTTPClient>(
+        reqwest::ClientBuilder::new()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(60))
+            .build()
+            .expect("Build be able to build HTTP client"),
+    );
 
     // Set up the member cache.
     data.insert::<crate::MemberCache>(std::sync::Arc::new(crate::MemberCache::default()));
