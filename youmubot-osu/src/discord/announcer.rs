@@ -45,10 +45,12 @@ impl youmubot_prelude::Announcer for Announcer {
         channels: MemberToChannels,
     ) -> Result<()> {
         // For each user...
-        let data = d.read().await;
-        let data = data.get::<OsuSavedUsers>().unwrap();
+        let users = {
+            let data = d.read().await;
+            let data = data.get::<OsuSavedUsers>().unwrap();
+            data.all().await?
+        };
         let now = chrono::Utc::now();
-        let users = data.all().await?;
         users
             .into_iter()
             .map(|mut osu_user| {
@@ -78,7 +80,14 @@ impl youmubot_prelude::Announcer for Announcer {
                             println!("scanning {} done", osu_user.id);
                             osu_user.last_update = now;
                             osu_user.pp = v.try_into().unwrap();
-                            data.save(osu_user).await.pls_ok();
+                            ctx.data
+                                .read()
+                                .await
+                                .get::<OsuSavedUsers>()
+                                .unwrap()
+                                .save(osu_user)
+                                .await
+                                .pls_ok();
                         }
                         Err(e) => {
                             eprintln!("osu: Cannot update {}: {}", osu_user.id, e);
