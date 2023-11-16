@@ -19,6 +19,7 @@ use serenity::{
     CacheAndHttp,
 };
 use std::{collections::HashMap, sync::Arc};
+use tokio::time::{interval, MissedTickBehavior};
 use youmubot_db::DB;
 
 /// A list of assigned channels for an announcer.
@@ -149,30 +150,33 @@ impl AnnouncerHandler {
 
     /// Start the AnnouncerHandler, looping forever.
     ///
-    /// It will run all the announcers in sequence every *cooldown* seconds.
+    /// It will run all the announcers every *cooldown* seconds.
     pub async fn scan(self, cooldown: std::time::Duration) {
         // First we store all the keys inside the database.
         let keys = self.announcers.keys().cloned().collect::<Vec<_>>();
         self.data.write().await.insert::<Self>(keys.clone());
-        loop {
-            eprintln!("{}: announcer started scanning", chrono::Utc::now());
-            let after = tokio::time::sleep_until(tokio::time::Instant::now() + cooldown);
-            join_all(self.announcers.iter().map(|(key, announcer)| {
-                eprintln!(" - scanning key `{}`", key);
-                Self::announce(self.data.clone(), self.cache_http.clone(), key, announcer).map(
-                    move |v| {
-                        if let Err(e) = v {
-                            eprintln!(" - key `{}`: {:?}", *key, e)
-                        } else {
-                            eprintln!(" - key `{}`: complete", *key)
-                        }
-                    },
-                )
-            }))
-            .await;
-            eprintln!("{}: announcer finished scanning", chrono::Utc::now());
-            after.await;
-        }
+        join_all(self.announcers.iter().map(|(key, announcer)| {
+            let data = self.data.clone();
+            let cache = self.cache_http.clone();
+            let mut looper = interval(cooldown);
+            looper.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            async move {
+                loop {
+                    eprintln!(" - scanning key `{}`", key);
+                    Self::announce(data.clone(), cache.clone(), key, announcer)
+                        .map(move |v| {
+                            if let Err(e) = v {
+                                eprintln!(" - key `{}`: {:?}", *key, e)
+                            } else {
+                                eprintln!(" - key `{}`: complete", *key)
+                            }
+                        })
+                        .await;
+                    looper.tick().await;
+                }
+            }
+        }))
+        .await;
     }
 }
 

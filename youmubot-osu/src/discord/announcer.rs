@@ -77,9 +77,10 @@ impl youmubot_prelude::Announcer for Announcer {
                         .await
                     {
                         Ok(v) => {
-                            println!("scanning {} done", osu_user.id);
                             osu_user.last_update = now;
                             osu_user.pp = v.try_into().unwrap();
+                            let id = osu_user.id;
+                            println!("scanning {} done", id);
                             ctx.data
                                 .read()
                                 .await
@@ -88,6 +89,7 @@ impl youmubot_prelude::Announcer for Announcer {
                                 .save(osu_user)
                                 .await
                                 .pls_ok();
+                            println!("updating {} done", id);
                         }
                         Err(e) => {
                             eprintln!("osu: Cannot update {}: {}", osu_user.id, e);
