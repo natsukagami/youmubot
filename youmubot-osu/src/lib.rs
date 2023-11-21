@@ -9,7 +9,7 @@ use models::*;
 use request::builders::*;
 use request::*;
 use reqwest::Client as HTTPClient;
-use std::convert::TryInto;
+use std::{convert::TryInto, time::Duration};
 use youmubot_prelude::{ratelimit::Ratelimit, *};
 
 /// The number of requests per minute to the osu! server.
@@ -35,7 +35,10 @@ impl Client {
     /// Create a new client from the given API key.
     pub fn new(key: String) -> Client {
         let client = Ratelimit::new(
-            HTTPClient::new(),
+            HTTPClient::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .expect("Client should be built"),
             REQUESTS_PER_MINUTE,
             std::time::Duration::from_secs(60),
         );

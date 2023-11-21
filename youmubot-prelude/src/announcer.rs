@@ -163,15 +163,14 @@ impl AnnouncerHandler {
             async move {
                 loop {
                     eprintln!(" - scanning key `{}`", key);
-                    Self::announce(data.clone(), cache.clone(), key, announcer)
-                        .map(move |v| {
-                            if let Err(e) = v {
-                                eprintln!(" - key `{}`: {:?}", *key, e)
-                            } else {
-                                eprintln!(" - key `{}`: complete", *key)
-                            }
-                        })
-                        .await;
+                    match Self::announce(data.clone(), cache.clone(), key, announcer).await {
+                        Err(e) => {
+                            eprintln!(" - key `{}`: {:?}", *key, e)
+                        }
+                        Ok(()) => {
+                            eprintln!(" - key `{}`: complete", *key)
+                        }
+                    };
                     looper.tick().await;
                 }
             }
