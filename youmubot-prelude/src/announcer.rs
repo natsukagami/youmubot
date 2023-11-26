@@ -1,4 +1,4 @@
-use crate::{AppData, MemberCache, Result};
+use crate::{AppData, Duration, MemberCache, Result};
 use async_trait::async_trait;
 use futures_util::{
     future::{join_all, ready, FutureExt},
@@ -158,8 +158,6 @@ impl AnnouncerHandler {
         join_all(self.announcers.iter().map(|(key, announcer)| {
             let data = self.data.clone();
             let cache = self.cache_http.clone();
-            let mut looper = interval(cooldown);
-            looper.set_missed_tick_behavior(MissedTickBehavior::Delay);
             async move {
                 loop {
                     eprintln!(" - scanning key `{}`", key);
@@ -171,7 +169,7 @@ impl AnnouncerHandler {
                             eprintln!(" - key `{}`: complete", *key)
                         }
                     };
-                    looper.tick().await;
+                    tokio::time::sleep(std::time::Duration::from_secs(300)).await;
                 }
             }
         }))
