@@ -299,7 +299,7 @@ async fn scan_changes(
         }
         // Update list mutably
         for handle in row.party.members.iter().map(|v| v.handle.as_str()) {
-            if let Some(mut u) = handle_to_user_id.get_mut(handle) {
+            if let Some(u) = handle_to_user_id.get_mut(handle) {
                 u.row = Some(row.clone());
             }
         }

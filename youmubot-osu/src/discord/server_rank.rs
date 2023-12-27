@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::{
     db::{OsuSavedUsers, OsuUserBests},
     ModeArg, OsuClient,
@@ -18,6 +20,24 @@ use serenity::{
 };
 use youmubot_prelude::*;
 
+#[derive(Debug, Clone, Copy)]
+enum ModeOrTotal {
+    Total,
+    Mode(Mode),
+}
+
+impl FromStr for ModeOrTotal {
+    type Err = <ModeArg as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "total" {
+            Ok(ModeOrTotal::Total)
+        } else {
+            ModeArg::from_str(s).map(|ModeArg(m)| ModeOrTotal::Mode(m))
+        }
+    }
+}
+
 #[command("ranks")]
 #[description = "See the server's ranks"]
 #[usage = "[mode (Std, Taiko, Catch, Mania) = Std]"]
@@ -25,7 +45,9 @@ use youmubot_prelude::*;
 #[only_in(guilds)]
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
-    let mode = args.single::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
+    let mode = args
+        .single::<ModeOrTotal>()
+        .unwrap_or(ModeOrTotal::Mode(Mode::Std));
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let users = data
@@ -39,12 +61,16 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 .query(&ctx, osu_user.user_id, guild)
                 .await
                 .and_then(|member| {
-                    osu_user
-                        .pp
-                        .get(mode as usize)
-                        .cloned()
-                        .and_then(|pp| pp)
-                        .map(|pp| (pp, member.distinct(), osu_user.last_update))
+                    let pp = match mode {
+                        ModeOrTotal::Total
+                            if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) =>
+                        {
+                            Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
+                        }
+                        ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
+                        _ => None,
+                    }?;
+                    Some((pp, member.user.name, osu_user.last_update))
                 })
         })
         .collect::<stream::FuturesUnordered<_>>()

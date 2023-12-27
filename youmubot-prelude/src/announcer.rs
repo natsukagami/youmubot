@@ -1,4 +1,4 @@
-use crate::{AppData, Duration, MemberCache, Result};
+use crate::{AppData, MemberCache, Result};
 use async_trait::async_trait;
 use futures_util::{
     future::{join_all, ready, FutureExt},
@@ -19,7 +19,6 @@ use serenity::{
     CacheAndHttp,
 };
 use std::{collections::HashMap, sync::Arc};
-use tokio::time::{interval, MissedTickBehavior};
 use youmubot_db::DB;
 
 /// A list of assigned channels for an announcer.
@@ -169,7 +168,7 @@ impl AnnouncerHandler {
                             eprintln!(" - key `{}`: complete", *key)
                         }
                     };
-                    tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                    tokio::time::sleep(cooldown).await;
                 }
             }
         }))
