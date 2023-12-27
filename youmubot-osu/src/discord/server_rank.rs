@@ -108,12 +108,12 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 let mut content = MessageBuilder::new();
                 content
                     .push_line("```")
-                    .push_line("Rank | pp      | Username")
+                    .push_line("Rank | pp       | Username")
                     .push_line(format!("-----------------{:-<uw$}", "", uw = username_len));
                 for (id, (pp, member)) in users.iter().enumerate() {
                     content
                         .push(format!(
-                            "{:>4} | {:>7.2} | ",
+                            "{:>4} | {:>8.2} | ",
                             format!("#{}", 1 + id + start),
                             pp
                         ))
