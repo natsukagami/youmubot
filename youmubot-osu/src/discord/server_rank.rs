@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use super::{
     db::{OsuSavedUsers, OsuUserBests},
@@ -49,32 +49,37 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .single::<ModeOrTotal>()
         .unwrap_or(ModeOrTotal::Mode(Mode::Std));
     let guild = m.guild_id.expect("Guild-only command");
-    let member_cache = data.get::<MemberCache>().unwrap();
-    let users = data
+    // let member_cache = data.get::<MemberCache>().unwrap();
+    let osu_users = data
         .get::<OsuSavedUsers>()
         .unwrap()
         .all()
         .await?
         .into_iter()
-        .map(|osu_user| async move {
-            member_cache
-                .query(&ctx, osu_user.user_id, guild)
-                .await
-                .and_then(|member| {
-                    let pp = match mode {
-                        ModeOrTotal::Total
-                            if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) =>
-                        {
-                            Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
-                        }
-                        ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
-                        _ => None,
-                    }?;
-                    Some((pp, member.user.name, osu_user.last_update))
-                })
+        .map(|v| (v.user_id, v))
+        .collect::<HashMap<_, _>>();
+    let users = guild
+        .members_iter(ctx)
+        .filter_map(|m| {
+            future::ready(
+                m.ok()
+                    .and_then(|m| osu_users.get(&m.user.id).map(|ou| (m, ou))),
+            )
         })
-        .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(future::ready)
+        .filter_map(|(member, osu_user)| {
+            future::ready(|| -> Option<_> {
+                let pp = match mode {
+                    ModeOrTotal::Total
+                        if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) =>
+                    {
+                        Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
+                    }
+                    ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
+                    _ => None,
+                }?;
+                Some((pp, member.user.name, osu_user.last_update))
+            }())
+        })
         .collect::<Vec<_>>()
         .await;
     let last_update = users.iter().map(|(_, _, a)| a).min().cloned();
