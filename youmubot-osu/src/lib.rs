@@ -23,7 +23,7 @@ pub struct Client {
     rosu: rosu_v2::Osu,
 }
 
-fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::Error> {
+pub fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::Error> {
     let mut res = Vec::with_capacity(v.len());
 
     for u in v.into_iter() {
@@ -70,8 +70,7 @@ impl Client {
     ) -> Result<Vec<Beatmap>> {
         let mut r = BeatmapRequestBuilder::new(kind);
         f(&mut r);
-        let res: Vec<raw::Beatmap> = r.build(self).await?.json().await?;
-        Ok(vec_try_into(res)?)
+        r.build(self).await
     }
 
     pub async fn user(
