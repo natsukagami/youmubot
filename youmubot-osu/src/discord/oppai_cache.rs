@@ -316,6 +316,12 @@ impl BeatmapCache {
         BeatmapCache { client, pool }
     }
 
+    /// Clean the cache.
+    pub async fn clear(&self) -> Result<()> {
+        models::CachedBeatmapContent::clear_all(&self.pool).await?;
+        Ok(())
+    }
+
     fn parse_beatmap(content: impl AsRef<str>) -> Result<BeatmapContent> {
         let content = content.as_ref();
         let metadata = osuparse::parse_beatmap(content)

@@ -122,7 +122,8 @@ pub async fn setup(
     check,
     top,
     server_rank,
-    update_leaderboard
+    update_leaderboard,
+    clean_cache
 )]
 #[default_command(std)]
 struct Osu;
@@ -699,6 +700,23 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             style.display_scores(plays, mode, ctx, msg).await?;
         }
     }
+    Ok(())
+}
+
+#[command("cleancache")]
+#[owners_only]
+#[description = "Clean the beatmap cache."]
+#[usage = "[--oppai to clear oppai cache as well]"]
+#[max_args(1)]
+pub async fn clean_cache(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    let data = ctx.data.read().await;
+    let meta_cache = data.get::<BeatmapMetaCache>().unwrap();
+    meta_cache.clear().await?;
+    if args.remains() == Some("--oppai") {
+        let oppai = data.get::<BeatmapCache>().unwrap();
+        oppai.clear().await?;
+    }
+    msg.reply_ping(ctx, "Beatmap cache cleared!").await?;
     Ok(())
 }
 
