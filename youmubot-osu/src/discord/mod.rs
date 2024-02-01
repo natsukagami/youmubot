@@ -53,7 +53,7 @@ impl TypeMapKey for OsuClient {
 ///  - Commands on the "osu" prefix
 ///  - Hooks. Hooks are completely opt-in.
 ///  
-pub fn setup(
+pub async fn setup(
     _path: &std::path::Path,
     data: &mut TypeMap,
     announcers: &mut AnnouncerHandler,
@@ -71,13 +71,23 @@ pub fn setup(
 
     // API client
     let http_client = data.get::<HTTPClient>().unwrap().clone();
-    let mk_osu_client = || {
-        Arc::new(OsuHttpClient::new(
-            std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
-            http_client.clone(),
-        ))
+    let mk_osu_client = || async {
+        Arc::new(
+            OsuHttpClient::new(
+                std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
+                http_client.clone(),
+                std::env::var("OSU_API_CLIENT_ID")
+                    .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
+                    .parse()
+                    .expect("client_id should be u64"),
+                std::env::var("OSU_API_CLIENT_SECRET")
+                    .expect("Please set OSU_API_CLIENT_SECRET as osu! api v2 client secret."),
+            )
+            .await
+            .expect("osu! should be initialized"),
+        )
     };
-    let osu_client = mk_osu_client();
+    let osu_client = mk_osu_client().await;
     data.insert::<OsuClient>(osu_client.clone());
     data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(
         http_client.clone(),
@@ -89,7 +99,7 @@ pub fn setup(
     ));
 
     // Announcer
-    let osu_client = mk_osu_client();
+    let osu_client = mk_osu_client().await;
     announcers.add(
         announcer::ANNOUNCER_KEY,
         announcer::Announcer::new(osu_client),

@@ -135,6 +135,7 @@ async fn main() {
         // osu!
         #[cfg(feature = "osu")]
         youmubot_osu::discord::setup(&db_path, &mut data, &mut announcers)
+            .await
             .expect("osu! is initialized");
         // codeforces
         #[cfg(feature = "codeforces")]
