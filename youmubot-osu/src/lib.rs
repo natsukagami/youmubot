@@ -19,6 +19,8 @@ const REQUESTS_PER_MINUTE: usize = 100;
 pub struct Client {
     client: Ratelimit<HTTPClient>,
     key: String,
+
+    rosu: rosu_v2::Osu,
 }
 
 fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::Error> {
@@ -33,13 +35,23 @@ fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::
 
 impl Client {
     /// Create a new client from the given API key.
-    pub fn new(key: String, client: HTTPClient) -> Client {
+    pub async fn new(
+        key: String,
+        client: HTTPClient,
+        client_id: u64,
+        client_secret: impl Into<String>,
+    ) -> Result<Client> {
         let client = Ratelimit::new(
             client,
             REQUESTS_PER_MINUTE,
             std::time::Duration::from_secs(60),
         );
-        Client { client, key }
+        let rosu = rosu_v2::OsuBuilder::new()
+            .client_id(client_id)
+            .client_secret(client_secret)
+            .build()
+            .await?;
+        Ok(Client { client, key, rosu })
     }
 
     pub(crate) async fn build_request(&self, url: &str) -> Result<reqwest::RequestBuilder> {
