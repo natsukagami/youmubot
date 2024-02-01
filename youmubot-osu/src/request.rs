@@ -66,7 +66,6 @@ impl ToQuery for UserID {
     }
 }
 pub enum BeatmapRequestKind {
-    ByUser(UserID),
     Beatmap(u64),
     Beatmapset(u64),
     BeatmapHash(String),
@@ -76,7 +75,6 @@ impl ToQuery for BeatmapRequestKind {
     fn to_query(&self) -> Vec<(&'static str, String)> {
         use BeatmapRequestKind::*;
         match self {
-            ByUser(ref u) => u.to_query(),
             Beatmap(b) => vec![("b", b.to_string())],
             Beatmapset(s) => vec![("s", s.to_string())],
             BeatmapHash(ref h) => vec![("h", h.clone())],
@@ -87,25 +85,17 @@ impl ToQuery for BeatmapRequestKind {
 pub mod builders {
     use reqwest::Response;
 
+    use crate::models;
+
     use super::*;
     /// A builder for a Beatmap request.
     pub struct BeatmapRequestBuilder {
         kind: BeatmapRequestKind,
-        since: Option<DateTime<Utc>>,
         mode: Option<(Mode, /* Converted */ bool)>,
     }
     impl BeatmapRequestBuilder {
         pub(crate) fn new(kind: BeatmapRequestKind) -> Self {
-            BeatmapRequestBuilder {
-                kind,
-                since: None,
-                mode: None,
-            }
-        }
-
-        pub fn since(&mut self, since: DateTime<Utc>) -> &mut Self {
-            self.since = Some(since);
-            self
+            BeatmapRequestBuilder { kind, mode: None }
         }
 
         pub fn maybe_mode(&mut self, mode: Option<Mode>) -> &mut Self {
@@ -121,15 +111,26 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(self, client: &Client) -> Result<Response> {
-            Ok(client
-                .build_request("https://osu.ppy.sh/api/get_beatmaps")
-                .await?
-                .query(&self.kind.to_query())
-                .query(&self.since.map(|v| ("since", v)).to_query())
-                .query(&self.mode.to_query())
-                .send()
-                .await?)
+        pub(crate) async fn build(self, client: &Client) -> Result<Vec<models::Beatmap>> {
+            Ok(match self.kind {
+                BeatmapRequestKind::Beatmap(id) => {
+                    let mut bm = client.rosu.beatmap().map_id(id as u32).await?;
+                    let set = bm.mapset.take().unwrap();
+                    vec![models::Beatmap::from_rosu(bm, &set)]
+                }
+                BeatmapRequestKind::Beatmapset(id) => {
+                    let mut set = client.rosu.beatmapset(id as u32).await?;
+                    let bms = set.maps.take().unwrap();
+                    bms.into_iter()
+                        .map(|bm| models::Beatmap::from_rosu(bm, &set))
+                        .collect()
+                }
+                BeatmapRequestKind::BeatmapHash(hash) => {
+                    let mut bm = client.rosu.beatmap().checksum(hash).await?;
+                    let set = bm.mapset.take().unwrap();
+                    vec![models::Beatmap::from_rosu(bm, &set)]
+                }
+            })
         }
     }
 

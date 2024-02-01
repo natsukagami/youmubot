@@ -8,6 +8,7 @@ use std::time::Duration;
 pub mod mods;
 pub mod parse;
 pub(crate) mod raw;
+pub(crate) mod rosu;
 
 pub use mods::Mods;
 use serenity::utils::MessageBuilder;
@@ -252,6 +253,7 @@ pub enum Language {
     Italian,
     Russian,
     Polish,
+    Unspecified,
 }
 
 impl fmt::Display for Language {
