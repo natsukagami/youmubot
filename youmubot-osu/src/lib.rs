@@ -80,9 +80,7 @@ impl Client {
     ) -> Result<Option<User>, Error> {
         let mut r = UserRequestBuilder::new(user);
         f(&mut r);
-        let res: Vec<raw::User> = r.build(self).await?.json().await?;
-        let res = vec_try_into(res)?;
-        Ok(res.into_iter().next())
+        r.build(self).await
     }
 
     pub async fn scores(

@@ -71,7 +71,6 @@ pub(crate) struct User {
 pub(crate) struct UserEvent {
     pub display_html: String,
     pub beatmap_id: Option<String>,
-    pub beatmapset_id: Option<String>,
     pub date: String,
     pub epicfactor: String,
 }

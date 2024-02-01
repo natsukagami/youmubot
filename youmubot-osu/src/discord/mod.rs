@@ -187,7 +187,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let osu = data.get::<OsuClient>().unwrap();
 
     let user = args.single::<String>()?;
-    let u = match osu.user(UserID::Auto(user), |f| f).await? {
+    let u = match osu.user(UserID::from_string(user), |f| f).await? {
         Some(u) => u,
         None => {
             msg.reply(&ctx, "user not found...").await?;
@@ -300,7 +300,9 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     let target = args.single::<serenity::model::id::UserId>()?;
 
     let username = args.quoted().trimmed().single::<String>()?;
-    let user: Option<User> = osu.user(UserID::Auto(username.clone()), |f| f).await?;
+    let user: Option<User> = osu
+        .user(UserID::from_string(username.clone()), |f| f)
+        .await?;
     match user {
         Some(u) => {
             add_user(target, u, &data).await?;
@@ -358,7 +360,7 @@ async fn to_user_id_query(
     msg: &Message,
 ) -> Result<UserID, Error> {
     let id = match s {
-        Some(UsernameArg::Raw(s)) => return Ok(UserID::Auto(s)),
+        Some(UsernameArg::Raw(s)) => return Ok(UserID::from_string(s)),
         Some(UsernameArg::Tagged(r)) => r,
         None => msg.author.id,
     };
