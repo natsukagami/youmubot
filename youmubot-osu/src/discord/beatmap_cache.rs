@@ -23,6 +23,12 @@ impl BeatmapMetaCache {
         BeatmapMetaCache { client, pool }
     }
 
+    /// Clean the cache.
+    pub async fn clear(&self) -> Result<()> {
+        models::CachedBeatmap::clear_all(&self.pool).await?;
+        Ok(())
+    }
+
     #[allow(clippy::wrong_self_convention)]
     fn to_cached_beatmap(beatmap: &Beatmap, mode: Option<Mode>) -> models::CachedBeatmap {
         models::CachedBeatmap {

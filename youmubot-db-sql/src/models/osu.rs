@@ -218,6 +218,13 @@ impl CachedBeatmap {
         .await
         .map_err(Error::from)
     }
+
+    /// Delete all of the caches.
+    pub async fn clear_all(conn: impl Executor<'_, Database = Database>) -> Result<()> {
+        conn.execute("DELETE FROM osu_cached_beatmapsets; DELETE FROM osu_cached_beatmaps;")
+            .await?;
+        Ok(())
+    }
 }
 
 impl CachedBeatmap {
@@ -290,6 +297,13 @@ impl CachedBeatmapContent {
         .fetch_optional(conn)
         .await
         .map_err(Error::from)
+    }
+
+    /// Delete all of the caches.
+    pub async fn clear_all(conn: impl Executor<'_, Database = Database>) -> Result<()> {
+        conn.execute("DELETE FROM osu_cached_beatmap_contents;")
+            .await?;
+        Ok(())
     }
 }
 
