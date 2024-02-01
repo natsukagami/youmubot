@@ -66,6 +66,69 @@ impl Beatmap {
     }
 }
 
+impl User {
+    pub(crate) fn from_rosu(
+        user: rosu::user::User,
+        stats: rosu::user::UserStatistics,
+        events: Vec<rosu::recent_event::RecentEvent>,
+    ) -> Self {
+        Self {
+            id: user.user_id as u64,
+            username: user.username.into_string(),
+            joined: time_to_utc(user.join_date),
+            country: user.country_code.to_string(),
+            count_300: 0, // why do we even want this
+            count_100: 0, // why do we even want this
+            count_50: 0,  // why do we even want this
+            play_count: stats.playcount as u64,
+            played_time: Duration::from_secs(stats.playtime as u64),
+            ranked_score: stats.ranked_score,
+            total_score: stats.total_score,
+            count_ss: stats.grade_counts.ss as u64,
+            count_ssh: stats.grade_counts.ssh as u64,
+            count_s: stats.grade_counts.s as u64,
+            count_sh: stats.grade_counts.sh as u64,
+            count_a: stats.grade_counts.a as u64,
+            events: events.into_iter().map(UserEvent::from).collect(),
+            rank: stats.global_rank.unwrap_or(0) as u64,
+            country_rank: stats.country_rank.unwrap_or(0) as u64,
+            level: stats.level.current as f64 + stats.level.progress as f64 / 100.0,
+            pp: Some(stats.pp as f64),
+            accuracy: stats.accuracy as f64,
+        }
+    }
+}
+
+impl From<rosu::recent_event::RecentEvent> for UserEvent {
+    fn from(value: rosu::recent_event::RecentEvent) -> Self {
+        match value.event_type {
+            rosu::recent_event::EventType::Rank {
+                grade: _,
+                rank,
+                mode,
+                beatmap,
+                user: _,
+            } => Self::Rank(UserEventRank {
+                beatmap_id: {
+                    beatmap
+                        .url
+                        .trim_start_matches("/b/")
+                        .trim_end_matches("?m=0")
+                        .trim_end_matches("?m=1")
+                        .trim_end_matches("?m=2")
+                        .trim_end_matches("?m=3")
+                        .parse::<u64>()
+                        .unwrap()
+                },
+                rank: rank as u16,
+                mode: mode.into(),
+                date: time_to_utc(value.created_at),
+            }),
+            _ => Self::OtherV2(value),
+        }
+    }
+}
+
 impl Difficulty {
     pub(crate) fn from_rosu(bm: &rosu::beatmap::Beatmap) -> Self {
         Self {
@@ -94,6 +157,17 @@ impl From<rosu::GameMode> for Mode {
             rosu::GameMode::Taiko => Mode::Taiko,
             rosu::GameMode::Catch => Mode::Catch,
             rosu::GameMode::Mania => Mode::Mania,
+        }
+    }
+}
+
+impl From<Mode> for rosu::GameMode {
+    fn from(value: Mode) -> Self {
+        match value {
+            Mode::Std => rosu::GameMode::Osu,
+            Mode::Taiko => rosu::GameMode::Taiko,
+            Mode::Catch => rosu::GameMode::Catch,
+            Mode::Mania => rosu::GameMode::Mania,
         }
     }
 }

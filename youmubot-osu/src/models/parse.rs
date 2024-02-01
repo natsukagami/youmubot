@@ -7,12 +7,17 @@ use std::convert::TryFrom;
 use std::time::Duration;
 use std::{error::Error, fmt, str::FromStr};
 
+lazy_static::lazy_static! {
+    static ref EVENT_RANK_REGEX: Regex = Regex::new(r#"^.+achieved .*rank #(\d+).* on .+\((.+)\)$"#).unwrap();
+}
+
 /// Errors that can be identified from parsing.
 #[derive(Debug)]
 pub enum ParseError {
     InvalidValue { field: &'static str, value: String },
     FromStr(String),
     NoApprovalDate,
+    NotUserEventRank,
     DateParseError(ChronoParseError),
 }
 
@@ -26,6 +31,7 @@ impl fmt::Display for ParseError {
             } => write!(f, "Invalid value `{}` for {}", value, field),
             FromStr(ref s) => write!(f, "Invalid value `{}` parsing from string", s),
             NoApprovalDate => write!(f, "Approval date expected but not found"),
+            NotUserEventRank => write!(f, "Trying to parse user event as UserEventRank"),
             DateParseError(ref r) => write!(f, "Error parsing date: {}", r),
         }
     }
@@ -153,12 +159,45 @@ impl TryFrom<raw::Beatmap> for Beatmap {
 }
 
 fn parse_user_event(s: raw::UserEvent) -> ParseResult<UserEvent> {
-    Ok(UserEvent {
+    match parse_user_event_rank(&s) {
+        Ok(r) => return Ok(UserEvent::Rank(r)),
+        Err(_) => (),
+    };
+    Ok(UserEvent::OtherV1 {
         display_html: s.display_html,
-        beatmap_id: s.beatmap_id.map(parse_from_str).transpose()?,
-        beatmapset_id: s.beatmapset_id.map(parse_from_str).transpose()?,
         date: parse_date(&s.date)?,
         epic_factor: parse_from_str(&s.epicfactor)?,
+    })
+}
+
+fn parse_user_event_rank(s: &raw::UserEvent) -> ParseResult<UserEventRank> {
+    let captures = EVENT_RANK_REGEX
+        .captures(s.display_html.as_str())
+        .ok_or(ParseError::NotUserEventRank)?;
+    let rank: u16 = captures
+        .get(1)
+        .ok_or(ParseError::NotUserEventRank)?
+        .as_str()
+        .parse()
+        .map_err(|_| ParseError::NotUserEventRank)?;
+    let mode = super::Mode::parse_from_display(
+        captures
+            .get(2)
+            .ok_or(ParseError::NotUserEventRank)?
+            .as_str(),
+    )
+    .ok_or(ParseError::NotUserEventRank)?;
+    let beatmap_id = s
+        .beatmap_id
+        .as_ref()
+        .ok_or(ParseError::NotUserEventRank)?
+        .parse::<u64>()
+        .map_err(|_| ParseError::NotUserEventRank)?;
+    Ok(UserEventRank {
+        beatmap_id,
+        date: parse_date(&s.date)?,
+        mode,
+        rank,
     })
 }
 

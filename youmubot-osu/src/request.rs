@@ -1,6 +1,7 @@
 use crate::models::{Mode, Mods};
 use crate::Client;
 use chrono::{DateTime, Utc};
+use rosu_v2::error::OsuError;
 use youmubot_prelude::*;
 
 trait ToQuery {
@@ -52,7 +53,25 @@ impl ToQuery for (&'static str, DateTime<Utc>) {
 pub enum UserID {
     Username(String),
     ID(u64),
-    Auto(String),
+}
+
+impl From<UserID> for rosu_v2::prelude::UserId {
+    fn from(value: UserID) -> Self {
+        match value {
+            UserID::Username(s) => rosu_v2::request::UserId::Name(s.into()),
+            UserID::ID(id) => rosu_v2::request::UserId::Id(id as u32),
+        }
+    }
+}
+
+impl UserID {
+    pub fn from_string(s: impl Into<String>) -> UserID {
+        let s = s.into();
+        match s.parse::<u64>() {
+            Ok(id) => UserID::ID(id),
+            Err(_) => UserID::Username(s),
+        }
+    }
 }
 
 impl ToQuery for UserID {
@@ -61,7 +80,6 @@ impl ToQuery for UserID {
         match self {
             Username(ref s) => vec![("u", s.clone()), ("type", "string".to_owned())],
             ID(u) => vec![("u", u.to_string()), ("type", "id".to_owned())],
-            Auto(ref s) => vec![("u", s.clone())],
         }
     }
 }
@@ -79,6 +97,14 @@ impl ToQuery for BeatmapRequestKind {
             Beatmapset(s) => vec![("s", s.to_string())],
             BeatmapHash(ref h) => vec![("h", h.clone())],
         }
+    }
+}
+
+fn handle_not_found<T>(v: Result<T, OsuError>) -> Result<Option<T>, OsuError> {
+    match v {
+        Ok(v) => Ok(Some(v)),
+        Err(OsuError::NotFound) => Ok(None),
+        Err(e) => Err(e),
     }
 }
 
@@ -114,19 +140,30 @@ pub mod builders {
         pub(crate) async fn build(self, client: &Client) -> Result<Vec<models::Beatmap>> {
             Ok(match self.kind {
                 BeatmapRequestKind::Beatmap(id) => {
-                    let mut bm = client.rosu.beatmap().map_id(id as u32).await?;
-                    let set = bm.mapset.take().unwrap();
-                    vec![models::Beatmap::from_rosu(bm, &set)]
+                    match handle_not_found(client.rosu.beatmap().map_id(id as u32).await)? {
+                        Some(mut bm) => {
+                            let set = bm.mapset.take().unwrap();
+                            vec![models::Beatmap::from_rosu(bm, &set)]
+                        }
+                        None => vec![],
+                    }
                 }
                 BeatmapRequestKind::Beatmapset(id) => {
-                    let mut set = client.rosu.beatmapset(id as u32).await?;
+                    let mut set = match handle_not_found(client.rosu.beatmapset(id as u32).await)? {
+                        Some(v) => v,
+                        None => return Ok(vec![]),
+                    };
                     let bms = set.maps.take().unwrap();
                     bms.into_iter()
                         .map(|bm| models::Beatmap::from_rosu(bm, &set))
                         .collect()
                 }
                 BeatmapRequestKind::BeatmapHash(hash) => {
-                    let mut bm = client.rosu.beatmap().checksum(hash).await?;
+                    let mut bm = match handle_not_found(client.rosu.beatmap().checksum(hash).await)?
+                    {
+                        Some(v) => v,
+                        None => return Ok(vec![]),
+                    };
                     let set = bm.mapset.take().unwrap();
                     vec![models::Beatmap::from_rosu(bm, &set)]
                 }
@@ -159,20 +196,36 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(&self, client: &Client) -> Result<Response> {
-            Ok(client
-                .build_request("https://osu.ppy.sh/api/get_user")
-                .await?
-                .query(&self.user.to_query())
-                .query(&self.mode.to_query())
-                .query(
-                    &self
-                        .event_days
-                        .map(|v| ("event_days", v.to_string()))
-                        .to_query(),
-                )
-                .send()
-                .await?)
+        pub(crate) async fn build(self, client: &Client) -> Result<Option<models::User>> {
+            let mut r = client.rosu.user(self.user);
+            if let Some(mode) = self.mode {
+                r = r.mode(mode.into());
+            }
+            let mut user = match handle_not_found(r.await)? {
+                Some(v) => v,
+                None => return Ok(None),
+            };
+            let now = time::OffsetDateTime::now_utc()
+                - time::Duration::DAY * self.event_days.unwrap_or(31);
+            let mut events =
+                handle_not_found(client.rosu.recent_events(user.user_id).limit(50).await)?
+                    .unwrap_or(vec![]);
+            events.retain(|e| (now <= e.created_at));
+            let stats = user.statistics.take().unwrap();
+            Ok(Some(models::User::from_rosu(user, stats, events)))
+            // Ok(client
+            //     .build_request("https://osu.ppy.sh/api/get_user")
+            //     .await?
+            //     .query(&self.user.to_query())
+            //     .query(&self.mode.to_query())
+            //     .query(
+            //         &self
+            //             .event_days
+            //             .map(|v| ("event_days", v.to_string()))
+            //             .to_query(),
+            //     )
+            //     .send()
+            //     .await?)
         }
     }
 

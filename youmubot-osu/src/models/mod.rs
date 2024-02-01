@@ -13,10 +13,6 @@ pub(crate) mod rosu;
 pub use mods::Mods;
 use serenity::utils::MessageBuilder;
 
-lazy_static::lazy_static! {
-    static ref EVENT_RANK_REGEX: Regex = Regex::new(r#"^.+achieved .*rank #(\d+).* on .+\((.+)\)$"#).unwrap();
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ApprovalStatus {
     Loved,
@@ -436,13 +432,15 @@ impl Beatmap {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct UserEvent {
-    pub display_html: String,
-    pub beatmap_id: Option<u64>,
-    pub beatmapset_id: Option<u64>,
-    pub date: DateTime<Utc>,
-    pub epic_factor: u8,
+#[derive(Clone, Debug)]
+pub enum UserEvent {
+    Rank(UserEventRank),
+    OtherV1 {
+        display_html: String,
+        date: DateTime<Utc>,
+        epic_factor: u8,
+    },
+    OtherV2(rosu_v2::model::recent_event::RecentEvent),
 }
 
 /// Represents a "achieved rank #x on beatmap" event.
@@ -457,19 +455,14 @@ pub struct UserEventRank {
 impl UserEvent {
     /// Try to parse the event into a "rank" event.
     pub fn to_event_rank(&self) -> Option<UserEventRank> {
-        let captures = EVENT_RANK_REGEX.captures(self.display_html.as_str())?;
-        let rank: u16 = captures.get(1)?.as_str().parse().ok()?;
-        let mode: Mode = Mode::parse_from_display(captures.get(2)?.as_str())?;
-        Some(UserEventRank {
-            beatmap_id: self.beatmap_id?,
-            date: self.date,
-            mode,
-            rank,
-        })
+        match self {
+            UserEvent::Rank(r) => Some(r.clone()),
+            _ => None,
+        }
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct User {
     pub id: u64,
     pub username: String,
