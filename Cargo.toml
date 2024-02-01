@@ -1,7 +1,5 @@
 [workspace]
-
 resolver = "2"
-
 members = [
 	"youmubot-prelude",
 	"youmubot-db",
