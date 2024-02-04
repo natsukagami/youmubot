@@ -106,9 +106,9 @@ impl BeatmapMetaCache {
             let mut t = self.pool.begin().await?;
             for b in &beatmaps {
                 let mut b = Self::to_cached_beatmap(b, None);
-                b.store(&mut t).await?;
+                b.store(&mut *t).await?;
                 // Save the beatmapset mapping.
-                b.link_beatmapset(id as i64, &mut t).await?;
+                b.link_beatmapset(id as i64, &mut *t).await?;
             }
             t.commit().await?;
         }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                INSERT INTO\n                    osu_cached_beatmap_contents (beatmap_id, cached_at, content)\n                VALUES\n                    (?, ?, ?)\n                ON CONFLICT (beatmap_id)\n                DO UPDATE\n                    SET\n                        cached_at = excluded.cached_at,\n                        content = excluded.content\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "6bfd02cb36c9b74ed4c69eb694e936ba2ee8d3864e2a43b43db78afc32a47384"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM osu_user_best_scores WHERE user_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c83421661626cffd81d5590035ae5283a5b0e8a03696ae479b3d275b81b8af83"
+}

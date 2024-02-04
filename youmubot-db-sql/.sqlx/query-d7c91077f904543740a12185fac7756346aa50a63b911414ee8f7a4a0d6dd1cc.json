@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                beatmap_id as \"beatmap_id: i64\",\n                mode as \"mode: u8\",\n                cached_at as \"cached_at: DateTime\",\n                beatmap as \"beatmap: Vec<u8>\"\n            FROM osu_cached_beatmaps\n            WHERE\n                beatmap_id = ?\n                AND mode = ?\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "beatmap_id: i64",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "mode: u8",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "cached_at: DateTime",
+        "ordinal": 2,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "beatmap: Vec<u8>",
+        "ordinal": 3,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d7c91077f904543740a12185fac7756346aa50a63b911414ee8f7a4a0d6dd1cc"
+}

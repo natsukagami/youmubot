@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO\n                  osu_last_beatmaps (channel_id, beatmap, mode)\n               VALUES\n                  (?, ?, ?)\n               ON CONFLICT (channel_id) DO UPDATE\n                  SET\n                    beatmap = excluded.beatmap,\n                    mode = excluded.mode",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "5210e3e5610bb968b0b11411b99956d1bf358f2c1e35c4eb5730388ce0c2fe09"
+}

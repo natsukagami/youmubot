@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                    channel_id as \"channel_id: i64\",\n                    beatmap,\n                    mode as \"mode: u8\"\n                FROM osu_last_beatmaps\n                WHERE channel_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "channel_id: i64",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "beatmap",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "mode: u8",
+        "ordinal": 2,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1bf34dddbe994d6124c9382c75e70e1347329e945de2eefad4bfcab5f81b73ce"
+}

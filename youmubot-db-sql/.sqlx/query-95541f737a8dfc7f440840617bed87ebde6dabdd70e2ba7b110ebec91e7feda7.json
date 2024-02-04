@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                beatmap_id as \"beatmap_id: i64\",\n                mode as \"mode: u8\",\n                user_id as \"user_id: i64\",\n                mods as \"mods: i64\",\n                cached_at as \"cached_at: DateTime\",\n                score as \"score: Vec<u8>\"\n            FROM osu_user_best_scores\n            WHERE\n                beatmap_id = ?\n                AND mode = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "beatmap_id: i64",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "mode: u8",
+        "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "user_id: i64",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "mods: i64",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "cached_at: DateTime",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "score: Vec<u8>",
+        "ordinal": 5,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "95541f737a8dfc7f440840617bed87ebde6dabdd70e2ba7b110ebec91e7feda7"
+}

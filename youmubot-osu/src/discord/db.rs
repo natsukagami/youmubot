@@ -26,7 +26,7 @@ impl OsuSavedUsers {
     /// Get all users
     pub async fn all(&self) -> Result<Vec<OsuUser>> {
         let mut conn = self.pool.acquire().await?;
-        model::OsuUser::all(&mut conn)
+        model::OsuUser::all(&mut *conn)
             .map(|v| v.map(OsuUser::from).map_err(Error::from))
             .try_collect()
             .await
@@ -35,7 +35,7 @@ impl OsuSavedUsers {
     /// Get an user by their user_id.
     pub async fn by_user_id(&self, user_id: UserId) -> Result<Option<OsuUser>> {
         let mut conn = self.pool.acquire().await?;
-        let u = model::OsuUser::by_user_id(user_id.0 as i64, &mut conn)
+        let u = model::OsuUser::by_user_id(user_id.0 as i64, &mut *conn)
             .await?
             .map(OsuUser::from);
         Ok(u)
@@ -44,14 +44,14 @@ impl OsuSavedUsers {
     /// Save the given user.
     pub async fn save(&self, u: OsuUser) -> Result<()> {
         let mut conn = self.pool.acquire().await?;
-        Ok(model::OsuUser::from(u).store(&mut conn).await?)
+        Ok(model::OsuUser::from(u).store(&mut *conn).await?)
     }
 
     /// Save the given user as a completely new user.
     pub async fn new_user(&self, u: OsuUser) -> Result<()> {
         let mut t = self.pool.begin().await?;
-        model::OsuUser::delete(u.user_id.0 as i64, &mut t).await?;
-        model::OsuUser::from(u).store(&mut t).await?;
+        model::OsuUser::delete(u.user_id.0 as i64, &mut *t).await?;
+        model::OsuUser::from(u).store(&mut *t).await?;
         t.commit().await?;
         Ok(())
     }

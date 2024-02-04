@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                INSERT INTO\n                    osu_user_best_scores (beatmap_id, mode, user_id, mods, cached_at, score)\n                VALUES\n                    (?, ?, ?, ?, ?, ?)\n                ON CONFLICT (beatmap_id, mode, user_id, mods)\n                DO UPDATE\n                    SET\n                        cached_at = excluded.cached_at,\n                        score = excluded.score\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "25077e7b2657eb918fa49acc16ceba14a004ed503c174073a1db184d902ee393"
+}

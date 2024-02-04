@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO osu_cached_beatmapsets(beatmapset_id, beatmap_id, mode)\n                VALUES (?, ?, ?)\n                ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8b9ad43442b7fa520f2eae498d2ee08264810e49c28bd8ddffaa9f444cada1b5"
+}

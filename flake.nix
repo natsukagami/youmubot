@@ -34,7 +34,7 @@
           {
             inputsFrom = [ packages.youmubot ];
 
-            buildInputs = with pkgs; [ rustc rustfmt clippy ];
+            buildInputs = with pkgs; [ rustc rustfmt clippy sqlx-cli ];
 
             nativeBuildInputs = nixpkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
               pkg-config
