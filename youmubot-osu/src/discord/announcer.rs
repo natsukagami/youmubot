@@ -74,8 +74,14 @@ impl youmubot_prelude::Announcer for Announcer {
                         .await
                     {
                         Ok(v) => {
+                            osu_user.pp = v
+                                .iter()
+                                .map(|u| u.pp.clone())
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .unwrap();
+                            osu_user.username = v.into_iter().next().unwrap().username.into();
                             osu_user.last_update = now;
-                            osu_user.pp = v.try_into().unwrap();
                             let id = osu_user.id;
                             ctx.data
                                 .read()
@@ -110,7 +116,7 @@ impl Announcer {
         user_id: UserId,
         channels: Vec<ChannelId>,
         mode: Mode,
-    ) -> Result<Option<f64>, Error> {
+    ) -> Result<User, Error> {
         let days_since_last_update = (now - osu_user.last_update).num_days() + 1;
         let last_update = osu_user.last_update;
         let (scores, user) = {
@@ -126,8 +132,8 @@ impl Announcer {
             (scores, user)
         };
         let client = self.client.clone();
-        let pp = user.pp;
         let ctx = ctx.clone();
+        let _user = user.clone();
         spawn_future(async move {
             let event_scores = user
                 .events
@@ -162,7 +168,7 @@ impl Announcer {
                 .await
                 .pls_ok();
         });
-        Ok(pp)
+        Ok(_user)
     }
 
     async fn scan_user(&self, u: &OsuUser, mode: Mode) -> Result<Vec<(u8, Score)>, Error> {

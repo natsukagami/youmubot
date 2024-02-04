@@ -77,15 +77,15 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
                     _ => None,
                 }?;
-                Some((pp, member.user.name, osu_user.last_update))
+                Some((pp, member.user.name, osu_user))
             }())
         })
         .collect::<Vec<_>>()
         .await;
-    let last_update = users.iter().map(|(_, _, a)| a).min().cloned();
+    let last_update = users.iter().map(|(_, _, a)| a.last_update).min();
     let mut users = users
         .into_iter()
-        .map(|(a, b, _)| (a, b))
+        .map(|(a, b, u)| (a, (b, u.clone())))
         .collect::<Vec<_>>();
     users.sort_by(|(a, _), (b, _)| (*b).partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -109,20 +109,42 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 }
                 let total_len = users.len();
                 let users = &users[start..end];
-                let username_len = users.iter().map(|(_, u)| u.len()).max().unwrap_or(8).max(8);
+                let username_len = users
+                    .iter()
+                    .map(|(_, (_, u))| u.username.len())
+                    .max()
+                    .unwrap_or(8)
+                    .max(8);
+                let member_len = users
+                    .iter()
+                    .map(|(_, (mem, _))| mem.len())
+                    .max()
+                    .unwrap_or(8)
+                    .max(8);
                 let mut content = MessageBuilder::new();
                 content
                     .push_line("```")
-                    .push_line("Rank | pp       | Username")
-                    .push_line(format!("-----------------{:-<uw$}", "", uw = username_len));
-                for (id, (pp, member)) in users.iter().enumerate() {
-                    content
-                        .push(format!(
-                            "{:>4} | {:>8.2} | ",
-                            format!("#{}", 1 + id + start),
-                            pp
-                        ))
-                        .push_line_safe(member);
+                    .push_line(format!(
+                        "Rank | pp       | {:uw$} | Member",
+                        "Username",
+                        uw = username_len
+                    ))
+                    .push_line(format!(
+                        "------------------{:-<uw$}---{:-<mw$}",
+                        "",
+                        "",
+                        uw = username_len,
+                        mw = member_len
+                    ));
+                for (id, (pp, (member, u))) in users.iter().enumerate() {
+                    content.push_line_safe(format!(
+                        "{:>4} | {:>8.2} | {:uw$} | {}",
+                        format!("#{}", 1 + id + start),
+                        pp,
+                        u.username,
+                        member,
+                        uw = username_len
+                    ));
                 }
                 content.push_line("```").push_line(format!(
                     "Page **{}**/**{}**. Last updated: `{}`",
