@@ -5,6 +5,7 @@ use sqlx::{query, query_as, Executor};
 #[derive(Debug, Clone)]
 pub struct OsuUser {
     pub user_id: i64,
+    pub username: Option<String>, // should always be there
     pub id: i64,
     pub last_update: DateTime,
     pub pp_std: Option<f64>,
@@ -25,6 +26,7 @@ impl OsuUser {
             Self,
             r#"SELECT
                 user_id as "user_id: i64",
+                username,
                 id as "id: i64",
                 last_update as "last_update: DateTime",
                 pp_std, pp_taiko, pp_mania, pp_catch,
@@ -46,6 +48,7 @@ impl OsuUser {
             Self,
             r#"SELECT
                 user_id as "user_id: i64",
+                username,
                 id as "id: i64",
                 last_update as "last_update: DateTime",
                 pp_std, pp_taiko, pp_mania, pp_catch,
@@ -67,6 +70,7 @@ impl OsuUser {
             Self,
             r#"SELECT
                 user_id as "user_id: i64",
+                username,
                 id as "id: i64",
                 last_update as "last_update: DateTime",
                 pp_std, pp_taiko, pp_mania, pp_catch,
@@ -86,8 +90,8 @@ impl OsuUser {
     {
         query!(
             r#"INSERT
-               INTO osu_users(user_id, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+               INTO osu_users(user_id, username, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (user_id) WHERE id = ? DO UPDATE
                SET
                 last_update = excluded.last_update,
@@ -98,6 +102,7 @@ impl OsuUser {
                 failures = excluded.failures
             "#,
             self.user_id,
+            self.username,
             self.id,
             self.last_update,
             self.pp_std,

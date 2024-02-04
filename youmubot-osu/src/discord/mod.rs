@@ -2,7 +2,7 @@ use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
     discord::display::ScoreListStyle,
     discord::oppai_cache::{BeatmapCache, BeatmapInfo},
-    models::{Beatmap, Mode, Mods, User},
+    models::{self, Beatmap, Mode, Mods, User},
     request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
@@ -210,12 +210,13 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     .await?;
                 return Ok(());
             }
-            add_user(msg.author.id, u.id, &data).await?;
+            let username = u.username.clone();
+            add_user(msg.author.id, u, &data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
                     .push("user has been set to ")
-                    .push_mono_safe(u.username)
+                    .push_mono_safe(username)
                     .build(),
             )
             .await?;
@@ -238,16 +239,16 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     let osu = data.get::<OsuClient>().unwrap();
     let target = args.single::<serenity::model::id::UserId>()?;
 
-    let user = args.quoted().trimmed().single::<String>()?;
-    let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
+    let username = args.quoted().trimmed().single::<String>()?;
+    let user: Option<User> = osu.user(UserID::Auto(username.clone()), |f| f).await?;
     match user {
         Some(u) => {
-            add_user(target, u.id, &data).await?;
+            add_user(target, u, &data).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
                     .push("user has been set to ")
-                    .push_mono_safe(u.username)
+                    .push_mono_safe(username)
                     .build(),
             )
             .await?;
@@ -259,10 +260,15 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     Ok(())
 }
 
-async fn add_user(target: serenity::model::id::UserId, user_id: u64, data: &TypeMap) -> Result<()> {
+async fn add_user(
+    target: serenity::model::id::UserId,
+    user: models::User,
+    data: &TypeMap,
+) -> Result<()> {
     let u = OsuUser {
         user_id: target,
-        id: user_id,
+        username: user.username.into(),
+        id: user.id,
         failures: 0,
         last_update: chrono::Utc::now(),
         pp: [None, None, None, None],

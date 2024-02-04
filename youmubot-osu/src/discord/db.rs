@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use chrono::{DateTime, Utc};
 use youmubot_db_sql::{models::osu as models, models::osu_user as model, Pool};
 
@@ -151,6 +153,7 @@ impl OsuUserBests {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OsuUser {
     pub user_id: UserId,
+    pub username: Cow<'static, str>,
     pub id: u64,
     pub last_update: DateTime<Utc>,
     pub pp: [Option<f64>; 4],
@@ -162,6 +165,7 @@ impl From<OsuUser> for model::OsuUser {
     fn from(u: OsuUser) -> Self {
         Self {
             user_id: u.user_id.0 as i64,
+            username: Some(u.username.into_owned()),
             id: u.id as i64,
             last_update: u.last_update,
             pp_std: u.pp[Mode::Std as usize],
@@ -177,6 +181,10 @@ impl From<model::OsuUser> for OsuUser {
     fn from(u: model::OsuUser) -> Self {
         Self {
             user_id: UserId(u.user_id as u64),
+            username: u
+                .username
+                .map(|v| Cow::Owned(v))
+                .unwrap_or("unknown".into()),
             id: u.id as u64,
             last_update: u.last_update,
             pp: [0, 1, 2, 3].map(|v| match Mode::from(v) {
