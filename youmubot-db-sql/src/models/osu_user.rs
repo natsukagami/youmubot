@@ -95,6 +95,7 @@ impl OsuUser {
                ON CONFLICT (user_id) WHERE id = ? DO UPDATE
                SET
                 last_update = excluded.last_update,
+                username = excluded.username,
                 pp_std = excluded.pp_std,
                 pp_taiko = excluded.pp_taiko,
                 pp_mania = excluded.pp_mania,

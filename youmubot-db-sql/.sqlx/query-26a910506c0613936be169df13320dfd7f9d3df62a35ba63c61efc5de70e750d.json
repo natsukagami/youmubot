@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT\n               INTO osu_users(user_id, username, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures)\n               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)\n               ON CONFLICT (user_id) WHERE id = ? DO UPDATE\n               SET\n                last_update = excluded.last_update,\n                username = excluded.username,\n                pp_std = excluded.pp_std,\n                pp_taiko = excluded.pp_taiko,\n                pp_mania = excluded.pp_mania,\n                pp_catch = excluded.pp_catch,\n                failures = excluded.failures\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "26a910506c0613936be169df13320dfd7f9d3df62a35ba63c61efc5de70e750d"
+}
