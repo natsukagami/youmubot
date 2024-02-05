@@ -7,6 +7,7 @@ use crate::{
     Client as OsuHttpClient,
 };
 use serenity::{
+    collector::{CollectReaction, ReactionAction},
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -175,19 +176,23 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let data = ctx.data.read().await;
     let osu = data.get::<OsuClient>().unwrap();
 
+    async fn check(client: &OsuHttpClient, u: &User) -> Result<bool> {
+        let check_beatmap_id = register_user::user_register_beatmap_id(&u);
+        Ok(client
+            .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
+            .await?
+            .into_iter()
+            .take(1)
+            .any(|s| s.beatmap_id == check_beatmap_id))
+    }
+
     let user = args.single::<String>()?;
     let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
     match user {
         Some(u) => {
-            let check_beatmap_id = register_user::user_register_beatmap_id(&u);
-            let check = osu
-                .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
-                .await?
-                .into_iter()
-                .take(1)
-                .any(|s| s.beatmap_id == check_beatmap_id);
-            if !check {
-                let msg = msg.reply(&ctx, format!("To set your osu username, please make your most recent play be the following map: `/b/{}` in **osu! standard** mode! It does **not** have to be a pass.", check_beatmap_id));
+            if !check(&osu, &u).await? {
+                let check_beatmap_id = register_user::user_register_beatmap_id(&u);
+                let reply = msg.reply(&ctx, format!("To set your osu username, please make your most recent play be the following map: `/b/{}` in **osu! standard** mode! It does **not** have to be a pass, and **NF** can be used! React to this message with 👌 within 5 minutes when you're done!", check_beatmap_id));
                 let beatmap = osu
                     .beatmaps(
                         crate::request::BeatmapRequestKind::Beatmap(check_beatmap_id),
@@ -203,12 +208,37 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     .get_beatmap(beatmap.beatmap_id)
                     .await?
                     .get_possible_pp_with(Mode::Std, Mods::NOMOD)?;
-                msg.await?
+                let mut reply = reply.await?;
+                reply
                     .edit(&ctx, |f| {
                         f.embed(|e| beatmap_embed(&beatmap, Mode::Std, Mods::NOMOD, info, e))
                     })
                     .await?;
-                return Ok(());
+                let reaction = reply.react(&ctx, '👌').await?;
+                let completed = loop {
+                    let emoji = reaction.emoji.clone();
+                    let user_reaction = CollectReaction::new(&ctx)
+                        .message_id(reply.id.0)
+                        .author_id(msg.author.id.0)
+                        .filter(move |r| r.emoji == emoji)
+                        .timeout(std::time::Duration::from_secs(300))
+                        .collect_limit(1)
+                        .await;
+                    if let Some(ur) = user_reaction {
+                        if check(&osu, &u).await? {
+                            break true;
+                        }
+                        if let ReactionAction::Added(ur) = &*ur {
+                            ur.delete(&ctx).await?;
+                        }
+                    } else {
+                        break false;
+                    }
+                };
+                if !completed {
+                    reaction.delete(&ctx).await?;
+                    return Ok(());
+                }
             }
             let username = u.username.clone();
             add_user(msg.author.id, u, &data).await?;
