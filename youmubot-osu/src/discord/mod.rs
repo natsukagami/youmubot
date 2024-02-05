@@ -6,6 +6,7 @@ use crate::{
     request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
+use rand::seq::IteratorRandom;
 use serenity::{
     collector::{CollectReaction, ReactionAction},
     framework::standard::{
@@ -26,11 +27,9 @@ pub(crate) mod display;
 pub(crate) mod embeds;
 mod hook;
 pub(crate) mod oppai_cache;
-mod register_user;
 mod server_rank;
 
-use db::OsuUser;
-use db::{OsuLastBeatmap, OsuSavedUsers, OsuUserBests};
+use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
 use hook::SHORT_LINK_REGEX;
 pub use hook::{dot_osu_hook, hook};
@@ -176,85 +175,105 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let data = ctx.data.read().await;
     let osu = data.get::<OsuClient>().unwrap();
 
-    async fn check(client: &OsuHttpClient, u: &User) -> Result<bool> {
-        let check_beatmap_id = register_user::user_register_beatmap_id(&u);
+    let user = args.single::<String>()?;
+    let u = match osu.user(UserID::Auto(user), |f| f).await? {
+        Some(u) => u,
+        None => {
+            msg.reply(&ctx, "user not found...").await?;
+            return Ok(());
+        }
+    };
+    async fn find_score(client: &OsuHttpClient, u: &User) -> Result<Option<(models::Score, Mode)>> {
+        for mode in &[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania] {
+            let scores = client
+                .user_best(UserID::ID(u.id), |f| f.mode(*mode))
+                .await?;
+            match scores.into_iter().choose(&mut rand::thread_rng()) {
+                Some(v) => return Ok(Some((v, *mode))),
+                None => (),
+            };
+        }
+        Ok(None)
+    }
+    let (score, mode) = match find_score(&osu, &u).await? {
+        Some(v) => v,
+        None => {
+            msg.reply(
+                &ctx,
+                "No plays found in this account! Play something first...!",
+            )
+            .await?;
+            return Ok(());
+        }
+    };
+
+    async fn check(client: &OsuHttpClient, u: &User, map_id: u64) -> Result<bool> {
         Ok(client
             .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
             .await?
             .into_iter()
             .take(1)
-            .any(|s| s.beatmap_id == check_beatmap_id))
+            .any(|s| s.beatmap_id == map_id))
     }
 
-    let user = args.single::<String>()?;
-    let user: Option<User> = osu.user(UserID::Auto(user), |f| f).await?;
-    match user {
-        Some(u) => {
-            if !check(&osu, &u).await? {
-                let check_beatmap_id = register_user::user_register_beatmap_id(&u);
-                let reply = msg.reply(&ctx, format!("To set your osu username, please make your most recent play be the following map: `/b/{}` in **osu! standard** mode! It does **not** have to be a pass, and **NF** can be used! React to this message with 👌 within 5 minutes when you're done!", check_beatmap_id));
-                let beatmap = osu
-                    .beatmaps(
-                        crate::request::BeatmapRequestKind::Beatmap(check_beatmap_id),
-                        |f| f,
-                    )
-                    .await?
-                    .into_iter()
-                    .next()
-                    .unwrap();
-                let info = data
-                    .get::<BeatmapCache>()
-                    .unwrap()
-                    .get_beatmap(beatmap.beatmap_id)
-                    .await?
-                    .get_possible_pp_with(Mode::Std, Mods::NOMOD)?;
-                let mut reply = reply.await?;
-                reply
-                    .edit(&ctx, |f| {
-                        f.embed(|e| beatmap_embed(&beatmap, Mode::Std, Mods::NOMOD, info, e))
-                    })
-                    .await?;
-                let reaction = reply.react(&ctx, '👌').await?;
-                let completed = loop {
-                    let emoji = reaction.emoji.clone();
-                    let user_reaction = CollectReaction::new(&ctx)
-                        .message_id(reply.id.0)
-                        .author_id(msg.author.id.0)
-                        .filter(move |r| r.emoji == emoji)
-                        .timeout(std::time::Duration::from_secs(300))
-                        .collect_limit(1)
-                        .await;
-                    if let Some(ur) = user_reaction {
-                        if check(&osu, &u).await? {
-                            break true;
-                        }
-                        if let ReactionAction::Added(ur) = &*ur {
-                            ur.delete(&ctx).await?;
-                        }
-                    } else {
-                        break false;
-                    }
-                };
-                if !completed {
-                    reaction.delete(&ctx).await?;
-                    return Ok(());
-                }
+    let reply = msg.reply(&ctx, format!("To set your osu username, please make your most recent play be the following map: `/b/{}` in **{}** mode! It does **not** have to be a pass, and **NF** can be used! React to this message with 👌 within 5 minutes when you're done!", score.beatmap_id, mode.as_str_new_site()));
+    let beatmap = osu
+        .beatmaps(
+            crate::request::BeatmapRequestKind::Beatmap(score.beatmap_id),
+            |f| f.mode(mode, true),
+        )
+        .await?
+        .into_iter()
+        .next()
+        .unwrap();
+    let info = data
+        .get::<BeatmapCache>()
+        .unwrap()
+        .get_beatmap(beatmap.beatmap_id)
+        .await?
+        .get_possible_pp_with(mode, Mods::NOMOD)?;
+    let mut reply = reply.await?;
+    reply
+        .edit(&ctx, |f| {
+            f.embed(|e| beatmap_embed(&beatmap, mode, Mods::NOMOD, info, e))
+        })
+        .await?;
+    let reaction = reply.react(&ctx, '👌').await?;
+    let completed = loop {
+        let emoji = reaction.emoji.clone();
+        let user_reaction = CollectReaction::new(&ctx)
+            .message_id(reply.id.0)
+            .author_id(msg.author.id.0)
+            .filter(move |r| r.emoji == emoji)
+            .timeout(std::time::Duration::from_secs(300))
+            .collect_limit(1)
+            .await;
+        if let Some(ur) = user_reaction {
+            if check(&osu, &u, score.beatmap_id).await? {
+                break true;
             }
-            let username = u.username.clone();
-            add_user(msg.author.id, u, &data).await?;
-            msg.reply(
-                &ctx,
-                MessageBuilder::new()
-                    .push("user has been set to ")
-                    .push_mono_safe(username)
-                    .build(),
-            )
-            .await?;
+            if let ReactionAction::Added(ur) = &*ur {
+                ur.delete(&ctx).await?;
+            }
+        } else {
+            break false;
         }
-        None => {
-            msg.reply(&ctx, "user not found...").await?;
-        }
+    };
+    if !completed {
+        reaction.delete(&ctx).await?;
+        return Ok(());
     }
+
+    let username = u.username.clone();
+    add_user(msg.author.id, u, &data).await?;
+    msg.reply(
+        &ctx,
+        MessageBuilder::new()
+            .push("user has been set to ")
+            .push_mono_safe(username)
+            .build(),
+    )
+    .await?;
     Ok(())
 }
 

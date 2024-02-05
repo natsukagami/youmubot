@@ -2992,6 +2992,7 @@ dependencies = [
  "dashmap",
  "lazy_static",
  "osuparse",
+ "rand",
  "regex",
  "reqwest",
  "rosu-pp",
