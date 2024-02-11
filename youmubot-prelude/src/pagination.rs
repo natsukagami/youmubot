@@ -3,7 +3,7 @@ use futures_util::{future::Future, StreamExt};
 use serenity::{
     collector::ReactionAction,
     model::{
-        channel::{Message, ReactionType},
+        channel::{Message, Reaction, ReactionType},
         id::ChannelId,
     },
 };
@@ -110,22 +110,32 @@ async fn paginate_with_first_message(
     }
     // React to the message
     let large_count = pager.len().filter(|&p| p > 10).is_some();
-    if large_count {
-        // add >> and << buttons
-        message.react(&ctx, ReactionType::try_from(REWIND)?).await?;
-    }
-    message
-        .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
-        .await?;
-    message
-        .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
-        .await?;
-    if large_count {
-        // add >> and << buttons
-        message
-            .react(&ctx, ReactionType::try_from(FAST_FORWARD)?)
-            .await?;
-    }
+    let reactions = {
+        let mut rs = Vec::<Reaction>::with_capacity(4);
+        if large_count {
+            // add >> and << buttons
+            rs.push(message.react(&ctx, ReactionType::try_from(REWIND)?).await?);
+        }
+        rs.push(
+            message
+                .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
+                .await?,
+        );
+        rs.push(
+            message
+                .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
+                .await?,
+        );
+        if large_count {
+            // add >> and << buttons
+            rs.push(
+                message
+                    .react(&ctx, ReactionType::try_from(FAST_FORWARD)?)
+                    .await?,
+            );
+        }
+        rs
+    };
     // Build a reaction collector
     let mut reaction_collector = message.await_reactions(ctx).removed(true).build();
     let mut page = 0;
@@ -148,7 +158,9 @@ async fn paginate_with_first_message(
         }
     };
 
-    message.react(&ctx, '🛑').await?;
+    for reaction in reactions {
+        reaction.delete_all(&ctx).await?;
+    }
 
     res
 }
