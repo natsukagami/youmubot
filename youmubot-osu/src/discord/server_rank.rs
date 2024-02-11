@@ -137,7 +137,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                         mw = member_len
                     ));
                 for (id, (pp, (member, u))) in users.iter().enumerate() {
-                    content.push_line_safe(format!(
+                    content.push_line(format!(
                         "{:>4} | {:>8.2} | {:uw$} | {}",
                         format!("#{}", 1 + id + start),
                         pp,

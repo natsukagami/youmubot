@@ -368,19 +368,27 @@ impl<'a> ScoreEmbedBuilder<'a> {
         };
         m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
             .color(0xffb6c1)
-            .title(format!(
-                "{} | {} - {} [{}] {} ({:.2}\\*) {}| {} {} {}",
-                u.username,
-                b.artist,
-                b.title,
-                b.difficulty_name,
-                s.mods,
-                stars,
-                creator,
-                score_line,
-                top_record,
-                world_record,
-            ))
+            .title(
+                MessageBuilder::new()
+                    .push_safe(&u.username)
+                    .push(" | ")
+                    .push_safe(&b.artist)
+                    .push(" - ")
+                    .push(&b.title)
+                    .push(" [")
+                    .push_safe(&b.difficulty_name)
+                    .push("] ")
+                    .push(s.mods)
+                    .push(" ")
+                    .push(format!("({:.2}\\*)", stars))
+                    .push(" ")
+                    .push_safe(creator)
+                    .push("| ")
+                    .push(score_line)
+                    .push(top_record)
+                    .push(world_record)
+                    .build(),
+            )
             .description(format!(
                 r#"**Played**: {}
 {}"#,
@@ -423,7 +431,7 @@ pub(crate) fn user_embed(
     best: Option<(Score, BeatmapWithMode, BeatmapInfo)>,
     m: &mut CreateEmbed,
 ) -> &mut CreateEmbed {
-    m.title(u.username)
+    m.title(MessageBuilder::new().push_safe(u.username).build())
         .url(format!("https://osu.ppy.sh/users/{}", u.id))
         .color(0xffb6c1)
         .thumbnail(format!("https://a.ppy.sh/{}", u.id))
