@@ -148,7 +148,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     ));
                 }
                 content.push_line("```").push_line(format!(
-                    "Page **{}**/**{}**. Last updated: `{}`",
+                    "Page **{}**/**{}**. Last updated: {}",
                     page + 1,
                     (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
                     last_update.format("<t:%s:R>"),
