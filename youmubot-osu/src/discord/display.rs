@@ -122,6 +122,8 @@ mod scores {
     }
 
     pub mod table {
+        use std::borrow::Cow;
+
         use crate::discord::oppai_cache::Accuracy;
         use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
         use crate::models::{Mode, Score};
@@ -194,7 +196,7 @@ mod scores {
                 let pp = plays
                     .iter()
                     .map(|p| async move {
-                        match p.pp.map(|pp| format!("{:.2}pp", pp)) {
+                        match p.pp.map(|pp| format!("{:.2}", pp)) {
                             Some(v) => Ok(v),
                             None => {
                                 let b = beatmap_cache.get_beatmap(p.beatmap_id).await?;
@@ -211,7 +213,7 @@ mod scores {
                                         p.mods,
                                     )
                                     .ok()
-                                    .map(|pp| format!("{:.2}pp [?]", pp))
+                                    .map(|pp| format!("{:.2}[?]", pp))
                                 }
                                 .unwrap_or_else(|| "-".to_owned()));
                                 r
@@ -226,18 +228,27 @@ mod scores {
                 let ranks = plays
                     .iter()
                     .enumerate()
-                    .map(|(i, p)| match p.rank {
-                        crate::models::Rank::F => beatmaps[i]
-                            .as_ref()
-                            .and_then(|(_, i)| i.map(|i| i.objects))
-                            .map(|total| {
-                                (p.count_300 + p.count_100 + p.count_50 + p.count_miss) as f64
-                                    / (total as f64)
-                                    * 100.0
-                            })
-                            .map(|p| format!("F [{:.0}%]", p))
-                            .unwrap_or_else(|| "F".to_owned()),
-                        v => v.to_string(),
+                    .map(|(i, p)| -> Cow<'static, str> {
+                        match p.rank {
+                            crate::models::Rank::F => beatmaps[i]
+                                .as_ref()
+                                .and_then(|(_, i)| i.map(|i| i.objects))
+                                .map(|total| {
+                                    (p.count_300 + p.count_100 + p.count_50 + p.count_miss) as f64
+                                        / (total as f64)
+                                        * 100.0
+                                })
+                                .map(|p| format!("{:.0}% F", p).into())
+                                .unwrap_or_else(|| "F".into()),
+                            crate::models::Rank::SS => "SS".into(),
+                            crate::models::Rank::S => if p.perfect {
+                                format!("{}x FC S", p.max_combo)
+                            } else {
+                                format!("{}x S", p.max_combo)
+                            }
+                            .into(),
+                            _v => format!("{}x {}m {}", p.max_combo, p.count_miss, p.rank).into(),
+                        }
                     })
                     .collect::<Vec<_>>();
 
@@ -300,7 +311,7 @@ mod scores {
                 // Each row
                 for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
                     m.push_line(format!(
-                        "{:>3} | {:>pw$} | {:>8} | {:^rw$} | {:mw$} | {:bw$}",
+                        "{:>3} | {:>pw$} | {:>8} | {:>rw$} | {:mw$} | {:bw$}",
                         id + start + 1,
                         pp[id],
                         format!("{:.2}%", play.accuracy(self.mode)),

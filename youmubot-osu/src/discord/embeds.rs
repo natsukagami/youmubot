@@ -354,11 +354,11 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .unwrap_or_else(|| format!("**{}x**", s.max_combo));
         let top_record = self
             .top_record
-            .map(|v| format!("| #{} top record!", v))
+            .map(|v| format!(" | #{} top record!", v))
             .unwrap_or_else(|| "".to_owned());
         let world_record = self
             .world_record
-            .map(|v| format!("| #{} on Global Rankings!", v))
+            .map(|v| format!(" | #{} on Global Rankings!", v))
             .unwrap_or_else(|| "".to_owned());
         let diff = b.difficulty.apply_mods(s.mods, stars);
         let creator = if b.difficulty_name.contains("'s") {

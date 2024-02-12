@@ -13,6 +13,7 @@ use crate::{
     models::{Mode, Mods, Score},
     request::UserID,
 };
+
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
     model::{channel::Message, id::UserId},
@@ -150,7 +151,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     "Page **{}**/**{}**. Last updated: `{}`",
                     page + 1,
                     (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
-                    last_update.to_rfc2822()
+                    last_update.format("<t:%s:R>"),
                 ));
                 m.edit(ctx, |f| f.content(content.to_string())).await?;
                 Ok(true)
