@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+const LAZER_TEXT: &'static str = "⚡";
+
 bitflags::bitflags! {
     /// The mods available to osu!
     #[derive(std::default::Default, Serialize, Deserialize)]
@@ -42,7 +44,7 @@ bitflags::bitflags! {
         const MAP_CHANGING = Self::HR.bits | Self::EZ.bits | Self::SPEED_CHANGING.bits;
 
         // Made up flags
-        const CLASSIC = 1 << 59;
+        const LAZER = 1 << 59;
         const UNKNOWN = 1 << 60;
     }
 }
@@ -72,9 +74,23 @@ const MODS_WITH_NAMES: &[(Mods, &str)] = &[
     (Mods::KEY7, "7K"),
     (Mods::KEY8, "8K"),
     (Mods::KEY9, "9K"),
-    (Mods::CLASSIC, "CL"),
     (Mods::UNKNOWN, "??"),
 ];
+
+impl Mods {
+    // Return the string length of the string representation of the mods.
+    pub fn str_len(&self) -> usize {
+        let s = format!("{}", self);
+        s.len() + if s.contains(LAZER_TEXT) { 1 } else { 0 }
+    }
+
+    // Format the mods into a string with padded size.
+    pub fn to_string_padded(&self, size: usize) -> String {
+        let s = format!("{}", self);
+        let real_padded = size - if s.contains(LAZER_TEXT) { 1 } else { 0 };
+        format!("{:>mw$}", s, mw = real_padded)
+    }
+}
 
 impl std::str::FromStr for Mods {
     type Err = String;
@@ -112,7 +128,6 @@ impl std::str::FromStr for Mods {
                 "7K" => res |= Mods::KEY7,
                 "8K" => res |= Mods::KEY8,
                 "9K" => res |= Mods::KEY9,
-                "CL" => res |= Mods::CLASSIC,
                 "??" => res |= Mods::UNKNOWN,
                 v => return Err(format!("{} is not a valid mod", v)),
             }
@@ -127,19 +142,22 @@ impl std::str::FromStr for Mods {
 
 impl fmt::Display for Mods {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.is_empty() {
-            // Return an empty string
-            return Ok(());
+        if !(*self & (Mods::all() ^ Mods::LAZER)).is_empty() {
+            write!(f, "+")?;
+            for p in MODS_WITH_NAMES.iter() {
+                if !self.contains(p.0) {
+                    continue;
+                }
+                match p.0 {
+                    Mods::DT if self.contains(Mods::NC) => continue,
+                    Mods::SD if self.contains(Mods::PF) => continue,
+                    _ => (),
+                };
+                write!(f, "{}", p.1)?;
+            }
         }
-        write!(f, "+")?;
-        for p in MODS_WITH_NAMES.iter() {
-            if !self.contains(p.0) {
-                continue;
-            }
-            if p.0 == Mods::DT && self.contains(Mods::NC) {
-                continue;
-            }
-            write!(f, "{}", p.1)?;
+        if self.contains(Mods::LAZER) {
+            write!(f, "{}", LAZER_TEXT)?;
         }
         Ok(())
     }

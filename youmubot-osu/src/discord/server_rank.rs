@@ -461,7 +461,7 @@ async fn show_leaderboard(
                 /*mods width*/
                 let mdw = scores
                     .iter()
-                    .map(|(_, _, v)| v.mods.to_string().len())
+                    .map(|(_, _, v)| v.mods.str_len())
                     .max()
                     .unwrap()
                     .max(4);
@@ -514,17 +514,16 @@ async fn show_leaderboard(
                     ));
                 for (id, (_, member, p)) in scores.iter().enumerate() {
                     content.push_line_safe(format!(
-                        "{:>4} | {:>pw$} | {:>mdw$} | {:>rw$} | {:>aw$} | {:>cw$} | {:>mw$} | {:uw$}",
+                        "{:>4} | {:>pw$} | {} | {:>rw$} | {:>aw$} | {:>cw$} | {:>mw$} | {:uw$}",
                         format!("#{}", 1 + id + start),
                         pp[id],
-                        p.mods.to_string(),
+                        p.mods.to_string_padded(mdw),
                         ranks[id],
                         accuracies[id],
                         combos[id],
                         misses[id],
                         member,
                         pw = pw,
-                        mdw = mdw,
                         rw = rw,
                         aw = aw,
                         cw = cw,
