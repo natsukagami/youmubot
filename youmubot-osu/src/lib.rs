@@ -8,18 +8,11 @@ mod test;
 use models::*;
 use request::builders::*;
 use request::*;
-use reqwest::Client as HTTPClient;
 use std::convert::TryInto;
-use youmubot_prelude::{ratelimit::Ratelimit, *};
-
-/// The number of requests per minute to the osu! server.
-const REQUESTS_PER_MINUTE: usize = 100;
+use youmubot_prelude::*;
 
 /// Client is the client that will perform calls to the osu! api server.
 pub struct Client {
-    client: Ratelimit<HTTPClient>,
-    key: String,
-
     rosu: rosu_v2::Osu,
 }
 
@@ -35,32 +28,13 @@ pub fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>,
 
 impl Client {
     /// Create a new client from the given API key.
-    pub async fn new(
-        key: String,
-        client: HTTPClient,
-        client_id: u64,
-        client_secret: impl Into<String>,
-    ) -> Result<Client> {
-        let client = Ratelimit::new(
-            client,
-            REQUESTS_PER_MINUTE,
-            std::time::Duration::from_secs(60),
-        );
+    pub async fn new(client_id: u64, client_secret: impl Into<String>) -> Result<Client> {
         let rosu = rosu_v2::OsuBuilder::new()
             .client_id(client_id)
             .client_secret(client_secret)
             .build()
             .await?;
-        Ok(Client { client, key, rosu })
-    }
-
-    pub(crate) async fn build_request(&self, url: &str) -> Result<reqwest::RequestBuilder> {
-        Ok(self
-            .client
-            .borrow()
-            .await?
-            .get(url)
-            .query(&[("k", &*self.key)]))
+        Ok(Client { rosu })
     }
 
     pub async fn beatmaps(

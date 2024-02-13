@@ -3087,7 +3087,6 @@ dependencies = [
  "osuparse",
  "rand",
  "regex",
- "reqwest",
  "rosu-pp",
  "rosu-v2",
  "serde",
