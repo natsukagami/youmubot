@@ -69,6 +69,8 @@ impl TryFrom<raw::Score> for Score {
             count_geki: parse_from_str(&raw.countgeki)?,
             max_combo: parse_from_str(&raw.maxcombo)?,
             perfect: parse_bool(&raw.perfect)?,
+
+            lazer_build_id: None,
         })
     }
 }

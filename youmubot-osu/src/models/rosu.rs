@@ -1,4 +1,7 @@
-use rosu_v2::model as rosu;
+use rosu_v2::model::{
+    self as rosu,
+    mods::{GameModIntermode, GameModsIntermode},
+};
 
 use super::*;
 
@@ -25,7 +28,10 @@ fn time_to_utc(s: time::OffsetDateTime) -> DateTime<Utc> {
 }
 
 impl Beatmap {
-    pub(crate) fn from_rosu(bm: rosu::beatmap::Beatmap, set: &rosu::beatmap::Beatmapset) -> Self {
+    pub(crate) fn from_rosu(
+        bm: rosu::beatmap::BeatmapExtended,
+        set: &rosu::beatmap::BeatmapsetExtended,
+    ) -> Self {
         let last_updated = time_to_utc(bm.last_updated);
         let difficulty = Difficulty::from_rosu(&bm);
         Self {
@@ -68,7 +74,7 @@ impl Beatmap {
 
 impl User {
     pub(crate) fn from_rosu(
-        user: rosu::user::User,
+        user: rosu::user::UserExtended,
         stats: rosu::user::UserStatistics,
         events: Vec<rosu::recent_event::RecentEvent>,
     ) -> Self {
@@ -129,8 +135,39 @@ impl From<rosu::recent_event::RecentEvent> for UserEvent {
     }
 }
 
+impl From<rosu::score::Score> for Score {
+    fn from(s: rosu::score::Score) -> Self {
+        let legacy_stats = s.statistics.as_legacy(s.mode);
+        Self {
+            id: Some(s.id),
+            user_id: s.user_id as u64,
+            date: time_to_utc(s.ended_at),
+            replay_available: s.replay,
+            beatmap_id: s.map_id as u64,
+            score: s.score as u64,
+            pp: s.pp.map(|v| v as f64),
+            rank: s.grade.into(),
+            mods: s
+                .mods
+                .iter()
+                .map(|v| v.intermode())
+                .collect::<GameModsIntermode>()
+                .into(),
+            count_300: legacy_stats.count_300 as u64,
+            count_100: legacy_stats.count_100 as u64,
+            count_50: legacy_stats.count_50 as u64,
+            count_miss: legacy_stats.count_miss as u64,
+            count_katu: legacy_stats.count_katu as u64,
+            count_geki: legacy_stats.count_geki as u64,
+            max_combo: s.max_combo as u64,
+            perfect: s.is_perfect_combo,
+            lazer_build_id: s.build_id,
+        }
+    }
+}
+
 impl Difficulty {
-    pub(crate) fn from_rosu(bm: &rosu::beatmap::Beatmap) -> Self {
+    pub(crate) fn from_rosu(bm: &rosu::beatmap::BeatmapExtended) -> Self {
         Self {
             stars: bm.stars as f64,
             aim: None,
@@ -212,5 +249,97 @@ impl From<rosu::beatmap::Language> for Language {
             rosu::beatmap::Language::Polish => Language::Polish,
             rosu::beatmap::Language::Unspecified => Language::Unspecified,
         }
+    }
+}
+
+impl From<rosu::Grade> for Rank {
+    fn from(value: rosu::Grade) -> Self {
+        match value {
+            rosu::Grade::F => Rank::F,
+            rosu::Grade::D => Rank::D,
+            rosu::Grade::C => Rank::C,
+            rosu::Grade::B => Rank::B,
+            rosu::Grade::A => Rank::A,
+            rosu::Grade::S => Rank::S,
+            rosu::Grade::SH => Rank::SH,
+            rosu::Grade::X => Rank::SS,
+            rosu::Grade::XH => Rank::SSH,
+        }
+    }
+}
+
+impl From<Mods> for rosu::mods::GameModsIntermode {
+    fn from(value: Mods) -> Self {
+        let mut res = GameModsIntermode::new();
+        const MOD_MAP: &[(Mods, GameModIntermode)] = &[
+            (Mods::NF, GameModIntermode::NoFail),
+            (Mods::EZ, GameModIntermode::Easy),
+            (Mods::TD, GameModIntermode::TouchDevice),
+            (Mods::HD, GameModIntermode::Hidden),
+            (Mods::HR, GameModIntermode::HardRock),
+            (Mods::SD, GameModIntermode::SuddenDeath),
+            (Mods::DT, GameModIntermode::DoubleTime),
+            (Mods::RX, GameModIntermode::Relax),
+            (Mods::HT, GameModIntermode::HalfTime),
+            (Mods::NC, GameModIntermode::Nightcore),
+            (Mods::FL, GameModIntermode::Flashlight),
+            (Mods::AT, GameModIntermode::Autoplay),
+            (Mods::SO, GameModIntermode::SpunOut),
+            (Mods::AP, GameModIntermode::Autopilot),
+            (Mods::PF, GameModIntermode::Perfect),
+            (Mods::KEY1, GameModIntermode::OneKey),
+            (Mods::KEY2, GameModIntermode::TwoKeys),
+            (Mods::KEY3, GameModIntermode::ThreeKeys),
+            (Mods::KEY4, GameModIntermode::FourKeys),
+            (Mods::KEY5, GameModIntermode::FiveKeys),
+            (Mods::KEY6, GameModIntermode::SixKeys),
+            (Mods::KEY7, GameModIntermode::SevenKeys),
+            (Mods::KEY8, GameModIntermode::EightKeys),
+            (Mods::KEY9, GameModIntermode::NineKeys),
+        ];
+        for (m1, m2) in MOD_MAP {
+            if value.contains(*m1) {
+                res.insert(*m2);
+            }
+        }
+        res
+    }
+}
+
+impl From<rosu::mods::GameModsIntermode> for Mods {
+    fn from(value: rosu_v2::prelude::GameModsIntermode) -> Self {
+        value
+            .into_iter()
+            .map(|m| match m {
+                GameModIntermode::NoFail => Mods::NF,
+                GameModIntermode::Easy => Mods::EZ,
+                GameModIntermode::TouchDevice => Mods::TD,
+                GameModIntermode::Hidden => Mods::HD,
+                GameModIntermode::HardRock => Mods::HR,
+                GameModIntermode::SuddenDeath => Mods::SD,
+                GameModIntermode::DoubleTime => Mods::DT,
+                GameModIntermode::Relax => Mods::RX,
+                GameModIntermode::HalfTime => Mods::HT,
+                GameModIntermode::Nightcore => Mods::NC,
+                GameModIntermode::Flashlight => Mods::FL,
+                GameModIntermode::Autoplay => Mods::AT,
+                GameModIntermode::SpunOut => Mods::SO,
+                GameModIntermode::Autopilot => Mods::AP,
+                GameModIntermode::Perfect => Mods::PF,
+                GameModIntermode::OneKey => Mods::KEY1,
+                GameModIntermode::TwoKeys => Mods::KEY2,
+                GameModIntermode::ThreeKeys => Mods::KEY3,
+                GameModIntermode::FourKeys => Mods::KEY4,
+                GameModIntermode::FiveKeys => Mods::KEY5,
+                GameModIntermode::SixKeys => Mods::KEY6,
+                GameModIntermode::SevenKeys => Mods::KEY7,
+                GameModIntermode::EightKeys => Mods::KEY8,
+                GameModIntermode::NineKeys => Mods::KEY9,
+                GameModIntermode::Classic => Mods::CLASSIC,
+                _ => Mods::UNKNOWN,
+            })
+            .fold(Mods::NOMOD, |a, b| a | b)
+
+        // Mods::from_bits_truncate(value.bits() as u64)
     }
 }
