@@ -1,13 +1,10 @@
 use chrono::{DateTime, Utc};
-use regex::Regex;
 use rosu_pp::GameMode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
 
 pub mod mods;
-pub mod parse;
-pub(crate) mod raw;
 pub(crate) mod rosu;
 
 pub use mods::Mods;

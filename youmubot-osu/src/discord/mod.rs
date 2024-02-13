@@ -74,8 +74,6 @@ pub async fn setup(
     let mk_osu_client = || async {
         Arc::new(
             OsuHttpClient::new(
-                std::env::var("OSU_API_KEY").expect("Please set OSU_API_KEY as osu! api key."),
-                http_client.clone(),
                 std::env::var("OSU_API_CLIENT_ID")
                     .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
                     .parse()

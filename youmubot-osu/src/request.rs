@@ -109,7 +109,6 @@ fn handle_not_found<T>(v: Result<T, OsuError>) -> Result<Option<T>, OsuError> {
 }
 
 pub mod builders {
-    use reqwest::Response;
     use rosu_v2::model::mods::GameModsIntermode;
 
     use crate::models;
