@@ -273,12 +273,7 @@ mod scores {
 
                 let pw = pp.iter().map(|v| v.len()).max().unwrap_or(2);
                 /*mods width*/
-                let mw = plays
-                    .iter()
-                    .map(|v| v.mods.to_string().len())
-                    .max()
-                    .unwrap()
-                    .max(4);
+                let mw = plays.iter().map(|v| v.mods.str_len()).max().unwrap().max(4);
                 /*beatmap names*/
                 let bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
                 /* ranks width */
@@ -311,16 +306,15 @@ mod scores {
                 // Each row
                 for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
                     m.push_line(format!(
-                        "{:>3} | {:>pw$} | {:>8} | {:>rw$} | {:mw$} | {:bw$}",
+                        "{:>3} | {:>pw$} | {:>8} | {:>rw$} | {} | {:bw$}",
                         id + start + 1,
                         pp[id],
                         format!("{:.2}%", play.accuracy(self.mode)),
                         ranks[id],
-                        play.mods.to_string(),
+                        play.mods.to_string_padded(mw),
                         beatmap,
                         rw = rw,
                         pw = pw,
-                        mw = mw,
                         bw = bw
                     ));
                 }

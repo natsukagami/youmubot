@@ -302,12 +302,20 @@ impl From<Mods> for rosu::mods::GameModsIntermode {
                 res.insert(*m2);
             }
         }
+        if !value.contains(Mods::LAZER) {
+            res.insert(GameModIntermode::Classic);
+        }
         res
     }
 }
 
 impl From<rosu::mods::GameModsIntermode> for Mods {
     fn from(value: rosu_v2::prelude::GameModsIntermode) -> Self {
+        let init = if value.contains(GameModIntermode::Classic) {
+            Mods::NOMOD
+        } else {
+            Mods::LAZER
+        };
         value
             .into_iter()
             .map(|m| match m {
@@ -335,10 +343,10 @@ impl From<rosu::mods::GameModsIntermode> for Mods {
                 GameModIntermode::SevenKeys => Mods::KEY7,
                 GameModIntermode::EightKeys => Mods::KEY8,
                 GameModIntermode::NineKeys => Mods::KEY9,
-                GameModIntermode::Classic => Mods::CLASSIC,
+                GameModIntermode::Classic => Mods::NOMOD,
                 _ => Mods::UNKNOWN,
             })
-            .fold(Mods::NOMOD, |a, b| a | b)
+            .fold(init, |a, b| a | b)
 
         // Mods::from_bits_truncate(value.bits() as u64)
     }
