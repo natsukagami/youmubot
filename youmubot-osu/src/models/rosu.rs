@@ -40,8 +40,8 @@ impl Beatmap {
             last_update: last_updated,
             download_available: !set.availability.download_disabled, // don't think we have this stat
             audio_available: !set.availability.download_disabled,    // neither is this
-            artist: set.artist_unicode.as_ref().unwrap_or(&set.artist).clone(),
-            title: set.title_unicode.as_ref().unwrap_or(&set.title).clone(),
+            artist: set.artist.clone(),
+            title: set.title.clone(),
             beatmapset_id: set.mapset_id as u64,
             creator: set.creator_name.clone().into_string(),
             creator_id: set.creator_id as u64,
