@@ -901,20 +901,6 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.23.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1788965e61b367cd03a62950836d5cd41560c3577d90e40e0819373194d1661c"
-dependencies = [
- "http",
- "hyper",
- "rustls 0.20.9",
- "rustls-native-certs",
- "tokio",
- "tokio-rustls 0.23.4",
-]
-
-[[package]]
-name = "hyper-rustls"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec3efd23720e2049821a693cbc7e65ea87c72f1c58ff2f9522ff332b1491e590"
@@ -923,6 +909,7 @@ dependencies = [
  "http",
  "hyper",
  "rustls 0.21.10",
+ "rustls-native-certs",
  "tokio",
  "tokio-rustls 0.24.1",
 ]
@@ -1600,7 +1587,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "hyper-rustls 0.24.2",
+ "hyper-rustls",
  "hyper-tls",
  "ipnet",
  "js-sys",
@@ -1670,20 +1657,22 @@ checksum = "be9e281b71d3797817a1e6615dd8fb081dd61359b4c41d08792cc7c3c1c13b4e"
 [[package]]
 name = "rosu-v2"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef969d8cb87f8dab58193bd722c7831fc839c9852c6e2aec64da3d2e87d447f3"
+source = "git+https://github.com/natsukagami/rosu-v2?rev=6f6731cb2f0d235b006ab375dd94b446dde894ac#6f6731cb2f0d235b006ab375dd94b446dde894ac"
 dependencies = [
- "bitflags 1.3.2",
  "bytes",
  "dashmap",
  "futures",
  "hyper",
- "hyper-rustls 0.23.2",
+ "hyper-rustls",
+ "itoa",
  "leaky-bucket-lite",
  "log",
+ "paste",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "smallstr",
+ "thiserror",
  "time",
  "tokio",
  "url",
@@ -2010,9 +1999,9 @@ dependencies = [
 
 [[package]]
 name = "smallstr"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e922794d168678729ffc7e07182721a14219c65814e66e91b839a272fe5ae4f"
+checksum = "63b1aefdf380735ff8ded0b15f31aab05daf1f70216c01c02a12926badd1df9d"
 dependencies = [
  "serde",
  "smallvec",

@@ -558,6 +558,8 @@ pub struct Score {
     pub count_geki: u64,
     pub max_combo: u64,
     pub perfect: bool,
+
+    pub lazer_build_id: Option<u32>,
 }
 
 impl Score {

@@ -40,6 +40,10 @@ bitflags::bitflags! {
         const NOVIDEO = Self::TD.bits; /* never forget */
         const SPEED_CHANGING = Self::DT.bits | Self::HT.bits | Self::NC.bits;
         const MAP_CHANGING = Self::HR.bits | Self::EZ.bits | Self::SPEED_CHANGING.bits;
+
+        // Made up flags
+        const CLASSIC = 1 << 59;
+        const UNKNOWN = 1 << 60;
     }
 }
 
@@ -68,6 +72,8 @@ const MODS_WITH_NAMES: &[(Mods, &str)] = &[
     (Mods::KEY7, "7K"),
     (Mods::KEY8, "8K"),
     (Mods::KEY9, "9K"),
+    (Mods::CLASSIC, "CL"),
+    (Mods::UNKNOWN, "??"),
 ];
 
 impl std::str::FromStr for Mods {
@@ -106,6 +112,8 @@ impl std::str::FromStr for Mods {
                 "7K" => res |= Mods::KEY7,
                 "8K" => res |= Mods::KEY8,
                 "9K" => res |= Mods::KEY9,
+                "CL" => res |= Mods::CLASSIC,
+                "??" => res |= Mods::UNKNOWN,
                 v => return Err(format!("{} is not a valid mod", v)),
             }
         }

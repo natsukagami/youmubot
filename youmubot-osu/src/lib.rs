@@ -90,14 +90,7 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
-        let res: Vec<raw::Score> = r.build(self).await?.json().await?;
-        let mut res: Vec<Score> = vec_try_into(res)?;
-
-        // with a scores request you need to fill the beatmap ids yourself
-        res.iter_mut().for_each(|v| {
-            v.beatmap_id = beatmap_id;
-        });
-        Ok(res)
+        r.build(self).await
     }
 
     pub async fn user_best(
