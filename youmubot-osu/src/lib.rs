@@ -117,8 +117,6 @@ impl Client {
     ) -> Result<Vec<Score>, Error> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
-        let res: Vec<raw::Score> = r.build(self).await?.json().await?;
-        let res = vec_try_into(res)?;
-        Ok(res)
+        r.build(self).await
     }
 }

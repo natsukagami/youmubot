@@ -23,7 +23,7 @@ pub use pagination::{paginate, paginate_fn, paginate_reply, paginate_reply_fn, P
 pub use async_trait::async_trait;
 
 /// Re-export the anyhow errors
-pub use anyhow::{Error, Result};
+pub use anyhow::{anyhow as error, bail, Error, Result};
 pub use debugging_ok::OkPrint;
 
 /// Re-export useful future and stream utils

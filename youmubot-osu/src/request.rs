@@ -288,7 +288,7 @@ pub mod builders {
                     r.await
                 }
             })?
-            .unwrap_or(vec![]);
+            .ok_or_else(|| error!("beatmap or user not found"))?;
             Ok(scores.into_iter().map(|v| v.into()).collect())
         }
     }
@@ -325,18 +325,23 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(&self, client: &Client) -> Result<Response> {
-            Ok(client
-                .build_request(match self.score_type {
-                    UserScoreType::Best => "https://osu.ppy.sh/api/get_user_best",
-                    UserScoreType::Recent => "https://osu.ppy.sh/api/get_user_recent",
-                })
-                .await?
-                .query(&self.user.to_query())
-                .query(&self.mode.to_query())
-                .query(&self.limit.map(|v| ("limit", v.to_string())).to_query())
-                .send()
-                .await?)
+        pub(crate) async fn build(self, client: &Client) -> Result<Vec<models::Score>> {
+            let scores = handle_not_found({
+                let mut r = client.rosu.user_scores(self.user);
+                r = match self.score_type {
+                    UserScoreType::Recent => r.recent(),
+                    UserScoreType::Best => r.best(),
+                };
+                if let Some(mode) = self.mode {
+                    r = r.mode(mode.into());
+                }
+                if let Some(limit) = self.limit {
+                    r = r.limit(limit as usize);
+                }
+                r.await
+            })?
+            .ok_or_else(|| error!("user not found"))?;
+            Ok(scores.into_iter().map(|v| v.into()).collect())
         }
     }
 }
