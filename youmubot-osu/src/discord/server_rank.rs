@@ -15,7 +15,7 @@ use serenity::{
     model::channel::Message,
     utils::MessageBuilder,
 };
-use youmubot_prelude::*;
+use youmubot_prelude::{stream::FuturesUnordered, *};
 
 #[derive(Debug, Clone, Copy)]
 enum ModeOrTotal {
@@ -238,12 +238,17 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                         .and_then(|m| osu_users.get(&m.user.id).map(|ou| (m.distinct(), ou.id))),
                 )
             })
-            .filter_map(|(mem, osu_id)| {
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(|(mem, osu_id)| {
                 osu.scores(bm.0.beatmap_id, move |f| {
                     f.user(UserID::ID(osu_id)).mode(bm.1)
                 })
                 .map(|r| Some((mem, r.ok()?)))
             })
+            .collect::<FuturesUnordered<_>>()
+            .filter_map(future::ready)
             .collect::<Vec<_>>()
             .await
             .into_iter()
@@ -252,7 +257,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                 scores
                     .into_iter()
                     .filter_map(|score| {
-                        let pp = score.pp.or_else(|| {
+                        let pp = score.pp.map(|v| (true, v)).or_else(|| {
                             oppai_map
                                 .get_pp_from(
                                     mode,
@@ -266,6 +271,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                                     score.mods,
                                 )
                                 .ok()
+                                .map(|v| (false, v))
                         })?;
                         Some((pp, mem.clone(), score))
                     })
@@ -352,8 +358,8 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                 };
                 let pp = scores
                     .iter()
-                    .map(|(pp, _, s)| match order {
-                        OrderBy::PP => format!("{:.2}", pp),
+                    .map(|((official, pp), _, s)| match order {
+                        OrderBy::PP => format!("{:.2}{}", pp, if *official { "" } else { "[?]" }),
                         OrderBy::Score => crate::discord::embeds::grouped_number(if has_lazer_score { s.normalized_score as u64 } else { s.score.unwrap() }),
                     })
                     .collect::<Vec<_>>();
