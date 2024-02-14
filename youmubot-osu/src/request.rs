@@ -328,7 +328,7 @@ pub mod builders {
             let scores = handle_not_found({
                 let mut r = client.rosu.user_scores(self.user);
                 r = match self.score_type {
-                    UserScoreType::Recent => r.recent(),
+                    UserScoreType::Recent => r.recent().include_fails(true),
                     UserScoreType::Best => r.best(),
                 };
                 if let Some(mode) = self.mode {

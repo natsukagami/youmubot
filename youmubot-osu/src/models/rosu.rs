@@ -147,7 +147,7 @@ impl From<rosu::score::Score> for Score {
             score: Some(s.legacy_score as u64).filter(|v| *v > 0),
             normalized_score: s.score,
             pp: s.pp.map(|v| v as f64),
-            rank: s.grade.into(),
+            rank: if s.passed { s.grade.into() } else { Rank::F },
             mods: s
                 .mods
                 .iter()
