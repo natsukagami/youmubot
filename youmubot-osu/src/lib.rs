@@ -2,9 +2,6 @@ pub mod discord;
 pub mod models;
 pub mod request;
 
-#[cfg(test)]
-mod test;
-
 use models::*;
 use request::builders::*;
 use request::*;

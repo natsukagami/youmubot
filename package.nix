@@ -1,4 +1,4 @@
-{ naersk
+{ craneLib
 , lib
 , stdenv
 , pkg-config
@@ -16,12 +16,12 @@ let
     ++ lib.optional enableOsu "--features=osu"
   );
 in
-naersk.buildPackage {
-  name = "youmubot";
+craneLib.buildPackage {
+  pname = "youmubot";
   version = "0.1.0";
 
-  root = ./.;
-  cargoBuildOptions = opts: opts ++ [ "--package youmubot" ] ++ featureFlags;
+  src = ./.;
+  cargoExtraArgs = builtins.concatStringsSep " " ([ "--locked" "--package youmubot" ] ++ featureFlags);
 
   buildInputs = [
     openssl
