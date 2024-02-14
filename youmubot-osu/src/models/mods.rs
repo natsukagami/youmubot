@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-const LAZER_TEXT: &'static str = "⚡";
+const LAZER_TEXT: &'static str = "v2";
 
 bitflags::bitflags! {
     /// The mods available to osu!
@@ -81,13 +81,13 @@ impl Mods {
     // Return the string length of the string representation of the mods.
     pub fn str_len(&self) -> usize {
         let s = format!("{}", self);
-        s.len() + if s.contains(LAZER_TEXT) { 1 } else { 0 }
+        s.len()
     }
 
     // Format the mods into a string with padded size.
     pub fn to_string_padded(&self, size: usize) -> String {
         let s = format!("{}", self);
-        let real_padded = size - if s.contains(LAZER_TEXT) { 1 } else { 0 };
+        let real_padded = size;
         format!("{:>mw$}", s, mw = real_padded)
     }
 }
