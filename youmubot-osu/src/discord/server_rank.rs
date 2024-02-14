@@ -386,7 +386,9 @@ async fn show_leaderboard(
             OrderBy::PP => scores.sort_by(|(a, _, _), (b, _, _)| {
                 b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
             }),
-            OrderBy::Score => scores.sort_by(|(_, _, a), (_, _, b)| b.score.cmp(&a.score)),
+            OrderBy::Score => {
+                scores.sort_by(|(_, _, a), (_, _, b)| b.normalized_score.cmp(&a.normalized_score))
+            }
         };
         scores
     };
@@ -411,6 +413,7 @@ async fn show_leaderboard(
             .await?;
         return Ok(());
     }
+    let has_lazer_score = scores.iter().any(|(_, _, v)| v.score.is_none());
 
     paginate_reply_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
@@ -454,7 +457,7 @@ async fn show_leaderboard(
                     .iter()
                     .map(|(pp, _, s)| match order {
                         OrderBy::PP => format!("{:.2}", pp),
-                        OrderBy::Score => crate::discord::embeds::grouped_number(s.score),
+                        OrderBy::Score => crate::discord::embeds::grouped_number(if has_lazer_score { s.normalized_score as u64 } else { s.score.unwrap() }),
                     })
                     .collect::<Vec<_>>();
                 let pw = pp.iter().map(|v| v.len()).max().unwrap_or(pp_label.len());
