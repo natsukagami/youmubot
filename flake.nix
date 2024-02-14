@@ -2,8 +2,10 @@
   description = "A discord bot for Dự Tuyển Tổng Hợp server";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-23.11";
-    naersk.url = "github:nix-community/naersk";
-    naersk.inputs.nixpkgs.follows = "nixpkgs";
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     flake-utils.url = "github:numtide/flake-utils";
   };
   nixConfig = {
@@ -14,11 +16,10 @@
     (system:
       let
         pkgs = import nixpkgs { inherit system; };
-
-        naersk = pkgs.callPackage inputs.naersk { };
+        craneLib = inputs.crane.lib.${system};
       in
       rec {
-        packages.youmubot = pkgs.callPackage ./package.nix { inherit naersk; };
+        packages.youmubot = pkgs.callPackage ./package.nix { inherit craneLib; };
 
         defaultPackage = packages.youmubot;
 
@@ -45,7 +46,7 @@
       }) // {
     overlays.default = final: prev: {
       youmubot = final.callPackage ./package.nix {
-        naersk = final.callPackage inputs.naersk { };
+        craneLib = inputs.crane.lib.${final.system};
       };
     };
     # module
