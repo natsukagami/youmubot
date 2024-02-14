@@ -111,19 +111,6 @@ impl OsuUserBests {
 }
 
 impl OsuUserBests {
-    pub async fn by_beatmap(&self, beatmap_id: u64, mode: Mode) -> Result<Vec<(UserId, Score)>> {
-        let scores = models::UserBestScore::by_map(beatmap_id as i64, mode as u8, &self.0).await?;
-        Ok(scores
-            .into_iter()
-            .map(|us| {
-                (
-                    UserId(us.user_id as u64),
-                    bincode::deserialize(&us.score[..]).unwrap(),
-                )
-            })
-            .collect())
-    }
-
     pub async fn save(
         &self,
         user: impl Into<UserId>,
