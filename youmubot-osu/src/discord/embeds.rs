@@ -400,7 +400,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 "Score stats",
                 format!(
                     "**{}** | {} | **{:.2}%**",
-                    grouped_number(s.score),
+                    grouped_number(s.score.unwrap_or(s.normalized_score as u64)),
                     max_combo,
                     accuracy
                 ),

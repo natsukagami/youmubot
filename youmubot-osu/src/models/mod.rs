@@ -542,7 +542,8 @@ pub struct Score {
     pub replay_available: bool,
     pub beatmap_id: u64,
 
-    pub score: u64,
+    pub score: Option<u64>,
+    pub normalized_score: u32,
     pub pp: Option<f64>,
     pub rank: Rank,
     pub mods: Mods, // Later

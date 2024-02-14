@@ -144,7 +144,8 @@ impl From<rosu::score::Score> for Score {
             date: time_to_utc(s.ended_at),
             replay_available: s.replay,
             beatmap_id: s.map_id as u64,
-            score: s.score as u64,
+            score: Some(s.legacy_score as u64).filter(|v| *v > 0),
+            normalized_score: s.score,
             pp: s.pp.map(|v| v as f64),
             rank: s.grade.into(),
             mods: s
