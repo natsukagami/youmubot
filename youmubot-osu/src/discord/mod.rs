@@ -33,7 +33,7 @@ use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
 use hook::SHORT_LINK_REGEX;
 pub use hook::{dot_osu_hook, hook};
-use server_rank::{SERVER_RANK_COMMAND, UPDATE_LEADERBOARD_COMMAND};
+use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
 
 /// The osu! client.
 pub(crate) struct OsuClient;
@@ -63,11 +63,6 @@ pub async fn setup(
     data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client.clone()));
     data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client.clone()));
     data.insert::<OsuUserBests>(OsuUserBests::new(sql_client.clone()));
-
-    // Locks
-    data.insert::<server_rank::update_lock::UpdateLock>(
-        server_rank::update_lock::UpdateLock::default(),
-    );
 
     // API client
     let http_client = data.get::<HTTPClient>().unwrap().clone();
@@ -120,7 +115,7 @@ pub async fn setup(
     check,
     top,
     server_rank,
-    update_leaderboard,
+    show_leaderboard,
     clean_cache
 )]
 #[default_command(std)]
