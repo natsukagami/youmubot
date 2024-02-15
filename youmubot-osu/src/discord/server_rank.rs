@@ -46,7 +46,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .single::<ModeOrTotal>()
         .unwrap_or(ModeOrTotal::Mode(Mode::Std));
     let guild = m.guild_id.expect("Guild-only command");
-    // let member_cache = data.get::<MemberCache>().unwrap();
+    let member_cache = data.get::<MemberCache>().unwrap();
     let osu_users = data
         .get::<OsuSavedUsers>()
         .unwrap()
@@ -55,30 +55,22 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .into_iter()
         .map(|v| (v.user_id, v))
         .collect::<HashMap<_, _>>();
-    let users = guild
-        .members_iter(ctx)
-        .filter_map(|m| {
-            future::ready(
-                m.ok()
-                    .and_then(|m| osu_users.get(&m.user.id).map(|ou| (m, ou))),
-            )
-        })
+    let users = member_cache
+        .query_members(&ctx, guild)
+        .await?
+        .iter()
+        .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m, ou)))
         .filter_map(|(member, osu_user)| {
-            future::ready(|| -> Option<_> {
-                let pp = match mode {
-                    ModeOrTotal::Total
-                        if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) =>
-                    {
-                        Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
-                    }
-                    ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
-                    _ => None,
-                }?;
-                Some((pp, member.user.name, osu_user))
-            }())
+            let pp = match mode {
+                ModeOrTotal::Total if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) => {
+                    Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
+                }
+                ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
+                _ => None,
+            }?;
+            Some((pp, member.user.name.clone(), osu_user))
         })
-        .collect::<Vec<_>>()
-        .await;
+        .collect::<Vec<_>>();
     let last_update = users.iter().map(|(_, _, a)| a.last_update).min();
     let mut users = users
         .into_iter()
@@ -197,6 +189,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
 
     let data = ctx.data.read().await;
+    let member_cache = data.get::<MemberCache>().unwrap();
 
     let (bm, _) = match super::load_beatmap(ctx, m).await {
         Some((bm, mods_def)) => {
@@ -230,17 +223,11 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
             .into_iter()
             .map(|v| (v.user_id, v))
             .collect::<HashMap<_, _>>();
-        let mut scores = guild
-            .members_iter(&ctx)
-            .filter_map(|mem| {
-                future::ready(
-                    mem.ok()
-                        .and_then(|m| osu_users.get(&m.user.id).map(|ou| (m.distinct(), ou.id))),
-                )
-            })
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
+        let mut scores = member_cache
+            .query_members(&ctx, guild)
+            .await?
+            .iter()
+            .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m.distinct(), ou.id)))
             .map(|(mem, osu_id)| {
                 osu.scores(bm.0.beatmap_id, move |f| {
                     f.user(UserID::ID(osu_id)).mode(bm.1)
