@@ -168,10 +168,7 @@ impl From<model::OsuUser> for OsuUser {
     fn from(u: model::OsuUser) -> Self {
         Self {
             user_id: UserId(u.user_id as u64),
-            username: u
-                .username
-                .map(Cow::Owned)
-                .unwrap_or("unknown".into()),
+            username: u.username.map(Cow::Owned).unwrap_or("unknown".into()),
             id: u.id as u64,
             last_update: u.last_update,
             pp: [0, 1, 2, 3].map(|v| match Mode::from(v) {
