@@ -7,9 +7,7 @@ use serenity::{
         channel::Message,
         id::{GuildId, RoleId, UserId},
     },
-    CacheAndHttp,
 };
-use std::sync::Arc;
 use youmubot_prelude::*;
 
 #[command]
@@ -45,7 +43,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         Some(v) => v,
     };
 
-    let mut member = guild.member(&ctx, &user).await?;
+    let member = guild.member(&ctx, &user).await?;
     match duration {
         None if member.roles.contains(&role) => {
             msg.reply(&ctx, format!("⛓ Lifting soft-ban for user {}.", user.tag()))
@@ -85,7 +83,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
 pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let role_id = args.single::<RoleId>()?;
     let data = ctx.data.read().await;
-    let guild = msg.guild(ctx).unwrap();
+    let guild = msg.guild_id.unwrap().to_partial_guild(&ctx).await?;
     // Check whether the role_id is the one we wanted
     if !guild.roles.contains_key(&role_id) {
         return Err(Error::msg(format!("{} is not a role in this server.", role_id)).into());
@@ -105,7 +103,7 @@ pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> Comm
 }
 
 // Watch the soft bans. Blocks forever.
-pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
+pub async fn watch_soft_bans(cache_http: impl CacheHttp, data: AppData) {
     loop {
         // Scope so that locks are released
         {
@@ -115,7 +113,7 @@ pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
             let mut db = data.borrow().unwrap().clone();
             let now = Utc::now();
             for (server_id, bans) in db.iter_mut() {
-                let server_name: String = match server_id.to_partial_guild(&*cache_http.http).await
+                let server_name: String = match server_id.to_partial_guild(cache_http.http()).await
                 {
                     Err(_) => continue,
                     Ok(v) => v.name,
@@ -153,17 +151,17 @@ pub async fn watch_soft_bans(cache_http: Arc<CacheAndHttp>, data: AppData) {
 }
 
 async fn lift_soft_ban_for(
-    cache_http: &CacheAndHttp,
+    cache_http: impl CacheHttp,
     server_id: GuildId,
     server_name: &str,
     ban_role: RoleId,
     user_id: UserId,
 ) -> Result<()> {
-    let mut m = server_id.member(cache_http, user_id).await?;
+    let m = server_id.member(&cache_http, user_id).await?;
     println!(
         "Soft-ban for `{}` in server `{}` unlifted.",
         m.user.name, server_name
     );
-    m.remove_role(&cache_http.http, ban_role).await?;
+    m.remove_role(cache_http.http(), ban_role).await?;
     Ok(())
 }

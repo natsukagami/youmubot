@@ -1,5 +1,6 @@
 use crate::db::Roles as DB;
 use serenity::{
+    builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::{
         channel::{Message, ReactionType},
@@ -100,7 +101,8 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
                         m.push_line("```");
                         m.push(format!("Page **{}/{}**", page + 1, pages));
 
-                        msg.edit(ctx, |f| f.content(m.to_string())).await?;
+                        msg.edit(ctx, EditMessage::new().content(m.to_string()))
+                            .await?;
                         Ok(true)
                     })
                 },
@@ -140,7 +142,7 @@ async fn toggle(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
             m.reply(&ctx, "This role is not self-assignable. Check the `listroles` command to see which role can be assigned.").await?;
         }
         Some(role) => {
-            let mut member = guild.member(&ctx, m.author.id).await.unwrap();
+            let member = guild.member(&ctx, m.author.id).await.unwrap();
             if member.roles.contains(&role.id) {
                 member.remove_role(&ctx, &role).await?;
                 m.reply(&ctx, format!("Role `{}` has been removed.", role.name))
@@ -252,7 +254,7 @@ async fn remove(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
 /// Parse a string as a role.
 fn role_from_string(role: &str, roles: &std::collections::HashMap<RoleId, Role>) -> Option<Role> {
     match role.parse::<u64>() {
-        Ok(id) if roles.contains_key(&RoleId(id)) => roles.get(&RoleId(id)).cloned(),
+        Ok(id) if roles.contains_key(&RoleId::new(id)) => roles.get(&RoleId::new(id)).cloned(),
         _ => roles
             .iter()
             .find_map(|(_, r)| if r.name == role { Some(r) } else { None })
@@ -417,7 +419,8 @@ mod reaction_watcher {
     use dashmap::DashMap;
     use flume::{Receiver, Sender};
     use serenity::{
-        collector::ReactionAction,
+        all::Reaction,
+        builder::{CreateMessage, EditMessage},
         model::{
             channel::{Message, ReactionType},
             guild::Role as DiscordRole,
@@ -468,7 +471,10 @@ mod reaction_watcher {
             roles: Vec<(Role, DiscordRole, ReactionType)>,
         ) -> Result<()> {
             let mut msg = channel
-                .send_message(&ctx, |c| c.content("Youmu is setting up the message..."))
+                .send_message(
+                    &ctx,
+                    CreateMessage::new().content("Youmu is setting up the message..."),
+                )
                 .await?;
             self.setup(&mut msg, ctx, guild, title, roles).await
         }
@@ -481,8 +487,9 @@ mod reaction_watcher {
             roles: Vec<(Role, DiscordRole, ReactionType)>,
         ) -> Result<()> {
             // Send a message
-            msg.edit(&ctx, |m| {
-                m.content({
+            msg.edit(
+                &ctx,
+                EditMessage::new().content({
                     let mut builder = serenity::utils::MessageBuilder::new();
                     builder
                         .push_bold("Role Menu:")
@@ -492,16 +499,16 @@ mod reaction_watcher {
                         .push_line("");
                     for (role, discord_role, emoji) in &roles {
                         builder
-                            .push(emoji)
+                            .push(emoji.to_string())
                             .push(" ")
                             .push_bold_safe(&discord_role.name)
                             .push(": ")
                             .push_line_safe(&role.description)
                             .push_line("");
                     }
-                    builder
-                })
-            })
+                    builder.build()
+                }),
+            )
             .await?;
             // Do reactions
             for (_, _, emoji) in &roles {
@@ -566,13 +573,19 @@ mod reaction_watcher {
 
         async fn handle(ctx: Context, recv: Receiver<()>, guild: GuildId, message: MessageId) {
             let mut recv = recv.into_recv_async();
-            let collect = || {
-                serenity::collector::CollectReaction::new(&ctx)
-                    .message_id(message)
-                    .removed(true)
-            };
+            let mut collect = serenity::collector::collect(&ctx.shard, move |event| {
+                match event {
+                    serenity::all::Event::ReactionAdd(r) => Some((r.reaction.clone(), true)),
+                    serenity::all::Event::ReactionRemove(r) => Some((r.reaction.clone(), false)),
+                    _ => None,
+                }
+                .filter(|(r, _)| r.message_id == message)
+            });
+            // serenity::collector::CollectReaction::new(&ctx)
+            //     .message_id(message)
+            //     .removed(true)
             loop {
-                let reaction = match future::select(recv, collect()).await {
+                let (reaction, is_add) = match future::select(recv, collect.next()).await {
                     future::Either::Left(_) => break,
                     future::Either::Right((r, new_recv)) => {
                         recv = new_recv;
@@ -582,8 +595,9 @@ mod reaction_watcher {
                         }
                     }
                 };
-                eprintln!("{:?}", reaction);
-                if let Err(e) = Self::handle_reaction(&ctx, guild, message, &reaction).await {
+                eprintln!("{:?} {}", reaction, is_add);
+                if let Err(e) = Self::handle_reaction(&ctx, guild, message, &reaction, is_add).await
+                {
                     eprintln!("Handling {:?}: {}", reaction, e);
                     break;
                 }
@@ -594,15 +608,16 @@ mod reaction_watcher {
             ctx: &Context,
             guild: GuildId,
             message: MessageId,
-            reaction: &ReactionAction,
+            reaction: &Reaction,
+            is_add: bool,
         ) -> Result<()> {
             let data = ctx.data.read().await;
             // Collect user
-            let user_id = match reaction.as_inner_ref().user_id {
+            let user_id = match reaction.user_id {
                 Some(id) => id,
                 None => return Ok(()),
             };
-            let mut member = match guild.member(ctx, user_id).await.ok() {
+            let member = match guild.member(ctx, user_id).await.ok() {
                 Some(m) => m,
                 None => return Ok(()),
             };
@@ -620,7 +635,7 @@ mod reaction_watcher {
                 .ok_or_else(|| Error::msg("message is no longer a role list handler"))?
                 .iter()
                 .find_map(|(role, role_reaction)| {
-                    if &reaction.as_inner_ref().emoji == role_reaction {
+                    if &reaction.emoji == role_reaction {
                         Some(role.id)
                     } else {
                         None
@@ -631,9 +646,10 @@ mod reaction_watcher {
                 None => return Ok(()),
             };
 
-            match reaction {
-                ReactionAction::Added(_) => member.add_role(&ctx, role).await.pls_ok(),
-                ReactionAction::Removed(_) => member.remove_role(&ctx, role).await.pls_ok(),
+            if is_add {
+                member.add_role(&ctx, role).await.pls_ok();
+            } else {
+                member.remove_role(&ctx, role).await.pls_ok();
             };
             Ok(())
         }

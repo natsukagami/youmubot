@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serenity::builder::EditMessage;
 use serenity::framework::standard::CommandError as Error;
 use serenity::{
     framework::standard::{
@@ -72,14 +73,15 @@ async fn message_command(
                 if page >= images.len() {
                     Ok(false)
                 } else {
-                    msg.edit(ctx, |f| {
-                        f.content(format!(
+                    msg.edit(
+                        ctx,
+                        EditMessage::new().content(format!(
                             "[🖼️  **{}/{}**] Here's the image you requested!\n\n{}",
                             page + 1,
                             images.len(),
                             images[page]
-                        ))
-                    })
+                        )),
+                    )
                     .await
                     .map(|_| true)
                     .map_err(|e| e.into())
@@ -110,7 +112,6 @@ async fn get_image(
         ))
         .query(&[("limit", "50"), ("random", "true")])
         .build()?;
-    println!("{:?}", req.url());
     let response: Vec<PostResponse> = client.execute(req).await?.json().await?;
     Ok(response
         .into_iter()

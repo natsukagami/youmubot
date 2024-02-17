@@ -5,7 +5,7 @@ use serenity::{
     model::{channel::Message, id::UserId},
 };
 use std::collections::HashSet;
-use youmubot_prelude::*;
+use youmubot_prelude::{announcer::CacheAndHttp, *};
 
 pub mod admin;
 pub mod community;
@@ -31,7 +31,7 @@ pub fn setup(
 
     // Create handler threads
     tokio::spawn(admin::watch_soft_bans(
-        client.cache_and_http.clone(),
+        CacheAndHttp::from_client(client),
         client.data.clone(),
     ));
 

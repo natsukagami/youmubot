@@ -1,18 +1,10 @@
-use serenity::framework::standard::CommandError as Error;
-use serenity::{
-    collector::ReactionAction,
-    framework::standard::{macros::command, Args, CommandResult},
-    model::{
-        channel::{Message, ReactionType},
-        id::UserId,
-    },
-    utils::MessageBuilder,
-};
+use serenity::all::{Message, ReactionType, UserId};
+use serenity::builder::{CreateEmbed, CreateEmbedAuthor, CreateMessage};
+use serenity::framework::standard::macros::command;
+use serenity::framework::standard::{Args, CommandError as Error, CommandResult};
+use serenity::{self, collector, utils::MessageBuilder};
+use std::collections::{HashMap as Map, HashSet as Set};
 use std::time::Duration;
-use std::{
-    collections::{HashMap as Map, HashSet as Set},
-    convert::TryFrom,
-};
 use youmubot_prelude::{Duration as ParseDuration, *};
 
 #[command]
@@ -86,18 +78,18 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let author = msg.author.clone();
     let asked = msg.timestamp;
     let until = *asked + (chrono::Duration::from_std(*duration).unwrap());
-    let panel = channel.send_message(&ctx, |c| {
-        c.content("@here").embed(|e| {
-            e.author(|au| {
-                au.icon_url(author.avatar_url().unwrap_or_else(|| "".to_owned()))
-                    .name(&author.name)
+    let panel = channel.send_message(&ctx, 
+        CreateMessage::new().content("@here").embed( 
+            CreateEmbed::new().author( {
+                CreateEmbedAuthor::new(&author.name).icon_url(author.avatar_url().unwrap_or_else(|| "".to_owned()))
             })
             .title(format!("Please vote! Poll ends {}", until.format("<t:%s:R>")))
             .thumbnail("https://images-ext-2.discordapp.net/external/BK7injOyt4XT8yNfbCDV4mAkwoRy49YPfq-3IwCc_9M/http/cdn.i.ntere.st/p/9197498/image")
-            .description(MessageBuilder::new().push_bold_line_safe(&question).push("\nThis question was asked by ").push(author.mention()))
+            .description(
+                MessageBuilder::new().push_bold_line_safe(&question).push("\nThis question was asked by ").push(author.mention().to_string()).build())
             .fields(fields.into_iter())
-        })
-    }).await?;
+        )
+    ).await?;
     msg.delete(&ctx).await?;
 
     // React on all the choices
@@ -115,37 +107,38 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .collect();
 
     // Collect reactions...
-    let user_reactions = panel
-        .await_reactions(ctx)
-        .removed(true)
-        .timeout(*duration)
-        .build()
-        .fold(user_reactions, |mut set, reaction| async move {
-            let (reaction, is_add) = match &*reaction {
-                ReactionAction::Added(r) => (r, true),
-                ReactionAction::Removed(r) => (r, false),
-            };
-            let users = if let ReactionType::Unicode(ref s) = reaction.emoji {
-                if let Some(users) = set.get_mut(s.as_str()) {
-                    users
-                } else {
-                    return set;
-                }
+    let message_id = panel.id;
+    let user_reactions = collector::collect(&ctx.shard, move |event| {
+        match event {
+            serenity::all::Event::ReactionAdd(r) => Some((r.reaction.clone(), true)),
+            serenity::all::Event::ReactionRemove(r) => Some((r.reaction.clone(), false)),
+            _ => None,
+        }
+        .filter(|(r, _)| r.message_id == message_id)
+    })
+    .take_until(tokio::time::timeout(*duration, future::ready(())))
+    .fold(user_reactions, |mut set, (reaction, is_add)| async move {
+        let users = if let ReactionType::Unicode(ref s) = reaction.emoji {
+            if let Some(users) = set.get_mut(s.as_str()) {
+                users
             } else {
                 return set;
-            };
-            let user_id = match reaction.user_id {
-                Some(v) => v,
-                None => return set,
-            };
-            if is_add {
-                users.insert(user_id);
-            } else {
-                users.remove(&user_id);
             }
-            set
-        })
-        .await;
+        } else {
+            return set;
+        };
+        let user_id = match reaction.user_id {
+            Some(v) => v,
+            None => return set,
+        };
+        if is_add {
+            users.insert(user_id);
+        } else {
+            users.remove(&user_id);
+        }
+        set
+    })
+    .await;
 
     // Handle choices
     let choice_map = choices.into_iter().collect::<Map<_, _>>();
@@ -171,13 +164,14 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     }
 
     channel
-        .send_message(&ctx, |c| {
-            c.content({
+        .send_message(
+            &ctx,
+            CreateMessage::new().content({
                 let mut content = MessageBuilder::new();
                 content
                     .push("@here, ")
-                    .push(asked.format("<t:%s:R>, "))
-                    .push(author.mention())
+                    .push(asked.format("<t:%s:R>, ").to_string())
+                    .push(author.mention().to_string())
                     .push(" asked ")
                     .push_bold_safe(&question)
                     .push(", and here are the results!");
@@ -199,8 +193,8 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                         );
                 });
                 content.build()
-            })
-        })
+            }),
+        )
         .await?;
     panel.delete(&ctx).await?;
 
