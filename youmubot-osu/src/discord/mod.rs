@@ -199,7 +199,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         }
         Ok(None)
     }
-    let (score, mode) = match find_score(&osu, &u).await? {
+    let (score, mode) = match find_score(osu, &u).await? {
         Some(v) => v,
         None => {
             msg.reply(
@@ -245,7 +245,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let reaction = reply.react(&ctx, '👌').await?;
     let completed = loop {
         let emoji = reaction.emoji.clone();
-        let user_reaction = CollectReaction::new(&ctx)
+        let user_reaction = CollectReaction::new(ctx)
             .message_id(reply.id.0)
             .author_id(msg.author.id.0)
             .filter(move |r| r.emoji == emoji)
@@ -253,7 +253,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             .collect_limit(1)
             .await;
         if let Some(ur) = user_reaction {
-            if check(&osu, &u, score.beatmap_id).await? {
+            if check(osu, &u, score.beatmap_id).await? {
                 break true;
             }
             if let ReactionAction::Added(ur) = &*ur {

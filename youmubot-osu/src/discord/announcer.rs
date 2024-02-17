@@ -76,7 +76,7 @@ impl youmubot_prelude::Announcer for Announcer {
                         Ok(v) => {
                             osu_user.pp = v
                                 .iter()
-                                .map(|u| u.pp.clone())
+                                .map(|u| u.pp)
                                 .collect::<Vec<_>>()
                                 .try_into()
                                 .unwrap();

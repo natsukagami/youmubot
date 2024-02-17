@@ -45,7 +45,7 @@ impl Beatmap {
             beatmapset_id: set.mapset_id as u64,
             creator: set.creator_name.clone().into_string(),
             creator_id: set.creator_id as u64,
-            source: Some(set.source.clone()).filter(|s| s != "").clone(),
+            source: Some(set.source.clone()).filter(|s| !s.is_empty()).clone(),
             genre: set.genre.map(|v| v.into()).unwrap_or(Genre::Unspecified),
             language: set.language.map(|v| v.into()).unwrap_or(Language::Any),
             tags: set.tags.split(", ").map(|v| v.to_owned()).collect(),

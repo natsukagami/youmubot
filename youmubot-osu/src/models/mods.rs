@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-const LAZER_TEXT: &'static str = "v2";
+const LAZER_TEXT: &str = "v2";
 
 bitflags::bitflags! {
     /// The mods available to osu!

@@ -170,7 +170,7 @@ impl From<model::OsuUser> for OsuUser {
             user_id: UserId(u.user_id as u64),
             username: u
                 .username
-                .map(|v| Cow::Owned(v))
+                .map(Cow::Owned)
                 .unwrap_or("unknown".into()),
             id: u.id as u64,
             last_update: u.last_update,
