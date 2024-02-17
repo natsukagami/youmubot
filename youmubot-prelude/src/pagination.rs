@@ -1,7 +1,8 @@
 use crate::{Context, Result};
-use futures_util::{future::Future, StreamExt};
+use futures_util::{future::Future, StreamExt as _};
 use serenity::{
-    collector::ReactionAction,
+    builder::CreateMessage,
+    collector,
     model::{
         channel::{Message, Reaction, ReactionType},
         id::ChannelId,
@@ -35,7 +36,7 @@ pub trait Paginate: Send + Sized {
         page: u8,
         ctx: &Context,
         message: &mut Message,
-        reaction: &ReactionAction,
+        reaction: &Reaction,
     ) -> Result<Option<u8>> {
         handle_pagination_reaction(page, self, ctx, message, reaction)
             .await
@@ -91,7 +92,10 @@ pub async fn paginate(
     timeout: std::time::Duration,
 ) -> Result<()> {
     let message = channel
-        .send_message(&ctx, |e| e.content("Youmu is loading the first page..."))
+        .send_message(
+            &ctx,
+            CreateMessage::new().content("Youmu is loading the first page..."),
+        )
         .await?;
     paginate_with_first_message(pager, ctx, message, timeout).await
 }
@@ -137,7 +141,18 @@ async fn paginate_with_first_message(
         rs
     };
     // Build a reaction collector
-    let mut reaction_collector = message.await_reactions(ctx).removed(true).build();
+    let mut reaction_collector = {
+        // message.await_reactions(ctx).removed(true).build();
+        let message_id = message.id;
+        collector::collect(&ctx.shard, move |event| {
+            match event {
+                serenity::all::Event::ReactionAdd(r) => Some(r.reaction.clone()),
+                serenity::all::Event::ReactionRemove(r) => Some(r.reaction.clone()),
+                _ => None,
+            }
+            .filter(|r| r.message_id == message_id)
+        })
+    };
     let mut page = 0;
 
     // Loop the handler function.
@@ -201,11 +216,8 @@ pub async fn handle_pagination_reaction(
     pager: &mut impl Paginate,
     ctx: &Context,
     message: &mut Message,
-    reaction: &ReactionAction,
+    reaction: &Reaction,
 ) -> Result<u8> {
-    let reaction = match reaction {
-        ReactionAction::Added(v) | ReactionAction::Removed(v) => v,
-    };
     let pages = pager.len();
     let fast = pages.map(|v| v / 10).unwrap_or(5).max(5) as u8;
     match &reaction.emoji {

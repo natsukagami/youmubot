@@ -5,21 +5,39 @@ use futures_util::{
     stream::{FuturesUnordered, StreamExt},
 };
 use serenity::{
+    client::Cache,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    http::CacheHttp,
+    http::{CacheHttp, Http},
     model::{
         channel::Message,
         id::{ChannelId, GuildId, UserId},
     },
     prelude::*,
     utils::MessageBuilder,
-    CacheAndHttp,
 };
 use std::{collections::HashMap, sync::Arc};
 use youmubot_db::DB;
+
+#[derive(Debug, Clone)]
+pub struct CacheAndHttp(Arc<Cache>, Arc<Http>);
+
+impl CacheAndHttp {
+    pub fn from_client(client: &Client) -> Self {
+        Self(client.cache.clone(), client.http.clone())
+    }
+}
+
+impl CacheHttp for CacheAndHttp {
+    fn cache(&self) -> Option<&Arc<Cache>> {
+        Some(&self.0)
+    }
+    fn http(&self) -> &Http {
+        &*self.1
+    }
+}
 
 /// A list of assigned channels for an announcer.
 pub(crate) type AnnouncerChannels = DB<HashMap<String, HashMap<GuildId, ChannelId>>>;
@@ -39,7 +57,7 @@ pub trait Announcer: Send {
     /// Errors returned from this function gets ignored and logged down.
     async fn updates(
         &mut self,
-        c: Arc<CacheAndHttp>,
+        c: CacheAndHttp,
         d: AppData,
         channels: MemberToChannels,
     ) -> Result<()>;
@@ -76,7 +94,7 @@ impl MemberToChannels {
 ///
 /// This struct manages the list of all Announcers, firing them in a certain interval.
 pub struct AnnouncerHandler {
-    cache_http: Arc<CacheAndHttp>,
+    cache_http: CacheAndHttp,
     data: AppData,
     announcers: HashMap<&'static str, RwLock<Box<dyn Announcer + Send + Sync>>>,
 }
@@ -91,7 +109,7 @@ impl AnnouncerHandler {
     /// Create a new instance of the handler.
     pub fn new(client: &serenity::Client) -> Self {
         Self {
-            cache_http: client.cache_and_http.clone(),
+            cache_http: CacheAndHttp(client.cache.clone(), client.http.clone()),
             data: client.data.clone(),
             announcers: HashMap::new(),
         }
@@ -135,7 +153,7 @@ impl AnnouncerHandler {
     /// Run the announcing sequence on a certain announcer.
     async fn announce(
         data: AppData,
-        cache_http: Arc<CacheAndHttp>,
+        cache_http: CacheAndHttp,
         key: &'static str,
         announcer: &'_ RwLock<Box<dyn Announcer + Send + Sync>>,
     ) -> Result<()> {
@@ -243,7 +261,11 @@ pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> C
         .await?;
         return Ok(());
     }
-    let guild = m.guild(ctx).expect("Guild-only command");
+    let guild = m
+        .guild_id
+        .expect("Guild-only command")
+        .to_partial_guild(&ctx)
+        .await?;
     let channel = m.channel_id.to_channel(&ctx).await?;
     AnnouncerChannels::open(&data)
         .borrow_mut()?
@@ -258,7 +280,7 @@ pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> C
             .push(" has been activated for server ")
             .push_bold_safe(&guild.name)
             .push(" on channel ")
-            .push_bold_safe(channel)
+            .push_bold_safe(channel.mention().to_string())
             .build(),
     )
     .await?;
@@ -286,7 +308,11 @@ pub async fn remove_announcer(ctx: &Context, m: &Message, mut args: Args) -> Com
         .await?;
         return Ok(());
     }
-    let guild = m.guild(ctx).expect("Guild-only command");
+    let guild = m
+        .guild_id
+        .expect("Guild-only command")
+        .to_partial_guild(&ctx)
+        .await?;
     AnnouncerChannels::open(&data)
         .borrow_mut()?
         .entry(key.clone())
