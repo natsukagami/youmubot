@@ -2,6 +2,7 @@ use crate::{db::CfSavedUsers, hook::ContestCache, CFClient};
 use chrono::TimeZone;
 use codeforces::{Contest, ContestPhase, Problem, ProblemResult, ProblemResultType, RanklistRow};
 use serenity::{
+    builder::{CreateMessage, EditMessage},
     model::{
         guild::Member,
         id::{ChannelId, GuildId, UserId},
@@ -73,9 +74,11 @@ pub async fn watch_contest(
         Some(t) => t,
         None => {
             channel
-                .send_message(ctx, |f| {
-                    f.content(format!("Contest is already being watched: {}", contest_id))
-                })
+                .send_message(
+                    ctx,
+                    CreateMessage::new()
+                        .content(format!("Contest is already being watched: {}", contest_id)),
+                )
                 .await?;
             return Ok(());
         }
@@ -85,9 +88,10 @@ pub async fn watch_contest(
         Ok((p, _)) => p,
         Err(e) => {
             channel
-                .send_message(ctx, |f| {
-                    f.content(format!("Cannot get info about contest: {}", e))
-                })
+                .send_message(
+                    ctx,
+                    CreateMessage::new().content(format!("Cannot get info about contest: {}", e)),
+                )
                 .await?;
             return Ok(());
         }
@@ -101,20 +105,22 @@ pub async fn watch_contest(
             Some(s) => s,
             None => {
                 channel
-                    .send_message(ctx, |f| {
-                        f.content(format!(
+                    .send_message(
+                        ctx,
+                        CreateMessage::new().content(format!(
                             "Contest **{}** found, but we don't know when it will begin!",
                             contest.name
-                        ))
-                    })
+                        )),
+                    )
                     .await?;
                 return Ok(());
             }
         };
         channel
-                .send_message(ctx, |f| {
-                    f.content(format!("Contest **{}** found, but has not started yet. Youmu will start watching as soon as it begins! (which is in about {})", contest.name, start_time.format("<t:%s:R>")))
-                })
+                .send_message(
+                    ctx,
+                    CreateMessage::new().content(format!("Contest **{}** found, but has not started yet. Youmu will start watching as soon as it begins! (which is in about {})", contest.name, start_time.format("<t:%s:R>")))
+                )
                 .await?;
         tokio::time::sleep(
             (start_time - chrono::Utc::now() + chrono::Duration::seconds(30))
@@ -125,7 +131,10 @@ pub async fn watch_contest(
     }
 
     let mut msg = channel
-        .send_message(&ctx, |e| e.content("Youmu is building the member list..."))
+        .send_message(
+            &ctx,
+            CreateMessage::new().content("Youmu is building the member list..."),
+        )
         .await?;
 
     let http = data.get::<CFClient>().unwrap();
@@ -155,8 +164,9 @@ pub async fn watch_contest(
         .collect()
         .await;
 
-    msg.edit(&ctx, |e| {
-        e.content(format!(
+    msg.edit(
+        &ctx,
+        EditMessage::new().content(format!(
             "Youmu is watching contest **{}**, with the following members: {}",
             contest.name,
             member_results
@@ -169,8 +179,8 @@ pub async fn watch_contest(
                     .build())
                 .collect::<Vec<_>>()
                 .join(", "),
-        ))
-    })
+        )),
+    )
     .await?;
     msg.pin(ctx).await.ok();
 
@@ -178,9 +188,10 @@ pub async fn watch_contest(
         if let Ok(messages) = scan_changes(http, &mut member_results, &mut contest).await {
             for message in messages {
                 channel
-                    .send_message(&ctx, |e| {
-                        e.content(format!("**{}**: {}", contest.name, message))
-                    })
+                    .send_message(
+                        &ctx,
+                        CreateMessage::new().content(format!("**{}**: {}", contest.name, message)),
+                    )
                     .await
                     .ok();
             }

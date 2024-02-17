@@ -1,6 +1,9 @@
 use codeforces::{Contest, RatingChange, User};
 use inflector::Inflector;
-use serenity::{builder::CreateEmbed, utils::MessageBuilder};
+use serenity::{
+    builder::{CreateEmbed, CreateEmbedAuthor},
+    utils::MessageBuilder,
+};
 use std::borrow::Borrow;
 use youmubot_prelude::*;
 
@@ -9,7 +12,7 @@ fn unwrap_or_ref<'a, T: ?Sized, B: Borrow<T>>(opt: &'a Option<B>, default: &'a T
 }
 
 /// Create an embed representing the user.
-pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
+pub fn user_embed<'a>(user: &User) -> CreateEmbed {
     let rank = unwrap_or_ref(&user.rank, "Unranked").to_title_case();
     let max_rank = unwrap_or_ref(&user.max_rank, "Unranked").to_title_case();
     let rating = user.rating.unwrap_or(1500);
@@ -24,8 +27,9 @@ pub fn user_embed<'a>(user: &User, e: &'a mut CreateEmbed) -> &'a mut CreateEmbe
         .filter_map(|v| v.as_ref().map(|v| v.as_str()))
         .collect::<Vec<_>>()
         .join(", ");
-    e.color(user.color())
-        .author(|a| a.name(&rank))
+    CreateEmbed::new()
+        .color(user.color())
+        .author(CreateEmbedAuthor::new(&rank))
         .thumbnail(user.title_photo.to_string())
         .title(&user.handle)
         .url(user.profile_url())
@@ -61,48 +65,48 @@ pub fn rating_change_embed<'a>(
     user: &User,
     contest: &Contest,
     user_id: serenity::model::id::UserId,
-    e: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
+) -> CreateEmbed {
     let delta = rating_change.new_rating - rating_change.old_rating;
     let color = if delta < 0 { 0xff0000 } else { 0x00ff00 };
     let message = if delta > 0 {
         MessageBuilder::new()
-            .push(user_id.mention())
+            .push(user_id.mention().to_string())
             .push(" competed in ")
             .push_bold_safe(&contest.name)
             .push(", gaining ")
-            .push_bold_safe(delta)
+            .push_bold_safe(delta.to_string())
             .push(" rating placing at ")
             .push_bold(format!("#{}", rating_change.rank))
             .push("! 🎂🎂🎂")
             .build()
     } else {
         MessageBuilder::new()
-            .push(user_id.mention())
+            .push(user_id.mention().to_string())
             .push(" competed in ")
             .push_bold_safe(&contest.name)
             .push(", but lost ")
-            .push_bold_safe(-delta)
+            .push_bold_safe((-delta).to_string())
             .push(" rating placing at ")
             .push_bold(format!("#{}", rating_change.rank))
             .push("... 😭😭😭")
             .build()
     };
 
-    e.author(|a| {
-        a.icon_url(user.avatar.to_string())
-            .url(user.profile_url())
-            .name(&user.handle)
-    })
-    .color(color)
-    .description(message)
-    .field("Contest Link", contest.url(), true)
-    .field(
-        "Rating Change",
-        format!(
-            "from **{}** to **{}**",
-            rating_change.old_rating, rating_change.new_rating
-        ),
-        false,
-    )
+    CreateEmbed::new()
+        .author({
+            CreateEmbedAuthor::new(&user.handle)
+                .icon_url(user.avatar.to_string())
+                .url(user.profile_url())
+        })
+        .color(color)
+        .description(message)
+        .field("Contest Link", contest.url(), true)
+        .field(
+            "Rating Change",
+            format!(
+                "from **{}** to **{}**",
+                rating_change.old_rating, rating_change.new_rating
+            ),
+            false,
+        )
 }
