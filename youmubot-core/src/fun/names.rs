@@ -3,7 +3,7 @@ use serenity::model::id::UserId;
 const ALL_NAMES: usize = FIRST_NAMES.len() * LAST_NAMES.len();
 // Get a name from the user's id.
 pub fn name_from_userid(u: UserId) -> (&'static str, &'static str) {
-    let u = u.0 as usize % ALL_NAMES;
+    let u = u.get() as usize % ALL_NAMES;
     (
         FIRST_NAMES[u / LAST_NAMES.len()], // Not your standard mod
         LAST_NAMES[u % LAST_NAMES.len()],

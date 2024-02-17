@@ -1,5 +1,6 @@
 use futures_util::{stream, TryStreamExt};
 use serenity::{
+    builder::GetMessages,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -31,7 +32,7 @@ async fn clean(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let limit = args.single().unwrap_or(10);
     let messages = msg
         .channel_id
-        .messages(&ctx.http, |b| b.before(msg.id).limit(limit))
+        .messages(&ctx.http, GetMessages::new().before(msg.id).limit(limit))
         .await?;
     let channel = msg.channel_id.to_channel(&ctx).await?;
     match &channel {

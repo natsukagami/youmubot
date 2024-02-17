@@ -3,6 +3,7 @@ use rand::{
     thread_rng,
 };
 use serenity::{
+    builder::CreateMessage,
     framework::standard::{
         macros::{command, group},
         Args, CommandError as Error, CommandResult,
@@ -62,13 +63,11 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
     let online_only = !flags.contains("everyone");
 
     let users: Result<Vec<_>, Error> = {
-        let guild = m.guild(ctx).unwrap();
-        let presences = &guild.presences;
+        let presences = m.guild(&ctx.cache).unwrap().presences.clone();
         let channel = m.channel_id.to_channel(&ctx).await?;
         if let Channel::Guild(channel) = channel {
             Ok(channel
-                .members(&ctx)
-                .await?
+                .members(&ctx)?
                 .into_iter()
                 .filter(|v| !v.user.bot) // Filter out bots
                 .filter(|v| {
@@ -84,9 +83,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                         })
                         .unwrap_or(false)
                 })
-                .map(future::ready)
-                .collect::<stream::FuturesUnordered<_>>()
-                .filter_map(|member| async move {
+                .filter_map(|member| {
                     // Filter by role if provided
                     match role {
                         Some(role) if member.roles.iter().any(|r| role == *r) => Some(member),
@@ -94,8 +91,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
                         _ => None,
                     }
                 })
-                .collect()
-                .await)
+                .collect())
         } else {
             unreachable!()
         }
@@ -118,25 +114,27 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
     };
 
     m.channel_id
-        .send_message(&ctx, |c| {
-            c.content(
-                MessageBuilder::new()
-                    .push("👑 The Gensokyo gods have gathered around and decided, out of ")
-                    .push_bold(format!("{}", users.len()))
-                    .push(" ")
-                    .push(
-                        role.map(|r| format!("{}s", r.mention()))
-                            .unwrap_or_else(|| "potential prayers".to_owned()),
-                    )
-                    .push(", ")
-                    .push(winner.mention())
-                    .push(" will be ")
-                    .push_bold_safe(title)
-                    .push(". Congrats! 🎉 🎊 🥳")
-                    .build(),
-            )
-            .reference_message(m)
-        })
+        .send_message(
+            &ctx,
+            CreateMessage::new()
+                .content(
+                    MessageBuilder::new()
+                        .push("👑 The Gensokyo gods have gathered around and decided, out of ")
+                        .push_bold(format!("{}", users.len()))
+                        .push(" ")
+                        .push(
+                            role.map(|r| format!("{}s", r.mention()))
+                                .unwrap_or_else(|| "potential prayers".to_owned()),
+                        )
+                        .push(", ")
+                        .push(winner.mention().to_string())
+                        .push(" will be ")
+                        .push_bold_safe(title)
+                        .push(". Congrats! 🎉 🎊 🥳")
+                        .build(),
+                )
+                .reference_message(m),
+        )
         .await?;
 
     Ok(())
