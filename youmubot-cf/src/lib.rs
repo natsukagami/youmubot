@@ -1,5 +1,6 @@
 use codeforces::Contest;
 use serenity::{
+    builder::{CreateMessage, EditMessage},
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -83,12 +84,13 @@ pub async fn profile(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
     match account {
         Some(v) => {
             m.channel_id
-                .send_message(&ctx, |send| {
-                    send.content(format!(
-                        "{}: Here is the user that you requested",
-                        m.author.mention()
-                    ))
-                    .embed(|e| embed::user_embed(&v, e))
+                .send_message(&ctx, {
+                    CreateMessage::new()
+                        .content(format!(
+                            "{}: Here is the user that you requested",
+                            m.author.mention()
+                        ))
+                        .embed(embed::user_embed(&v))
                 })
                 .await
         }
@@ -231,7 +233,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                     last_updated.to_rfc2822()
                 ));
 
-                msg.edit(ctx, |f| f.content(m.build())).await?;
+                msg.edit(ctx, EditMessage::new().content(m.build())).await?;
                 Ok(true)
             })
         },
@@ -410,7 +412,7 @@ pub(crate) async fn contest_rank_table(
                     .push_line(contest.url())
                     .push_codeblock(table.build(), None)
                     .push_line(format!("Page **{}/{}**", page + 1, total_pages));
-                msg.edit(ctx, |e| e.content(m.build())).await?;
+                msg.edit(ctx, EditMessage::new().content(m.build())).await?;
                 Ok(true)
             })
         },

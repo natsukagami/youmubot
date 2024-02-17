@@ -5,9 +5,8 @@ use crate::{
 use announcer::MemberToChannels;
 use chrono::Utc;
 use codeforces::{RatingChange, User};
-use serenity::{http::CacheHttp, model::id::UserId, CacheAndHttp};
-use std::sync::Arc;
-use youmubot_prelude::*;
+use serenity::{builder::CreateMessage, http::CacheHttp, model::id::UserId};
+use youmubot_prelude::{announcer::CacheAndHttp, *};
 
 type Client = <CFClient as TypeMapKey>::Value;
 
@@ -18,7 +17,7 @@ pub struct Announcer;
 impl youmubot_prelude::Announcer for Announcer {
     async fn updates(
         &mut self,
-        http: Arc<CacheAndHttp>,
+        http: CacheAndHttp,
         data: AppData,
         channels: MemberToChannels,
     ) -> Result<()> {
@@ -68,7 +67,7 @@ impl youmubot_prelude::Announcer for Announcer {
 }
 
 async fn update_user(
-    http: Arc<CacheAndHttp>,
+    http: CacheAndHttp,
     channels: &MemberToChannels,
     client: &Client,
     user_id: UserId,
@@ -124,14 +123,14 @@ async fn update_user(
                 channels
                     .iter()
                     .map(|channel| {
-                        channel.send_message(http.http(), |e| {
-                            e.content(format!("Rating change for {}!", user_id.mention()))
-                                .embed(|c| {
-                                    crate::embed::rating_change_embed(
-                                        &rc, &info, &contest, user_id, c,
-                                    )
-                                })
-                        })
+                        channel.send_message(
+                            http.http(),
+                            CreateMessage::new()
+                                .content(format!("Rating change for {}!", user_id.mention()))
+                                .embed(crate::embed::rating_change_embed(
+                                    &rc, &info, &contest, user_id,
+                                )),
+                        )
                     })
                     .collect::<stream::FuturesUnordered<_>>()
                     .map(|v| v.map(|_| ()))

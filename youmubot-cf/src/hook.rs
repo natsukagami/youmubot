@@ -3,6 +3,7 @@ use codeforces::{Contest, Problem};
 use dashmap::DashMap as HashMap;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
+use serenity::builder::CreateMessage;
 use serenity::{
     builder::CreateEmbed, framework::standard::CommandError, model::channel::Message,
     utils::MessageBuilder,
@@ -126,10 +127,12 @@ impl Hook for InfoHook {
             .await;
         if !matches.is_empty() {
             m.channel_id
-                .send_message(&ctx, |c| {
-                    c.content("Here are the info of the given Codeforces links!")
-                        .embed(|e| print_info_message(&matches[..], e))
-                })
+                .send_message(
+                    &ctx,
+                    CreateMessage::new()
+                        .content("Here are the info of the given Codeforces links!")
+                        .embed(print_info_message(&matches[..])),
+                )
                 .await?;
         }
         Ok(())
@@ -149,10 +152,7 @@ fn parse<'a>(
     matches
 }
 
-fn print_info_message<'a>(
-    info: &[(ContestOrProblem, &str)],
-    e: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
+fn print_info_message<'a>(info: &[(ContestOrProblem, &str)]) -> CreateEmbed {
     let (problems, contests): (Vec<_>, Vec<_>) = info.iter().partition(|(v, _)| match v {
         ContestOrProblem::Problem(_) => true,
         ContestOrProblem::Contest(_, _) => false,
@@ -236,7 +236,7 @@ fn print_info_message<'a>(
             m.push_line("");
         }
     }
-    e.description(m.build())
+    CreateEmbed::new().description(m.build())
 }
 
 #[allow(clippy::needless_lifetimes)] // Doesn't really work
