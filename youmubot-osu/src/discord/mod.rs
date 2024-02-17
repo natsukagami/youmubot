@@ -192,10 +192,9 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             let scores = client
                 .user_best(UserID::ID(u.id), |f| f.mode(*mode))
                 .await?;
-            match scores.into_iter().choose(&mut rand::thread_rng()) {
-                Some(v) => return Ok(Some((v, *mode))),
-                None => (),
-            };
+            if let Some(v) = scores.into_iter().choose(&mut rand::thread_rng()) {
+                return Ok(Some((v, *mode)));
+            }
         }
         Ok(None)
     }

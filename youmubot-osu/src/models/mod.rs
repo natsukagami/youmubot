@@ -430,15 +430,7 @@ impl Beatmap {
 }
 
 #[derive(Clone, Debug)]
-pub enum UserEvent {
-    Rank(UserEventRank),
-    OtherV1 {
-        display_html: String,
-        date: DateTime<Utc>,
-        epic_factor: u8,
-    },
-    OtherV2(rosu_v2::model::recent_event::RecentEvent),
-}
+pub struct UserEvent(pub rosu_v2::model::recent_event::RecentEvent);
 
 /// Represents a "achieved rank #x on beatmap" event.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -452,8 +444,29 @@ pub struct UserEventRank {
 impl UserEvent {
     /// Try to parse the event into a "rank" event.
     pub fn to_event_rank(&self) -> Option<UserEventRank> {
-        match self {
-            UserEvent::Rank(r) => Some(r.clone()),
+        match &self.0.event_type {
+            rosu_v2::model::recent_event::EventType::Rank {
+                grade: _,
+                rank,
+                mode,
+                beatmap,
+                user: _,
+            } => Some(UserEventRank {
+                beatmap_id: {
+                    beatmap
+                        .url
+                        .trim_start_matches("/b/")
+                        .trim_end_matches("?m=0")
+                        .trim_end_matches("?m=1")
+                        .trim_end_matches("?m=2")
+                        .trim_end_matches("?m=3")
+                        .parse::<u64>()
+                        .unwrap()
+                },
+                rank: *rank as u16,
+                mode: (*mode).into(),
+                date: rosu::time_to_utc(self.0.created_at),
+            }),
             _ => None,
         }
     }

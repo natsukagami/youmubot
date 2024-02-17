@@ -7,7 +7,6 @@ bitflags::bitflags! {
     /// The mods available to osu!
     #[derive(std::default::Default, Serialize, Deserialize)]
     pub struct Mods: u64 {
-        const NOMOD = 0;
         const NF = 1 << 0;
         const EZ = 1 << 1;
         const TD = 1 << 2;
@@ -38,15 +37,21 @@ bitflags::bitflags! {
         const KEY3 = 1 << 27;
         const KEY2 = 1 << 28;
         const SCOREV2 = 1 << 29;
-        const TOUCH_DEVICE = Self::TD.bits;
-        const NOVIDEO = Self::TD.bits; /* never forget */
-        const SPEED_CHANGING = Self::DT.bits | Self::HT.bits | Self::NC.bits;
-        const MAP_CHANGING = Self::HR.bits | Self::EZ.bits | Self::SPEED_CHANGING.bits;
 
         // Made up flags
         const LAZER = 1 << 59;
         const UNKNOWN = 1 << 60;
     }
+}
+
+impl Mods {
+    pub const NOMOD: Mods = Mods::empty();
+    pub const TOUCH_DEVICE: Mods = Self::TD;
+    pub const NOVIDEO: Mods = Self::TD; /* never forget */
+    pub const SPEED_CHANGING: Mods =
+        Mods::from_bits_truncate(Self::DT.bits | Self::HT.bits | Self::NC.bits);
+    pub const MAP_CHANGING: Mods =
+        Mods::from_bits_truncate(Self::HR.bits | Self::EZ.bits | Self::SPEED_CHANGING.bits);
 }
 
 const MODS_WITH_NAMES: &[(Mods, &str)] = &[

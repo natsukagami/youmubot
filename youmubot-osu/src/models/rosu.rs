@@ -23,7 +23,7 @@ impl ApprovalStatus {
     }
 }
 
-fn time_to_utc(s: time::OffsetDateTime) -> DateTime<Utc> {
+pub(super) fn time_to_utc(s: time::OffsetDateTime) -> DateTime<Utc> {
     chrono::DateTime::from_timestamp(s.unix_timestamp(), 0).unwrap()
 }
 
@@ -107,31 +107,7 @@ impl User {
 
 impl From<rosu::recent_event::RecentEvent> for UserEvent {
     fn from(value: rosu::recent_event::RecentEvent) -> Self {
-        match value.event_type {
-            rosu::recent_event::EventType::Rank {
-                grade: _,
-                rank,
-                mode,
-                beatmap,
-                user: _,
-            } => Self::Rank(UserEventRank {
-                beatmap_id: {
-                    beatmap
-                        .url
-                        .trim_start_matches("/b/")
-                        .trim_end_matches("?m=0")
-                        .trim_end_matches("?m=1")
-                        .trim_end_matches("?m=2")
-                        .trim_end_matches("?m=3")
-                        .parse::<u64>()
-                        .unwrap()
-                },
-                rank: rank as u16,
-                mode: mode.into(),
-                date: time_to_utc(value.created_at),
-            }),
-            _ => Self::OtherV2(value),
-        }
+        Self(value)
     }
 }
 
