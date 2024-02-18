@@ -5,7 +5,7 @@ use crate::{
 };
 use lazy_static::lazy_static;
 use regex::Regex;
-use serenity::{builder::CreateEmbed, model::channel::Message, utils::MessageBuilder};
+use serenity::{builder::CreateMessage, model::channel::Message, utils::MessageBuilder};
 use std::str::FromStr;
 use youmubot_prelude::*;
 
@@ -46,17 +46,12 @@ pub fn dot_osu_hook<'a>(
                     let data = ctx.data.read().await;
                     let oppai = data.get::<BeatmapCache>().unwrap();
                     let (beatmap, _) = oppai.download_beatmap_from_url(&url).await.ok()?;
-                    let embed_fn = crate::discord::embeds::beatmap_offline_embed(
+                    crate::discord::embeds::beatmap_offline_embed(
                         &beatmap,
                         Mode::from(beatmap.content.mode as u8), /*For now*/
                         msg.content.trim().parse().unwrap_or(Mods::NOMOD),
                     )
-                    .ok()?;
-
-                    let mut create_embed = CreateEmbed::default();
-                    embed_fn(&mut create_embed);
-
-                    Some(create_embed)
+                    .pls_ok()
                 }
             })
             .collect::<stream::FuturesUnordered<_>>()
@@ -80,16 +75,12 @@ pub fn dot_osu_hook<'a>(
                         beatmaps
                             .into_iter()
                             .filter_map(|beatmap| {
-                                let embed_fn = crate::discord::embeds::beatmap_offline_embed(
+                                crate::discord::embeds::beatmap_offline_embed(
                                     &beatmap,
                                     Mode::from(beatmap.content.mode as u8), /*For now*/
                                     msg.content.trim().parse().unwrap_or(Mods::NOMOD),
                                 )
-                                .pls_ok()?;
-
-                                let mut create_embed = CreateEmbed::default();
-                                embed_fn(&mut create_embed);
-                                Some(create_embed)
+                                .pls_ok()
                             })
                             .collect::<Vec<_>>(),
                     )
@@ -105,11 +96,13 @@ pub fn dot_osu_hook<'a>(
 
         if !osu_embeds.is_empty() {
             msg.channel_id
-                .send_message(ctx, |f| {
-                    f.reference_message(msg)
+                .send_message(
+                    ctx,
+                    CreateMessage::new()
+                        .reference_message(msg)
                         .content(format!("{} attached beatmaps found", osu_embeds.len()))
-                        .add_embeds(osu_embeds)
-                })
+                        .add_embeds(osu_embeds),
+                )
                 .await
                 .ok();
         }
@@ -387,16 +380,23 @@ async fn handle_beatmap<'a, 'b>(
 ) -> Result<()> {
     reply_to
         .channel_id
-        .send_message(ctx, |m| {
-            m.content(
-                MessageBuilder::new()
-                    .push("Beatmap information for ")
-                    .push_mono_safe(link)
-                    .build(),
-            )
-            .embed(|b| beatmap_embed(beatmap, mode.unwrap_or(beatmap.mode), mods, info, b))
-            .reference_message(reply_to)
-        })
+        .send_message(
+            ctx,
+            CreateMessage::new()
+                .content(
+                    MessageBuilder::new()
+                        .push("Beatmap information for ")
+                        .push_mono_safe(link)
+                        .build(),
+                )
+                .embed(beatmap_embed(
+                    beatmap,
+                    mode.unwrap_or(beatmap.mode),
+                    mods,
+                    info,
+                ))
+                .reference_message(reply_to),
+        )
         .await?;
     Ok(())
 }

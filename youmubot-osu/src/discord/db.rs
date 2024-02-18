@@ -37,7 +37,7 @@ impl OsuSavedUsers {
     /// Get an user by their user_id.
     pub async fn by_user_id(&self, user_id: UserId) -> Result<Option<OsuUser>> {
         let mut conn = self.pool.acquire().await?;
-        let u = model::OsuUser::by_user_id(user_id.0 as i64, &mut *conn)
+        let u = model::OsuUser::by_user_id(user_id.get() as i64, &mut *conn)
             .await?
             .map(OsuUser::from);
         Ok(u)
@@ -52,7 +52,7 @@ impl OsuSavedUsers {
     /// Save the given user as a completely new user.
     pub async fn new_user(&self, u: OsuUser) -> Result<()> {
         let mut t = self.pool.begin().await?;
-        model::OsuUser::delete(u.user_id.0 as i64, &mut *t).await?;
+        model::OsuUser::delete(u.user_id.get() as i64, &mut *t).await?;
         model::OsuUser::from(u).store(&mut *t).await?;
         t.commit().await?;
         Ok(())
@@ -74,7 +74,8 @@ impl OsuLastBeatmap {
 
 impl OsuLastBeatmap {
     pub async fn by_channel(&self, id: impl Into<ChannelId>) -> Result<Option<(Beatmap, Mode)>> {
-        let last_beatmap = models::LastBeatmap::by_channel_id(id.into().0 as i64, &self.0).await?;
+        let last_beatmap =
+            models::LastBeatmap::by_channel_id(id.into().get() as i64, &self.0).await?;
         Ok(match last_beatmap {
             Some(lb) => Some((bincode::deserialize(&lb.beatmap[..])?, lb.mode.into())),
             None => None,
@@ -88,7 +89,7 @@ impl OsuLastBeatmap {
         mode: Mode,
     ) -> Result<()> {
         let b = models::LastBeatmap {
-            channel_id: channel.into().0 as i64,
+            channel_id: channel.into().get() as i64,
             beatmap: bincode::serialize(beatmap)?,
             mode: mode as u8,
         };
@@ -121,7 +122,7 @@ impl OsuUserBests {
         scores
             .into_iter()
             .map(|score| models::UserBestScore {
-                user_id: user.0 as i64,
+                user_id: user.get() as i64,
                 beatmap_id: score.beatmap_id as i64,
                 mode: mode as u8,
                 mods: score.mods.bits() as i64,
@@ -151,7 +152,7 @@ pub struct OsuUser {
 impl From<OsuUser> for model::OsuUser {
     fn from(u: OsuUser) -> Self {
         Self {
-            user_id: u.user_id.0 as i64,
+            user_id: u.user_id.get() as i64,
             username: Some(u.username.into_owned()),
             id: u.id as i64,
             last_update: u.last_update,
@@ -167,7 +168,7 @@ impl From<OsuUser> for model::OsuUser {
 impl From<model::OsuUser> for OsuUser {
     fn from(u: model::OsuUser) -> Self {
         Self {
-            user_id: UserId(u.user_id as u64),
+            user_id: UserId::new(u.user_id as u64),
             username: u.username.map(Cow::Owned).unwrap_or("unknown".into()),
             id: u.id as u64,
             last_update: u.last_update,

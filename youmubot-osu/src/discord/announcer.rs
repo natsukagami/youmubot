@@ -9,15 +9,16 @@ use crate::{
     Client as Osu,
 };
 use announcer::MemberToChannels;
+use serenity::builder::CreateMessage;
 use serenity::{
     http::CacheHttp,
     model::{
         channel::Message,
         id::{ChannelId, UserId},
     },
-    CacheAndHttp,
 };
 use std::{convert::TryInto, sync::Arc};
+use youmubot_prelude::announcer::CacheAndHttp;
 use youmubot_prelude::*;
 
 /// osu! announcer's unique announcer key.
@@ -38,7 +39,7 @@ impl Announcer {
 impl youmubot_prelude::Announcer for Announcer {
     async fn updates(
         &mut self,
-        c: Arc<CacheAndHttp>,
+        c: CacheAndHttp,
         d: AppData,
         channels: MemberToChannels,
     ) -> Result<()> {
@@ -189,7 +190,7 @@ impl Announcer {
 #[derive(Clone)]
 struct Context {
     data: AppData,
-    c: Arc<CacheAndHttp>,
+    c: CacheAndHttp,
 }
 
 struct CollectedScore<'a> {
@@ -291,31 +292,33 @@ impl<'a> CollectedScore<'a> {
             }
         };
         let m = channel
-            .send_message(ctx.c.http(), |c| {
-                c.content(match self.kind {
-                    ScoreType::TopRecord(_) => {
-                        format!("New top record from {}!", self.discord_user.mention())
-                    }
-                    ScoreType::WorldRecord(rank) => {
-                        if rank <= 100 {
-                            format!(
-                                "New leaderboard record from {}!",
-                                self.discord_user.mention()
-                            )
-                        } else {
-                            format!("New leaderboard record from **{}**!", member.distinct())
+            .send_message(
+                ctx.c.http(),
+                CreateMessage::new()
+                    .content(match self.kind {
+                        ScoreType::TopRecord(_) => {
+                            format!("New top record from {}!", self.discord_user.mention())
                         }
-                    }
-                })
-                .embed(|e| {
-                    let mut b = score_embed(&self.score, bm, content, self.user);
-                    match self.kind {
-                        ScoreType::TopRecord(rank) => b.top_record(rank),
-                        ScoreType::WorldRecord(rank) => b.world_record(rank),
-                    }
-                    .build(e)
-                })
-            })
+                        ScoreType::WorldRecord(rank) => {
+                            if rank <= 100 {
+                                format!(
+                                    "New leaderboard record from {}!",
+                                    self.discord_user.mention()
+                                )
+                            } else {
+                                format!("New leaderboard record from **{}**!", member.distinct())
+                            }
+                        }
+                    })
+                    .embed({
+                        let mut b = score_embed(&self.score, bm, content, self.user);
+                        match self.kind {
+                            ScoreType::TopRecord(rank) => b.top_record(rank),
+                            ScoreType::WorldRecord(rank) => b.world_record(rank),
+                        }
+                        .build()
+                    }),
+            )
             .await?;
         save_beatmap(&*ctx.data.read().await, channel, bm)
             .await

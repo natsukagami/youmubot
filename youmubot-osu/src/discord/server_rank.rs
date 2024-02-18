@@ -11,6 +11,7 @@ use crate::{
 };
 
 use serenity::{
+    builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
     utils::MessageBuilder,
@@ -141,7 +142,8 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
                     last_update.format("<t:%s:R>"),
                 ));
-                m.edit(ctx, |f| f.content(content.to_string())).await?;
+                m.edit(ctx, EditMessage::new().content(content.to_string()))
+                    .await?;
                 Ok(true)
             })
         },
@@ -434,7 +436,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                     content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
                 }
 
-                m.edit(&ctx, |f| f.content(content.build())).await?;
+                m.edit(&ctx, EditMessage::new().content(content.build())).await?;
                 Ok(true)
             })
         },
