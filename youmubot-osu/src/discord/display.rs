@@ -51,6 +51,7 @@ mod scores {
             cache::save_beatmap, BeatmapCache, BeatmapMetaCache, BeatmapWithMode,
         };
         use crate::models::{Mode, Score};
+        use serenity::builder::EditMessage;
         use serenity::{framework::standard::CommandResult, model::channel::Message};
         use youmubot_prelude::*;
 
@@ -100,13 +101,14 @@ mod scores {
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
 
-                msg.edit(ctx, |e| {
-                    e.embed(|e| {
+                msg.edit(
+                    ctx,
+                    EditMessage::new().embed({
                         crate::discord::embeds::score_embed(score, &bm, &content, &user)
                             .footer(format!("Page {}/{}", page + 1, self.scores.len()))
-                            .build(e)
-                    })
-                })
+                            .build()
+                    }),
+                )
                 .await?;
                 save_beatmap(&*ctx.data.read().await, msg.channel_id, &bm).await?;
 
@@ -127,6 +129,7 @@ mod scores {
         use crate::discord::oppai_cache::Accuracy;
         use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
         use crate::models::{Mode, Score};
+        use serenity::builder::EditMessage;
         use serenity::{framework::standard::CommandResult, model::channel::Message};
         use youmubot_prelude::*;
 
@@ -327,7 +330,7 @@ mod scores {
                     self.total_pages()
                 ));
                 m.push_line("[?] means pp was predicted by oppai-rs.");
-                msg.edit(ctx, |f| f.content(m.to_string())).await?;
+                msg.edit(ctx, EditMessage::new().content(m.to_string())).await?;
                 hourglass.delete(ctx).await?;
                 Ok(true)
             }
@@ -347,7 +350,7 @@ mod beatmapset {
         models::{Beatmap, Mode, Mods},
     };
     use serenity::{
-        collector::ReactionAction, model::channel::Message, model::channel::ReactionType,
+         model::channel::Message, model::channel::ReactionType, all::Reaction, builder::{EditMessage, CreateEmbedFooter},
     };
     use youmubot_prelude::*;
 
@@ -418,11 +421,12 @@ mod beatmapset {
         ) -> Result<bool> {
             let page = page as usize;
             if page == self.maps.len() {
-                m.edit(ctx, |f| {
-                    f.embed(|em| {
-                        crate::discord::embeds::beatmapset_embed(&self.maps[..], self.mode, em)
-                    })
-                })
+                m.edit(ctx, 
+                    EditMessage::new().embed(crate::discord::embeds::beatmapset_embed(
+                        &self.maps[..],
+                        self.mode,
+                    ))
+                )
                 .await?;
                 return Ok(true);
             }
@@ -439,25 +443,24 @@ mod beatmapset {
                     info
                 }
             };
-            m.edit(ctx, |e| {
-                e.content(self.message.as_str()).embed(|em| {
+            m.edit(ctx, 
+                EditMessage::new().content(self.message.as_str()).embed(
                     crate::discord::embeds::beatmap_embed(
                         map,
                         self.mode.unwrap_or(map.mode),
                         self.mods,
                         info,
-                        em,
                     )
-                    .footer(|f| {
-                        f.text(format!(
+                    .footer( {
+                        CreateEmbedFooter::new(format!(
                             "Difficulty {}/{}. To show all difficulties in a single embed (old style), react {}",
                             page + 1,
                             self.maps.len(),
                             SHOW_ALL_EMOTE,
                         ))
                     })
-                })
-            })
+                )
+            )
             .await?;
             save_beatmap(
                 &*ctx.data.read().await,
@@ -485,13 +488,10 @@ mod beatmapset {
             page: u8,
             ctx: &Context,
             message: &mut serenity::model::channel::Message,
-            reaction: &ReactionAction,
+            reaction: &Reaction,
         ) -> Result<Option<u8>> {
             // Render the old style.
-            let v = match reaction {
-                ReactionAction::Added(v) | ReactionAction::Removed(v) => v,
-            };
-            if let ReactionType::Unicode(s) = &v.emoji {
+            if let ReactionType::Unicode(s) = &reaction.emoji {
                 if s == SHOW_ALL_EMOTE {
                     self.render(self.maps.len() as u8, ctx, message).await?;
                     return Ok(Some(self.maps.len() as u8));

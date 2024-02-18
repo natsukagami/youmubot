@@ -8,7 +8,8 @@ use crate::{
 };
 use rand::seq::IteratorRandom;
 use serenity::{
-    collector::{CollectReaction, ReactionAction},
+    builder::{CreateMessage, EditMessage},
+    collector,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -237,27 +238,26 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .get_possible_pp_with(mode, Mods::NOMOD)?;
     let mut reply = reply.await?;
     reply
-        .edit(&ctx, |f| {
-            f.embed(|e| beatmap_embed(&beatmap, mode, Mods::NOMOD, info, e))
-        })
+        .edit(
+            &ctx,
+            EditMessage::new().embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, info)),
+        )
         .await?;
     let reaction = reply.react(&ctx, '👌').await?;
     let completed = loop {
         let emoji = reaction.emoji.clone();
-        let user_reaction = CollectReaction::new(ctx)
-            .message_id(reply.id.0)
-            .author_id(msg.author.id.0)
+        let user_reaction = collector::ReactionCollector::new(&ctx)
+            .message_id(reply.id)
+            .author_id(msg.author.id)
             .filter(move |r| r.emoji == emoji)
             .timeout(std::time::Duration::from_secs(300))
-            .collect_limit(1)
+            .next()
             .await;
         if let Some(ur) = user_reaction {
             if check(osu, &u, score.beatmap_id).await? {
                 break true;
             }
-            if let ReactionAction::Added(ur) = &*ur {
-                ur.delete(&ctx).await?;
-            }
+            ur.delete(&ctx).await?;
         } else {
             break false;
         }
@@ -423,13 +423,13 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             let beatmap_mode = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id
-                .send_message(&ctx, |m| {
-                    m.content("Here is the play that you requested".to_string())
-                        .embed(|m| {
-                            score_embed(&recent_play, &beatmap_mode, &content, &user).build(m)
-                        })
-                        .reference_message(msg)
-                })
+                .send_message(
+                    &ctx,
+                    CreateMessage::new()
+                        .content("Here is the play that you requested".to_string())
+                        .embed(score_embed(&recent_play, &beatmap_mode, &content, &user).build())
+                        .reference_message(msg),
+                )
                 .await?;
 
             // Save the beatmap...
@@ -549,11 +549,13 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .await?
                 .get_possible_pp_with(m, mods)?;
             msg.channel_id
-                .send_message(&ctx, |f| {
-                    f.content("Here is the beatmap you requested!")
-                        .embed(|c| beatmap_embed(&b, m, mods, info, c))
-                        .reference_message(msg)
-                })
+                .send_message(
+                    &ctx,
+                    CreateMessage::new()
+                        .content("Here is the beatmap you requested!")
+                        .embed(beatmap_embed(&b, m, mods, info))
+                        .reference_message(msg),
+                )
                 .await?;
         }
         None => {
@@ -671,16 +673,17 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let beatmap = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id
-                .send_message(&ctx, |m| {
-                    m.content(format!(
-                        "{}: here is the play that you requested",
-                        msg.author
-                    ))
-                    .embed(|m| {
-                        score_embed(&top_play, &beatmap, &content, &user)
-                            .top_record(rank)
-                            .build(m)
-                    })
+                .send_message(&ctx, {
+                    CreateMessage::new()
+                        .content(format!(
+                            "{}: here is the play that you requested",
+                            msg.author
+                        ))
+                        .embed(
+                            score_embed(&top_play, &beatmap, &content, &user)
+                                .top_record(rank)
+                                .build(),
+                        )
                 })
                 .await?;
 
@@ -740,13 +743,15 @@ async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> C
                 None => None,
             };
             msg.channel_id
-                .send_message(&ctx, |m| {
-                    m.content(format!(
-                        "{}: here is the user that you requested",
-                        msg.author
-                    ))
-                    .embed(|m| user_embed(u, best, m))
-                })
+                .send_message(
+                    &ctx,
+                    CreateMessage::new()
+                        .content(format!(
+                            "{}: here is the user that you requested",
+                            msg.author
+                        ))
+                        .embed(user_embed(u, best)),
+                )
                 .await?;
         }
         None => {

@@ -3,11 +3,12 @@ use crate::{
     discord::oppai_cache::{Accuracy, BeatmapContent, BeatmapInfo, BeatmapInfoWithPP},
     models::{Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
 };
-use serenity::{builder::CreateEmbed, utils::MessageBuilder};
+use serenity::{
+    builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter},
+    utils::MessageBuilder,
+};
 use std::time::Duration;
 use youmubot_prelude::*;
-
-type CreateEmbedFn = dyn FnOnce(&mut CreateEmbed) -> &mut CreateEmbed + Send + Sync;
 
 /// Writes a number grouped in groups of 3.
 pub(crate) fn grouped_number(num: u64) -> String {
@@ -24,7 +25,7 @@ pub(crate) fn grouped_number(num: u64) -> String {
 
 fn beatmap_description(b: &Beatmap) -> String {
     MessageBuilder::new()
-        .push_bold_line(b.approval)
+        .push_bold_line(b.approval.to_string())
         .push({
             let link = b.download_link(false);
             format!(
@@ -36,9 +37,9 @@ fn beatmap_description(b: &Beatmap) -> String {
         })
         .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
         .push("Language: ")
-        .push_bold(b.language)
+        .push_bold(b.language.to_string())
         .push(" | Genre: ")
-        .push_bold_line(b.genre)
+        .push_bold_line(b.genre.to_string())
         .push(
             b.source
                 .as_ref()
@@ -62,7 +63,7 @@ pub fn beatmap_offline_embed(
     b: &'_ crate::discord::oppai_cache::BeatmapContent,
     m: Mode,
     mods: Mods,
-) -> Result<Box<CreateEmbedFn>> {
+) -> Result<CreateEmbed> {
     let bm = b.content.clone();
     let metadata = b.metadata.clone();
     let (info, pp) = b.get_possible_pp_with(m, mods)?;
@@ -93,29 +94,29 @@ pub fn beatmap_offline_embed(
         total_length,
     }
     .apply_mods(mods, info.stars);
-    Ok(Box::new(move |c: &mut CreateEmbed| {
-        c.title(beatmap_title(
-            &metadata.artist,
-            &metadata.title,
-            &metadata.version,
-            mods,
-        ))
-        .author(|a| {
-            a.name(&metadata.creator)
-                .url(format!("https://osu.ppy.sh/users/{}", metadata.creator))
-        })
-        .color(0xffb6c1)
-        .field(
-            "Calculated pp",
-            format!(
-                "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
-                pp[0], pp[1], pp[2], pp[3]
-            ),
-            false,
-        )
-        .field("Information", diff.format_info(m, mods, None), false)
-        // .description(beatmap_description(b))
-    }))
+    Ok(
+        CreateEmbed::new()
+            .title(beatmap_title(
+                &metadata.artist,
+                &metadata.title,
+                &metadata.version,
+                mods,
+            ))
+            .author({
+                CreateEmbedAuthor::new(&metadata.creator)
+                    .url(format!("https://osu.ppy.sh/users/{}", metadata.creator))
+            })
+            .color(0xffb6c1)
+            .field(
+                "Calculated pp",
+                format!(
+                    "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
+                    pp[0], pp[1], pp[2], pp[3]
+                ),
+                false,
+            )
+            .field("Information", diff.format_info(m, mods, None), false), // .description(beatmap_description(b))
+    )
 }
 
 // Some helper functions here
@@ -148,15 +149,15 @@ pub fn beatmap_embed<'a>(
     m: Mode,
     mods: Mods,
     info: BeatmapInfoWithPP,
-    c: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
+) -> CreateEmbed {
     let diff = b.difficulty.apply_mods(mods, info.0.stars);
-    c.title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
-        .author(|a| {
-            a.name(&b.creator)
+    CreateEmbed::new()
+        .title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
+        .author(
+            CreateEmbedAuthor::new(&b.creator)
                 .url(format!("https://osu.ppy.sh/users/{}", b.creator_id))
-                .icon_url(format!("https://a.ppy.sh/{}", b.creator_id))
-        })
+                .icon_url(format!("https://a.ppy.sh/{}", b.creator_id)),
+        )
         .url(b.link())
         .image(b.cover_url())
         .color(0xffb6c1)
@@ -177,54 +178,48 @@ pub fn beatmap_embed<'a>(
 
 const MAX_DIFFS: usize = 25 - 4;
 
-pub fn beatmapset_embed<'a>(
-    bs: &'_ [Beatmap],
-    m: Option<Mode>,
-    c: &'a mut CreateEmbed,
-) -> &'a mut CreateEmbed {
+pub fn beatmapset_embed<'a>(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
     let too_many_diffs = bs.len() > MAX_DIFFS;
     let b: &Beatmap = &bs[0];
-    c.title(
-        MessageBuilder::new()
-            .push_bold_safe(&b.artist)
-            .push(" - ")
-            .push_bold_safe(&b.title)
-            .build(),
-    )
-    .author(|a| {
-        a.name(&b.creator)
-            .url(format!("https://osu.ppy.sh/users/{}", b.creator_id))
-            .icon_url(format!("https://a.ppy.sh/{}", b.creator_id))
-    })
-    .url(format!(
-        "https://osu.ppy.sh/beatmapsets/{}",
-        b.beatmapset_id,
-    ))
-    .image(format!(
-        "https://assets.ppy.sh/beatmaps/{}/covers/cover.jpg",
-        b.beatmapset_id
-    ))
-    .color(0xffb6c1)
-    .description(beatmap_description(b))
-    .footer(|f| {
-        if too_many_diffs {
-            f.text(format!(
-                "This map has {} diffs, we are showing the last {}.",
-                bs.len(),
-                MAX_DIFFS
-            ))
-        } else {
-            f
-        }
-    })
-    .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
-        (
-            format!("[{}]", b.difficulty_name),
-            b.difficulty
-                .format_info(m.unwrap_or(b.mode), Mods::NOMOD, b),
-            false,
+    let mut m = CreateEmbed::new()
+        .title(
+            MessageBuilder::new()
+                .push_bold_safe(&b.artist)
+                .push(" - ")
+                .push_bold_safe(&b.title)
+                .build(),
         )
-    }))
+        .author(
+            CreateEmbedAuthor::new(&b.creator)
+                .url(format!("https://osu.ppy.sh/users/{}", b.creator_id))
+                .icon_url(format!("https://a.ppy.sh/{}", b.creator_id)),
+        )
+        .url(format!(
+            "https://osu.ppy.sh/beatmapsets/{}",
+            b.beatmapset_id,
+        ))
+        .image(format!(
+            "https://assets.ppy.sh/beatmaps/{}/covers/cover.jpg",
+            b.beatmapset_id
+        ))
+        .color(0xffb6c1)
+        .description(beatmap_description(b))
+        .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
+            (
+                format!("[{}]", b.difficulty_name),
+                b.difficulty
+                    .format_info(m.unwrap_or(b.mode), Mods::NOMOD, b),
+                false,
+            )
+        }));
+    if too_many_diffs {
+        m = m.footer(CreateEmbedFooter::new(format!(
+            "This map has {} diffs, we are showing the last {}.",
+            bs.len(),
+            MAX_DIFFS
+        )));
+    }
+    m
 }
 
 pub(crate) struct ScoreEmbedBuilder<'a> {
@@ -271,7 +266,7 @@ pub(crate) fn score_embed<'a>(
 
 impl<'a> ScoreEmbedBuilder<'a> {
     #[allow(clippy::many_single_char_names)]
-    pub fn build<'b>(&mut self, m: &'b mut CreateEmbed) -> &'b mut CreateEmbed {
+    pub fn build<'b>(&mut self) -> CreateEmbed {
         let mode = self.bm.mode();
         let b = &self.bm.0;
         let s = self.s;
@@ -366,7 +361,12 @@ impl<'a> ScoreEmbedBuilder<'a> {
         } else {
             format!("by {} ", b.creator)
         };
-        m.author(|f| f.name(&u.username).url(u.link()).icon_url(u.avatar_url()))
+        let mut m = CreateEmbed::new()
+            .author(
+                CreateEmbedAuthor::new(&u.username)
+                    .url(u.link())
+                    .icon_url(u.avatar_url()),
+            )
             .color(0xffb6c1)
             .title(
                 MessageBuilder::new()
@@ -378,7 +378,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     .push(" [")
                     .push_safe(&b.difficulty_name)
                     .push("] ")
-                    .push(s.mods)
+                    .push(s.mods.to_string())
                     .push(" ")
                     .push(format!("({:.2}\\*)", stars))
                     .push(" ")
@@ -420,7 +420,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
             footer += " Star difficulty does not reflect game mods.";
         }
         if !footer.is_empty() {
-            m.footer(|f| f.text(footer));
+            m = m.footer(CreateEmbedFooter::new(footer));
         }
         m
     }
@@ -429,9 +429,9 @@ impl<'a> ScoreEmbedBuilder<'a> {
 pub(crate) fn user_embed(
     u: User,
     best: Option<(Score, BeatmapWithMode, BeatmapInfo)>,
-    m: &mut CreateEmbed,
-) -> &mut CreateEmbed {
-    m.title(MessageBuilder::new().push_safe(u.username).build())
+) -> CreateEmbed {
+    CreateEmbed::new()
+        .title(MessageBuilder::new().push_safe(u.username).build())
         .url(format!("https://osu.ppy.sh/users/{}", u.id))
         .color(0xffb6c1)
         .thumbnail(format!("https://a.ppy.sh/{}", u.id))
@@ -494,7 +494,7 @@ pub(crate) fn user_embed(
                         v.pp.unwrap() /*Top record should have pp*/
                     ))
                     .push(" - ")
-                    .push_line(v.date.format("<t:%s:R>"))
+                    .push_line(v.date.format("<t:%s:R>").to_string())
                     .push("on ")
                     .push_line(format!(
                         "[{} - {} [{}]]({})**{} **",
