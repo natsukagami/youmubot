@@ -330,7 +330,8 @@ mod scores {
                     self.total_pages()
                 ));
                 m.push_line("[?] means pp was predicted by oppai-rs.");
-                msg.edit(ctx, EditMessage::new().content(m.to_string())).await?;
+                msg.edit(ctx, EditMessage::new().content(m.to_string()))
+                    .await?;
                 hourglass.delete(ctx).await?;
                 Ok(true)
             }
@@ -350,7 +351,10 @@ mod beatmapset {
         models::{Beatmap, Mode, Mods},
     };
     use serenity::{
-         model::channel::Message, model::channel::ReactionType, all::Reaction, builder::{EditMessage, CreateEmbedFooter},
+        all::Reaction,
+        builder::{CreateEmbedFooter, EditMessage},
+        model::channel::Message,
+        model::channel::ReactionType,
     };
     use youmubot_prelude::*;
 
@@ -421,11 +425,12 @@ mod beatmapset {
         ) -> Result<bool> {
             let page = page as usize;
             if page == self.maps.len() {
-                m.edit(ctx, 
+                m.edit(
+                    ctx,
                     EditMessage::new().embed(crate::discord::embeds::beatmapset_embed(
                         &self.maps[..],
                         self.mode,
-                    ))
+                    )),
                 )
                 .await?;
                 return Ok(true);
@@ -443,7 +448,7 @@ mod beatmapset {
                     info
                 }
             };
-            m.edit(ctx, 
+            m.edit(ctx,
                 EditMessage::new().content(self.message.as_str()).embed(
                     crate::discord::embeds::beatmap_embed(
                         map,

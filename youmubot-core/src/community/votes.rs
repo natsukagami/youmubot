@@ -78,7 +78,7 @@ pub async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let author = msg.author.clone();
     let asked = msg.timestamp;
     let until = *asked + (chrono::Duration::from_std(*duration).unwrap());
-    let panel = channel.send_message(&ctx, 
+    let panel = channel.send_message(&ctx,
         CreateMessage::new().content("@here").embed( 
             CreateEmbed::new().author( {
                 CreateEmbedAuthor::new(&author.name).icon_url(author.avatar_url().unwrap_or_else(|| "".to_owned()))
