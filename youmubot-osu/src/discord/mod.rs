@@ -246,7 +246,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let reaction = reply.react(&ctx, '👌').await?;
     let completed = loop {
         let emoji = reaction.emoji.clone();
-        let user_reaction = collector::ReactionCollector::new(&ctx)
+        let user_reaction = collector::ReactionCollector::new(ctx)
             .message_id(reply.id)
             .author_id(msg.author.id)
             .filter(move |r| r.emoji == emoji)

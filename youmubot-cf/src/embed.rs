@@ -12,7 +12,7 @@ fn unwrap_or_ref<'a, T: ?Sized, B: Borrow<T>>(opt: &'a Option<B>, default: &'a T
 }
 
 /// Create an embed representing the user.
-pub fn user_embed<'a>(user: &User) -> CreateEmbed {
+pub fn user_embed(user: &User) -> CreateEmbed {
     let rank = unwrap_or_ref(&user.rank, "Unranked").to_title_case();
     let max_rank = unwrap_or_ref(&user.max_rank, "Unranked").to_title_case();
     let rating = user.rating.unwrap_or(1500);
@@ -60,7 +60,7 @@ pub fn user_embed<'a>(user: &User) -> CreateEmbed {
 }
 
 /// Gets an embed of the Rating Change.
-pub fn rating_change_embed<'a>(
+pub fn rating_change_embed(
     rating_change: &RatingChange,
     user: &User,
     contest: &Contest,
