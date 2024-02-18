@@ -1,6 +1,8 @@
 use dotenv::var;
 use serenity::{
-    framework::standard::{macros::hook, CommandResult, DispatchError, StandardFramework},
+    framework::standard::{
+        macros::hook, BucketBuilder, CommandResult, Configuration, DispatchError, StandardFramework,
+    },
     model::{
         channel::{Channel, Message},
         gateway,
@@ -94,7 +96,7 @@ async fn main() {
     let mut client = {
         // Attempt to connect and set up a framework
         let intents = GatewayIntents::GUILDS
-            | GatewayIntents::GUILD_BANS
+            | GatewayIntents::GUILD_MODERATION
             | GatewayIntents::MESSAGE_CONTENT
             | GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::GUILD_MESSAGE_REACTIONS
@@ -167,40 +169,48 @@ async fn setup_framework(token: &str) -> StandardFramework {
         .get_current_application_info()
         .await
         .expect("Should be able to get app info")
-        .owner;
+        .owner
+        .unwrap();
 
     let fw = StandardFramework::new()
-        .configure(|c| {
-            c.with_whitespace(false)
-                .prefixes(
-                    var("PREFIX")
-                        .map(|v| v.split(',').map(|v| v.trim().to_owned()).collect())
-                        .unwrap_or_else(|_| vec!["y!".to_owned(), "y2!".to_owned()]),
-                )
-                .delimiters(vec![" / ", "/ ", " /", "/"])
-                .owners([owner.id].iter().cloned().collect())
-        })
         .help(&youmubot_core::HELP)
         .before(before_hook)
         .after(after_hook)
         .on_dispatch_error(on_dispatch_error)
-        .bucket("voting", |c| {
-            c.check(|ctx, msg| Box::pin(is_not_channel_mod(ctx, msg)))
+        .bucket("voting", {
+            BucketBuilder::new_channel()
+                .check(|ctx, msg| Box::pin(is_not_channel_mod(ctx, msg)))
                 .delay(120 /* 2 minutes */)
                 .time_span(120)
                 .limit(1)
         })
         .await
-        .bucket("images", |c| c.time_span(60).limit(2))
+        .bucket(
+            "images",
+            BucketBuilder::new_channel().time_span(60).limit(2),
+        )
         .await
-        .bucket("community", |c| {
-            c.check(|ctx, msg| Box::pin(is_not_channel_mod(ctx, msg)))
+        .bucket(
+            "community",
+            BucketBuilder::new_guild()
+                .check(|ctx, msg| Box::pin(is_not_channel_mod(ctx, msg)))
                 .delay(30)
                 .time_span(30)
-                .limit(1)
-        })
+                .limit(1),
+        )
         .await
         .group(&prelude_commands::PRELUDE_GROUP);
+    fw.configure(
+        Configuration::new()
+            .with_whitespace(false)
+            .prefixes(
+                var("PREFIX")
+                    .map(|v| v.split(',').map(|v| v.trim().to_owned()).collect())
+                    .unwrap_or_else(|_| vec!["y!".to_owned(), "y2!".to_owned()]),
+            )
+            .delimiters(vec![" / ", "/ ", " /", "/"])
+            .owners([owner.id].iter().cloned().collect()),
+    );
     // groups here
     #[cfg(feature = "core")]
     let fw = fw
