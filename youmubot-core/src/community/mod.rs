@@ -67,7 +67,7 @@ pub async fn choose(ctx: &Context, m: &Message, mut args: Args) -> CommandResult
         let channel = m.channel_id.to_channel(&ctx).await?;
         if let Channel::Guild(channel) = channel {
             Ok(channel
-                .members(&ctx)?
+                .members(ctx)?
                 .into_iter()
                 .filter(|v| !v.user.bot) // Filter out bots
                 .filter(|v| {

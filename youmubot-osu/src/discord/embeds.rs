@@ -144,12 +144,7 @@ fn beatmap_title(
         .build()
 }
 
-pub fn beatmap_embed<'a>(
-    b: &'_ Beatmap,
-    m: Mode,
-    mods: Mods,
-    info: BeatmapInfoWithPP,
-) -> CreateEmbed {
+pub fn beatmap_embed(b: &'_ Beatmap, m: Mode, mods: Mods, info: BeatmapInfoWithPP) -> CreateEmbed {
     let diff = b.difficulty.apply_mods(mods, info.0.stars);
     CreateEmbed::new()
         .title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
@@ -178,7 +173,7 @@ pub fn beatmap_embed<'a>(
 
 const MAX_DIFFS: usize = 25 - 4;
 
-pub fn beatmapset_embed<'a>(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
+pub fn beatmapset_embed(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
     let too_many_diffs = bs.len() > MAX_DIFFS;
     let b: &Beatmap = &bs[0];
     let mut m = CreateEmbed::new()
@@ -266,7 +261,7 @@ pub(crate) fn score_embed<'a>(
 
 impl<'a> ScoreEmbedBuilder<'a> {
     #[allow(clippy::many_single_char_names)]
-    pub fn build<'b>(&mut self) -> CreateEmbed {
+    pub fn build(&mut self) -> CreateEmbed {
         let mode = self.bm.mode();
         let b = &self.bm.0;
         let s = self.s;

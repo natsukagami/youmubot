@@ -152,7 +152,7 @@ fn parse<'a>(
     matches
 }
 
-fn print_info_message<'a>(info: &[(ContestOrProblem, &str)]) -> CreateEmbed {
+fn print_info_message(info: &[(ContestOrProblem, &str)]) -> CreateEmbed {
     let (problems, contests): (Vec<_>, Vec<_>) = info.iter().partition(|(v, _)| match v {
         ContestOrProblem::Problem(_) => true,
         ContestOrProblem::Contest(_, _) => false,

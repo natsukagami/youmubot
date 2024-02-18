@@ -35,7 +35,7 @@ impl CacheHttp for CacheAndHttp {
         Some(&self.0)
     }
     fn http(&self) -> &Http {
-        &*self.1
+        &self.1
     }
 }
 
