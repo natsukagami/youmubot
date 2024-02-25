@@ -1,3 +1,4 @@
+use compose_framework::ComposedFramework;
 use dotenv::var;
 use serenity::{
     framework::standard::{
@@ -10,6 +11,8 @@ use serenity::{
     },
 };
 use youmubot_prelude::*;
+
+mod compose_framework;
 
 struct Handler {
     hooks: Vec<RwLock<Box<dyn Hook>>>,
@@ -92,6 +95,8 @@ async fn main() {
     // Set up base framework
     let fw = setup_framework(&token[..]).await;
 
+    let composed = ComposedFramework::new(vec![Box::new(fw)]);
+
     // Sets up a client
     let mut client = {
         // Attempt to connect and set up a framework
@@ -105,7 +110,7 @@ async fn main() {
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::DIRECT_MESSAGE_REACTIONS;
         Client::builder(token, intents)
-            .framework(fw)
+            .framework(composed)
             .event_handler(handler)
             .await
             .unwrap()
