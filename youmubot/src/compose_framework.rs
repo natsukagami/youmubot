@@ -25,6 +25,11 @@ impl Framework for ComposedFramework {
                 .await
         }
     }
+    async fn init(&mut self, client: &Client) {
+        for f in self.frameworks.iter_mut() {
+            f.init(&client).await
+        }
+    }
 }
 impl ComposedFramework {
     /// Dispatch to all inner frameworks in a loop. Returns a `Pin<Box<Future>>` because rust.

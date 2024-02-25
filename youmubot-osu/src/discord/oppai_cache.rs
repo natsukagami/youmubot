@@ -304,6 +304,7 @@ impl BeatmapContent {
 }
 
 /// A central cache for the beatmaps.
+#[derive(Debug, Clone)]
 pub struct BeatmapCache {
     client: ratelimit::Ratelimit<reqwest::Client>,
     pool: Pool,

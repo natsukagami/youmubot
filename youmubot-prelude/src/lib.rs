@@ -1,3 +1,4 @@
+use announcer::AnnouncerChannels;
 /// Module `prelude` provides a sane set of default imports that can be used inside
 /// a Youmubot source file.
 pub use serenity::prelude::*;
@@ -37,6 +38,20 @@ pub type AppData = Arc<RwLock<TypeMap>>;
 
 /// The HTTP client.
 pub struct HTTPClient;
+
+/// The global context type for app commands
+pub type CmdContext<'a, Env> = poise::Context<'a, Env, anyhow::Error>;
+
+/// The created base environment.
+#[derive(Debug, Clone)]
+pub struct Env {
+    // clients
+    pub http: reqwest::Client,
+    pub sql: youmubot_db_sql::Pool,
+    pub members: Arc<MemberCache>,
+    // databases
+    // pub(crate) announcer_channels: announcer::AnnouncerChannels,
+}
 
 impl TypeMapKey for HTTPClient {
     type Value = reqwest::Client;

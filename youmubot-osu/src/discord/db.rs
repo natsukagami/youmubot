@@ -9,6 +9,7 @@ use serenity::model::id::{ChannelId, UserId};
 use youmubot_prelude::*;
 
 /// Save the user IDs.
+#[derive(Debug, Clone)]
 pub struct OsuSavedUsers {
     pool: Pool,
 }
@@ -60,6 +61,7 @@ impl OsuSavedUsers {
 }
 
 /// Save each channel's last requested beatmap.
+#[derive(Debug, Clone)]
 pub struct OsuLastBeatmap(Pool);
 
 impl TypeMapKey for OsuLastBeatmap {
@@ -99,6 +101,7 @@ impl OsuLastBeatmap {
 }
 
 /// Save each channel's last requested beatmap.
+#[derive(Debug, Clone)]
 pub struct OsuUserBests(Pool);
 
 impl TypeMapKey for OsuUserBests {

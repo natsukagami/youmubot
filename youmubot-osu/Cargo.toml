@@ -20,6 +20,7 @@ rosu-v2 = { git = "https://github.com/natsukagami/rosu-v2", rev = "6f6731cb2f0d2
 time = "0.3"
 serde = { version = "1.0.137", features = ["derive"] }
 serenity = "0.12"
+poise = "0.6"
 zip = "0.6.2"
 rand = "0.8"
 

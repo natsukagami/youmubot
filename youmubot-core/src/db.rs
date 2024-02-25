@@ -5,7 +5,7 @@ use serenity::model::{
     channel::ReactionType,
     id::{MessageId, RoleId, UserId},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use youmubot_db::{GuildMap, DB};
 use youmubot_prelude::*;
 
@@ -55,7 +55,7 @@ pub fn load_role_list(
     let v2 = Roles::load_from_path(path.as_ref());
     let v2 = match v2 {
         Ok(v2) => {
-            map.insert::<Roles>(v2);
+            map.insert::<Roles>(Arc::new(v2));
             return Ok(());
         }
         Err(v2) => v2,

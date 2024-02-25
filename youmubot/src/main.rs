@@ -16,15 +16,43 @@ mod compose_framework;
 
 struct Handler {
     hooks: Vec<RwLock<Box<dyn Hook>>>,
+    ready_hooks: Vec<fn(&Context) -> CommandResult>,
 }
 
 impl Handler {
     fn new() -> Handler {
-        Handler { hooks: vec![] }
+        Handler {
+            hooks: vec![],
+            ready_hooks: vec![],
+        }
     }
 
     fn push_hook<T: Hook + 'static>(&mut self, f: T) {
         self.hooks.push(RwLock::new(Box::new(f)));
+    }
+
+    fn push_ready_hook(&mut self, f: fn(&Context) -> CommandResult) {
+        self.ready_hooks.push(f);
+    }
+}
+
+/// Environment to be passed into the framework
+#[derive(Debug, Clone)]
+struct Env {
+    prelude: youmubot_prelude::Env,
+    #[cfg(feature = "osu")]
+    osu: youmubot_osu::discord::Env,
+}
+
+impl AsRef<youmubot_prelude::Env> for Env {
+    fn as_ref(&self) -> &youmubot_prelude::Env {
+        &self.prelude
+    }
+}
+
+impl AsRef<youmubot_osu::discord::Env> for Env {
+    fn as_ref(&self) -> &youmubot_osu::discord::Env {
+        &self.osu
     }
 }
 
@@ -41,6 +69,10 @@ impl EventHandler for Handler {
             .init(&ctx)
             .await;
         println!("{} is connected!", ready.user.name);
+
+        for f in &self.ready_hooks {
+            f(&ctx).pls_ok();
+        }
     }
 
     async fn message(&self, ctx: Context, message: Message) {
@@ -82,20 +114,105 @@ async fn main() {
     }
 
     let mut handler = Handler::new();
+    #[cfg(feature = "core")]
+    handler.push_ready_hook(youmubot_core::ready_hook);
     // Set up hooks
     #[cfg(feature = "osu")]
-    handler.push_hook(youmubot_osu::discord::hook);
-    #[cfg(feature = "osu")]
-    handler.push_hook(youmubot_osu::discord::dot_osu_hook);
+    {
+        handler.push_hook(youmubot_osu::discord::hook);
+        handler.push_hook(youmubot_osu::discord::dot_osu_hook);
+    }
     #[cfg(feature = "codeforces")]
     handler.push_hook(youmubot_cf::InfoHook);
 
     // Collect the token
     let token = var("TOKEN").expect("Please set TOKEN as the Discord Bot's token to be used.");
+
+    // Data to be put into context
+    let mut data = TypeMap::new();
+
+    // Set up announcer handler
+    let mut announcers = AnnouncerHandler::new();
+
+    // Setup each package starting from the prelude.
+    let env = {
+        let db_path = var("DBPATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|e| {
+                println!("No DBPATH set up ({:?}), using `/data`", e);
+                std::path::PathBuf::from("/data")
+            });
+        let sql_path = var("SQLPATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|e| {
+                let res = db_path.join("youmubot.db");
+                println!("No SQLPATH set up ({:?}), using `{:?}`", e, res);
+                res
+            });
+        let prelude = youmubot_prelude::setup::setup_prelude(&db_path, sql_path, &mut data).await;
+        // Setup core
+        #[cfg(feature = "core")]
+        youmubot_core::setup(&db_path, &mut data).expect("Setup db should succeed");
+        // osu!
+        #[cfg(feature = "osu")]
+        let osu = youmubot_osu::discord::setup(&mut data, prelude.clone(), &mut announcers)
+            .await
+            .expect("osu! is initialized");
+        // codeforces
+        #[cfg(feature = "codeforces")]
+        youmubot_cf::setup(&db_path, &mut data, &mut announcers).await;
+
+        Env {
+            prelude,
+            #[cfg(feature = "osu")]
+            osu,
+        }
+    };
+
+    #[cfg(feature = "core")]
+    println!("Core enabled.");
+    #[cfg(feature = "osu")]
+    println!("osu! enabled.");
+    #[cfg(feature = "codeforces")]
+    println!("codeforces enabled.");
+
     // Set up base framework
     let fw = setup_framework(&token[..]).await;
 
-    let composed = ComposedFramework::new(vec![Box::new(fw)]);
+    // Poise for application commands
+    let poise_fw = poise::Framework::builder()
+        .setup(|_, _, _| Box::pin(async { Ok(env) as Result<_> }))
+        .options(poise::FrameworkOptions {
+            prefix_options: poise::PrefixFrameworkOptions {
+                prefix: None,
+                mention_as_prefix: true,
+                execute_untracked_edits: true,
+                execute_self_messages: false,
+                ignore_thread_creation: true,
+                case_insensitive_commands: true,
+                ..Default::default()
+            },
+            on_error: |err| {
+                Box::pin(async move {
+                    if let poise::FrameworkError::Command { error, ctx, .. } = err {
+                        let reply = format!(
+                            "Command '{}' returned error {:?}",
+                            ctx.invoked_command_name(),
+                            error
+                        );
+                        ctx.reply(&reply).await.pls_ok();
+                        println!("{}", reply)
+                    } else {
+                        eprintln!("Poise error: {:?}", err)
+                    }
+                })
+            },
+            commands: vec![poise_register()],
+            ..Default::default()
+        })
+        .build();
+
+    let composed = ComposedFramework::new(vec![Box::new(fw), Box::new(poise_fw)]);
 
     // Sets up a client
     let mut client = {
@@ -110,60 +227,20 @@ async fn main() {
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::DIRECT_MESSAGE_REACTIONS;
         Client::builder(token, intents)
+            .type_map(data)
             .framework(composed)
             .event_handler(handler)
             .await
             .unwrap()
     };
 
-    // Set up announcer handler
-    let mut announcers = AnnouncerHandler::new(&client);
-
-    // Setup each package starting from the prelude.
-    {
-        let mut data = client.data.write().await;
-        let db_path = var("DBPATH")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|e| {
-                println!("No DBPATH set up ({:?}), using `/data`", e);
-                std::path::PathBuf::from("/data")
-            });
-        let sql_path = var("SQLPATH")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|e| {
-                let res = db_path.join("youmubot.db");
-                println!("No SQLPATH set up ({:?}), using `{:?}`", e, res);
-                res
-            });
-        youmubot_prelude::setup::setup_prelude(&db_path, sql_path, &mut data).await;
-        // Setup core
-        #[cfg(feature = "core")]
-        youmubot_core::setup(&db_path, &client, &mut data).expect("Setup db should succeed");
-        // osu!
-        #[cfg(feature = "osu")]
-        youmubot_osu::discord::setup(&db_path, &mut data, &mut announcers)
-            .await
-            .expect("osu! is initialized");
-        // codeforces
-        #[cfg(feature = "codeforces")]
-        youmubot_cf::setup(&db_path, &mut data, &mut announcers).await;
-    }
-
-    #[cfg(feature = "core")]
-    println!("Core enabled.");
-    #[cfg(feature = "osu")]
-    println!("osu! enabled.");
-    #[cfg(feature = "codeforces")]
-    println!("codeforces enabled.");
-
+    let announcers = announcers.run(&client);
     tokio::spawn(announcers.scan(std::time::Duration::from_secs(300)));
 
     println!("Starting...");
     if let Err(v) = client.start().await {
         panic!("{}", v)
     }
-
-    println!("Hello, world!");
 }
 
 // Sets up a framework for a client
@@ -227,6 +304,18 @@ async fn setup_framework(token: &str) -> StandardFramework {
     #[cfg(feature = "codeforces")]
     let fw = fw.group(&youmubot_cf::CODEFORCES_GROUP);
     fw
+}
+
+// Poise command to register
+#[poise::command(
+    prefix_command,
+    rename = "register",
+    required_permissions = "MANAGE_GUILD"
+)]
+async fn poise_register(ctx: CmdContext<'_, Env>) -> Result<()> {
+    // TODO: make this work for guild owners too
+    poise::builtins::register_application_commands_buttons(ctx).await?;
+    Ok(())
 }
 
 // Hooks!

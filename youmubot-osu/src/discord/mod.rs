@@ -21,6 +21,7 @@ use std::{str::FromStr, sync::Arc};
 use youmubot_prelude::*;
 
 mod announcer;
+pub mod app_commands;
 pub(crate) mod beatmap_cache;
 mod cache;
 mod db;
@@ -43,6 +44,33 @@ impl TypeMapKey for OsuClient {
     type Value = Arc<OsuHttpClient>;
 }
 
+/// The environment for osu! app commands.
+#[derive(Clone)]
+pub struct Env {
+    pub(crate) prelude: youmubot_prelude::Env,
+    // databases
+    pub(crate) saved_users: OsuSavedUsers,
+    pub(crate) last_beatmaps: OsuLastBeatmap,
+    pub(crate) user_bests: OsuUserBests,
+    // clients
+    pub(crate) client: Arc<OsuHttpClient>,
+    pub(crate) oppai: oppai_cache::BeatmapCache,
+    pub(crate) beatmaps: beatmap_cache::BeatmapMetaCache,
+}
+
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<osu::Env>")
+    }
+}
+
+impl TypeMapKey for Env {
+    type Value = Env;
+}
+
+/// The command context for osu! app commands.
+pub(crate) type CmdContext<'a> = youmubot_prelude::CmdContext<'a, Env>;
+
 /// Sets up the osu! command handling section.
 ///
 /// This automatically enables:
@@ -55,50 +83,60 @@ impl TypeMapKey for OsuClient {
 ///  - Hooks. Hooks are completely opt-in.
 ///  
 pub async fn setup(
-    _path: &std::path::Path,
     data: &mut TypeMap,
+    // dependencies
+    prelude: youmubot_prelude::Env,
     announcers: &mut AnnouncerHandler,
-) -> CommandResult {
-    let sql_client = data.get::<SQLClient>().unwrap().clone();
+) -> Result<Env> {
     // Databases
-    data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client.clone()));
-    data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client.clone()));
-    data.insert::<OsuUserBests>(OsuUserBests::new(sql_client.clone()));
+    let saved_users = OsuSavedUsers::new(prelude.sql.clone());
+    let last_beatmaps = OsuLastBeatmap::new(prelude.sql.clone());
+    let user_bests = OsuUserBests::new(prelude.sql.clone());
 
     // API client
-    let http_client = data.get::<HTTPClient>().unwrap().clone();
-    let mk_osu_client = || async {
-        Arc::new(
-            OsuHttpClient::new(
-                std::env::var("OSU_API_CLIENT_ID")
-                    .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
-                    .parse()
-                    .expect("client_id should be u64"),
-                std::env::var("OSU_API_CLIENT_SECRET")
-                    .expect("Please set OSU_API_CLIENT_SECRET as osu! api v2 client secret."),
-            )
-            .await
-            .expect("osu! should be initialized"),
+    let osu_client = Arc::new(
+        OsuHttpClient::new(
+            std::env::var("OSU_API_CLIENT_ID")
+                .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
+                .parse()
+                .expect("client_id should be u64"),
+            std::env::var("OSU_API_CLIENT_SECRET")
+                .expect("Please set OSU_API_CLIENT_SECRET as osu! api v2 client secret."),
         )
-    };
-    let osu_client = mk_osu_client().await;
-    data.insert::<OsuClient>(osu_client.clone());
-    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(
-        http_client.clone(),
-        sql_client.clone(),
-    ));
-    data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
-        osu_client.clone(),
-        sql_client,
-    ));
+        .await
+        .expect("osu! should be initialized"),
+    );
+    let oppai_cache = oppai_cache::BeatmapCache::new(prelude.http.clone(), prelude.sql.clone());
+    let beatmap_cache =
+        beatmap_cache::BeatmapMetaCache::new(osu_client.clone(), prelude.sql.clone());
 
     // Announcer
-    let osu_client = mk_osu_client().await;
     announcers.add(
         announcer::ANNOUNCER_KEY,
-        announcer::Announcer::new(osu_client),
+        announcer::Announcer::new(osu_client.clone()),
     );
-    Ok(())
+
+    // Legacy data
+    data.insert::<OsuLastBeatmap>(last_beatmaps.clone());
+    data.insert::<OsuSavedUsers>(saved_users.clone());
+    data.insert::<OsuUserBests>(user_bests.clone());
+    data.insert::<OsuClient>(osu_client.clone());
+    data.insert::<oppai_cache::BeatmapCache>(oppai_cache.clone());
+    data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache.clone());
+
+    let env = Env {
+        prelude,
+        saved_users,
+        last_beatmaps,
+        user_bests,
+        client: osu_client,
+        oppai: oppai_cache,
+        beatmaps: beatmap_cache,
+    };
+
+    data.insert::<Env>(env.clone());
+
+    Ok(env)
 }
 
 #[group]
