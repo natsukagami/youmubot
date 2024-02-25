@@ -1,4 +1,4 @@
-use crate::{Context, Result};
+use crate::{Context, OkPrint, Result};
 use futures_util::{future::Future, StreamExt as _};
 use serenity::{
     builder::CreateMessage,
@@ -174,7 +174,10 @@ async fn paginate_with_first_message(
     };
 
     for reaction in reactions {
-        reaction.delete_all(&ctx).await?;
+        if let None = reaction.delete_all(&ctx).await.pls_ok() {
+            // probably no permission to delete all reactions, fall back to delete my own.
+            reaction.delete(&ctx).await.pls_ok();
+        }
     }
 
     res
