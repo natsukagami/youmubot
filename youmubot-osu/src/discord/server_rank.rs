@@ -10,6 +10,7 @@ use crate::{
     request::UserID,
 };
 
+use poise::CreateReply;
 use serenity::{
     builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
@@ -88,14 +89,14 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let users = std::sync::Arc::new(users);
     let last_update = last_update.unwrap();
     paginate_reply_fn(
-        move |page: u8, ctx: &Context, m: &mut Message| {
+        move |page: u8, ctx: &Context| {
             const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
             Box::pin(async move {
                 let start = (page as usize) * ITEMS_PER_PAGE;
                 let end = (start + ITEMS_PER_PAGE).min(users.len());
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let total_len = users.len();
                 let users = &users[start..end];
@@ -142,13 +143,11 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
                     last_update.format("<t:%s:R>"),
                 ));
-                m.edit(ctx, EditMessage::new().content(content.to_string()))
-                    .await?;
-                Ok(true)
+                Ok(Some(CreateReply::default().content(content.to_string())))
             })
         },
         ctx,
-        m,
+        m.clone(),
         std::time::Duration::from_secs(60),
     )
     .await?;
@@ -191,9 +190,10 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
 
     let data = ctx.data.read().await;
+    let env = data.get::<crate::discord::Env>().unwrap();
     let member_cache = data.get::<MemberCache>().unwrap();
 
-    let (bm, _) = match super::load_beatmap(ctx, m).await {
+    let (bm, _) = match super::load_beatmap(env, Some(m), m.channel_id).await {
         Some((bm, mods_def)) => {
             let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
             (bm, mods)
@@ -295,25 +295,26 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
     }
 
     if let ScoreListStyle::Grid = style {
-        style
-            .display_scores(
-                scores.into_iter().map(|(_, _, a)| a).collect(),
-                mode,
-                ctx,
-                m,
-            )
-            .await?;
+        crate::discord::display::scores::display_scores(
+            style,
+            scores.into_iter().map(|(_, _, a)| a).collect(),
+            mode,
+            ctx,
+            m.clone(),
+            m.channel_id,
+        )
+        .await?;
         return Ok(());
     }
     let has_lazer_score = scores.iter().any(|(_, _, v)| v.score.is_none());
 
     paginate_reply_fn(
-        move |page: u8, ctx: &Context, m: &mut Message| {
+        move |page: u8, ctx: &Context| {
             const ITEMS_PER_PAGE: usize = 5;
             let start = (page as usize) * ITEMS_PER_PAGE;
             let end = (start + ITEMS_PER_PAGE).min(scores.len());
             if start >= end {
-                return Box::pin(future::ready(Ok(false)));
+                return Box::pin(future::ready(Ok(None)));
             }
             let total_len = scores.len();
             let scores = scores[start..end].to_vec();
@@ -436,12 +437,11 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                     content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
                 }
 
-                m.edit(&ctx, EditMessage::new().content(content.build())).await?;
-                Ok(true)
+                Ok(Some(CreateReply::default().content(content.build())))
             })
         },
         ctx,
-        m,
+        m.clone(),
         std::time::Duration::from_secs(60),
     )
     .await?;

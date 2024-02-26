@@ -134,7 +134,7 @@ pub fn hook<'a>(
                         let mode = l.mode.unwrap_or(b.mode);
                         let bm = super::BeatmapWithMode(*b, mode);
                         crate::discord::cache::save_beatmap(
-                            &*ctx.data.read().await,
+                            ctx.data.read().await.get::<crate::discord::Env>().unwrap(),
                             msg.channel_id,
                             &bm,
                         )
@@ -413,7 +413,8 @@ async fn handle_beatmapset<'a, 'b>(
         beatmaps,
         mode,
         None,
-        reply_to,
+        reply_to.clone(),
+        reply_to.channel_id,
         format!("Beatmapset information for `{}`", link),
     )
     .await

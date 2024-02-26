@@ -1,4 +1,3 @@
-use announcer::AnnouncerChannels;
 /// Module `prelude` provides a sane set of default imports that can be used inside
 /// a Youmubot source file.
 pub use serenity::prelude::*;
@@ -11,6 +10,7 @@ pub mod hook;
 pub mod member_cache;
 pub mod pagination;
 pub mod ratelimit;
+pub mod replyable;
 pub mod setup;
 
 pub use announcer::{Announcer, AnnouncerHandler};

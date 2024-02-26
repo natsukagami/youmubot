@@ -1,6 +1,6 @@
 use crate::db::Roles as DB;
+use poise::CreateReply;
 use serenity::{
-    builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::{
         channel::{Message, ReactionType},
@@ -41,14 +41,14 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
             paginate_reply_fn(
-                |page, ctx, msg| {
+                |page, _| {
                     let roles = roles.clone();
                     Box::pin(async move {
                         let page = page as usize;
                         let start = page * ROLES_PER_PAGE;
                         let end = roles.len().min(start + ROLES_PER_PAGE);
                         if end <= start {
-                            return Ok(false);
+                            return Ok(None);
                         }
                         let roles = &roles[start..end];
                         let nw = roles // name width
@@ -101,13 +101,11 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
                         m.push_line("```");
                         m.push(format!("Page **{}/{}**", page + 1, pages));
 
-                        msg.edit(ctx, EditMessage::new().content(m.to_string()))
-                            .await?;
-                        Ok(true)
+                        Ok(Some(CreateReply::default().content(m.to_string())))
                     })
                 },
                 ctx,
-                m,
+                m.clone(),
                 std::time::Duration::from_secs(60 * 10),
             )
             .await?;

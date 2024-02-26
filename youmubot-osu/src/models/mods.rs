@@ -97,8 +97,16 @@ impl Mods {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ModParseError {
+    #[error("String of odd length is not a mod string")]
+    OddLength,
+    #[error("{0} is not a valid mod")]
+    InvalidMod(String),
+}
+
 impl std::str::FromStr for Mods {
-    type Err = String;
+    type Err = ModParseError;
     fn from_str(mut s: &str) -> Result<Self, Self::Err> {
         let mut res = Self::default();
         // Strip leading +
@@ -134,11 +142,11 @@ impl std::str::FromStr for Mods {
                 "8K" => res |= Mods::KEY8,
                 "9K" => res |= Mods::KEY9,
                 "??" => res |= Mods::UNKNOWN,
-                v => return Err(format!("{} is not a valid mod", v)),
+                v => return Err(ModParseError::InvalidMod(v.to_owned())),
             }
         }
         if !s.is_empty() {
-            Err("String of odd length is not a mod string".to_owned())
+            Err(ModParseError::OddLength)
         } else {
             Ok(res)
         }

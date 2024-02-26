@@ -8,6 +8,7 @@ edition = "2021"
 
 [dependencies]
 serenity = { version = "0.12", features = ["collector"] }
+poise = "0.6"
 rand = "0.8.5"
 serde = { version = "1.0.137", features = ["derive"] }
 chrono = "0.4.19"

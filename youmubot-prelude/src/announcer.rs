@@ -18,7 +18,7 @@ use serenity::{
     prelude::*,
     utils::MessageBuilder,
 };
-use std::{arch::x86_64::_bittestandcomplement, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use youmubot_db::DB;
 
 #[derive(Debug, Clone)]

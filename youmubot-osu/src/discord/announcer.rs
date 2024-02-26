@@ -320,9 +320,13 @@ impl<'a> CollectedScore<'a> {
                     }),
             )
             .await?;
-        save_beatmap(&*ctx.data.read().await, channel, bm)
-            .await
-            .pls_ok();
+        save_beatmap(
+            ctx.data.read().await.get::<crate::discord::Env>().unwrap(),
+            channel,
+            bm,
+        )
+        .await
+        .pls_ok();
         Ok(m)
     }
 }
