@@ -1,3 +1,4 @@
+use serenity::framework::standard::CommandError;
 /// Module `prelude` provides a sane set of default imports that can be used inside
 /// a Youmubot source file.
 pub use serenity::prelude::*;
@@ -40,7 +41,7 @@ pub type AppData = Arc<RwLock<TypeMap>>;
 pub struct HTTPClient;
 
 /// The global context type for app commands
-pub type CmdContext<'a, Env> = poise::Context<'a, Env, anyhow::Error>;
+pub type CmdContext<'a, Env> = poise::Context<'a, Env, CommandError>;
 
 /// The created base environment.
 #[derive(Debug, Clone)]

@@ -8,7 +8,7 @@ use crate::{
 };
 use rand::seq::IteratorRandom;
 use serenity::{
-    all::{ChannelId, Member},
+    all::{ChannelId, Member, Mention},
     builder::{CreateMessage, EditMessage},
     collector,
     framework::standard::{
@@ -329,7 +329,14 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let osu = data.get::<OsuClient>().unwrap();
-    let target = args.single::<serenity::model::id::UserId>()?;
+    let target = match args.single::<Mention>()? {
+        Mention::User(id) => id,
+        m => {
+            msg.reply(&ctx, format!("Expected user_id, got {}", m))
+                .await?;
+            return Ok(());
+        }
+    };
 
     let username = args.quoted().trimmed().single::<String>()?;
     let user: Option<User> = osu

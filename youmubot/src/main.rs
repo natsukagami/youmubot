@@ -2,7 +2,8 @@ use compose_framework::ComposedFramework;
 use dotenv::var;
 use serenity::{
     framework::standard::{
-        macros::hook, BucketBuilder, CommandResult, Configuration, DispatchError, StandardFramework,
+        macros::hook, BucketBuilder, CommandError, CommandResult, Configuration, DispatchError,
+        StandardFramework,
     },
     model::{
         channel::{Channel, Message},
@@ -181,7 +182,7 @@ async fn main() {
 
     // Poise for application commands
     let poise_fw = poise::Framework::builder()
-        .setup(|_, _, _| Box::pin(async { Ok(env) as Result<_> }))
+        .setup(|_, _, _| Box::pin(async { Ok(env) as Result<_, CommandError> }))
         .options(poise::FrameworkOptions {
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: None,
@@ -207,7 +208,7 @@ async fn main() {
                     }
                 })
             },
-            commands: vec![poise_register()],
+            commands: vec![poise_register(), youmubot_osu::discord::app_commands::osu()],
             ..Default::default()
         })
         .build();
@@ -312,7 +313,7 @@ async fn setup_framework(token: &str) -> StandardFramework {
     rename = "register",
     required_permissions = "MANAGE_GUILD"
 )]
-async fn poise_register(ctx: CmdContext<'_, Env>) -> Result<()> {
+async fn poise_register(ctx: CmdContext<'_, Env>) -> CommandResult {
     // TODO: make this work for guild owners too
     poise::builtins::register_application_commands_buttons(ctx).await?;
     Ok(())

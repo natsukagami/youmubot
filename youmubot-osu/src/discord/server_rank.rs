@@ -89,7 +89,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let users = std::sync::Arc::new(users);
     let last_update = last_update.unwrap();
     paginate_reply_fn(
-        move |page: u8, ctx: &Context| {
+        move |page: u8, _| {
             const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
             Box::pin(async move {
