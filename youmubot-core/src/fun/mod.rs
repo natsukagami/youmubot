@@ -7,7 +7,7 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::{channel::Message, id::UserId},
+    model::channel::Message,
     utils::MessageBuilder,
 };
 use youmubot_prelude::*;
@@ -159,7 +159,7 @@ async fn name(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let user_id = if args.is_empty() {
         msg.author.id
     } else {
-        args.single::<UserId>()?
+        args.single::<UserId>()?.0
     };
 
     let user_mention = if user_id == msg.author.id {

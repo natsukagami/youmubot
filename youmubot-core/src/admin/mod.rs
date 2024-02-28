@@ -5,10 +5,7 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::{
-        channel::{Channel, Message},
-        id::UserId,
-    },
+    model::channel::{Channel, Message},
 };
 use soft_ban::{SOFT_BAN_COMMAND, SOFT_BAN_INIT_COMMAND};
 use youmubot_prelude::*;
@@ -69,7 +66,7 @@ async fn clean(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[max_args(2)]
 #[only_in("guilds")]
 async fn ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let user = args.single::<UserId>()?.to_user(&ctx).await?;
+    let user = args.single::<UserId>()?.0.to_user(&ctx).await?;
     let reason = args.single::<String>().map(|v| format!("`{}`", v)).ok();
     let dmds = args.single::<u8>().unwrap_or(0);
 
@@ -105,7 +102,7 @@ async fn ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[num_args(1)]
 #[only_in("guilds")]
 async fn kick(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let user = args.single::<UserId>()?.to_user(&ctx).await?;
+    let user = args.single::<UserId>()?.0.to_user(&ctx).await?;
 
     msg.reply(&ctx, format!("🔫 Kicking user {}.", user.tag()))
         .await?;

@@ -289,7 +289,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let osu = data.get::<OsuClient>().unwrap();
-    let target = args.single::<serenity::model::id::UserId>()?;
+    let target = args.single::<UserId>()?.0;
 
     let username = args.quoted().trimmed().single::<String>()?;
     let user: Option<User> = osu
