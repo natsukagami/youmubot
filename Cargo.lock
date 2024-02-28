@@ -3210,6 +3210,7 @@ dependencies = [
  "futures-util",
  "reqwest",
  "serenity",
+ "thiserror",
  "tokio",
  "youmubot-db",
  "youmubot-db-sql",

@@ -3,10 +3,7 @@ use chrono::offset::Utc;
 use futures_util::{stream, TryStreamExt};
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
-    model::{
-        channel::Message,
-        id::{GuildId, RoleId, UserId},
-    },
+    model::{channel::Message, id},
 };
 use youmubot_prelude::*;
 
@@ -19,7 +16,7 @@ use youmubot_prelude::*;
 #[max_args(2)]
 #[only_in("guilds")]
 pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let user = args.single::<UserId>()?.to_user(&ctx).await?;
+    let user = args.single::<UserId>()?.0.to_user(&ctx).await?;
     let data = ctx.data.read().await;
     let duration = if args.is_empty() {
         None
@@ -81,7 +78,7 @@ pub async fn soft_ban(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
 #[num_args(1)]
 #[only_in("guilds")]
 pub async fn soft_ban_init(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let role_id = args.single::<RoleId>()?;
+    let role_id = args.single::<RoleId>()?.0;
     let data = ctx.data.read().await;
     let guild = msg.guild_id.unwrap().to_partial_guild(&ctx).await?;
     // Check whether the role_id is the one we wanted
@@ -152,10 +149,10 @@ pub async fn watch_soft_bans(cache_http: impl CacheHttp, data: AppData) {
 
 async fn lift_soft_ban_for(
     cache_http: impl CacheHttp,
-    server_id: GuildId,
+    server_id: id::GuildId,
     server_name: &str,
-    ban_role: RoleId,
-    user_id: UserId,
+    ban_role: id::RoleId,
+    user_id: id::UserId,
 ) -> Result<()> {
     let m = server_id.member(&cache_http, user_id).await?;
     println!(
