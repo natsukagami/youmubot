@@ -1,4 +1,5 @@
 pub use duration::Duration;
+pub use ids::*;
 pub use username_arg::UsernameArg;
 
 mod duration {
@@ -181,6 +182,73 @@ mod duration {
     }
 }
 
+mod ids {
+    use serenity::{model::id, utils};
+    use std::str::FromStr;
+
+    use super::ParseError;
+
+    /// An `UserId` parsed the old way.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct UserId(pub id::UserId);
+
+    impl FromStr for UserId {
+        type Err = ParseError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            utils::parse_user_mention(s)
+                .map(UserId)
+                .ok_or(ParseError::InvalidId)
+        }
+    }
+
+    impl AsRef<id::UserId> for UserId {
+        fn as_ref(&self) -> &id::UserId {
+            &self.0
+        }
+    }
+
+    /// An `ChannelId` parsed the old way.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ChannelId(pub id::ChannelId);
+
+    impl FromStr for ChannelId {
+        type Err = ParseError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            utils::parse_channel_mention(s)
+                .map(ChannelId)
+                .ok_or(ParseError::InvalidId)
+        }
+    }
+
+    impl AsRef<id::ChannelId> for ChannelId {
+        fn as_ref(&self) -> &id::ChannelId {
+            &self.0
+        }
+    }
+
+    /// An `RoleId` parsed the old way.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct RoleId(pub id::RoleId);
+
+    impl FromStr for RoleId {
+        type Err = ParseError;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            utils::parse_role_mention(s)
+                .map(RoleId)
+                .ok_or(ParseError::InvalidId)
+        }
+    }
+
+    impl AsRef<id::RoleId> for RoleId {
+        fn as_ref(&self) -> &id::RoleId {
+            &self.0
+        }
+    }
+}
+
 mod username_arg {
     use serenity::model::id::UserId;
     use std::str::FromStr;
@@ -193,8 +261,8 @@ mod username_arg {
     impl FromStr for UsernameArg {
         type Err = String;
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            match s.parse::<UserId>() {
-                Ok(v) => Ok(UsernameArg::Tagged(v)),
+            match s.parse::<super::UserId>() {
+                Ok(v) => Ok(UsernameArg::Tagged(v.0)),
                 Err(_) if !s.is_empty() => Ok(UsernameArg::Raw(s.to_owned())),
                 Err(_) => Err("username arg cannot be empty".to_owned()),
             }
@@ -207,4 +275,10 @@ mod username_arg {
             Self::Tagged(v.into())
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("invalid id format")]
+    InvalidId,
 }
