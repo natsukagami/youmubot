@@ -576,57 +576,58 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     let data = ctx.data.read().await;
     let bm = load_beatmap(ctx, msg).await;
 
-    match bm {
+    let bm = match bm {
+        Some((bm, _)) => bm,
         None => {
             msg.reply(&ctx, "No beatmap queried on this channel.")
                 .await?;
+            return Ok(());
         }
-        Some((bm, mods_def)) => {
-            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
-            let b = &bm.0;
-            let m = bm.1;
-            let style = args
-                .single::<ScoreListStyle>()
-                .unwrap_or(ScoreListStyle::Grid);
-            let username_arg = args.single::<UsernameArg>().ok();
-            let user_id = match username_arg.as_ref() {
-                Some(UsernameArg::Tagged(v)) => Some(*v),
-                None => Some(msg.author.id),
-                _ => None,
-            };
-            let user = to_user_id_query(username_arg, &data, msg).await?;
+    };
 
-            let osu = data.get::<OsuClient>().unwrap();
+    let mods = args.find::<Mods>().ok().unwrap_or_default();
+    let b = &bm.0;
+    let m = bm.1;
+    let style = args
+        .single::<ScoreListStyle>()
+        .unwrap_or(ScoreListStyle::Grid);
+    let username_arg = args.single::<UsernameArg>().ok();
+    let user_id = match username_arg.as_ref() {
+        Some(UsernameArg::Tagged(v)) => Some(*v),
+        None => Some(msg.author.id),
+        _ => None,
+    };
+    let user = to_user_id_query(username_arg, &data, msg).await?;
 
-            let user = osu
-                .user(user, |f| f)
-                .await?
-                .ok_or_else(|| Error::msg("User not found"))?;
-            let mut scores = osu
-                .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
-                .await?
-                .into_iter()
-                .filter(|s| s.mods.contains(mods))
-                .collect::<Vec<_>>();
-            scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
+    let osu = data.get::<OsuClient>().unwrap();
 
-            if scores.is_empty() {
-                msg.reply(&ctx, "No scores found").await?;
-                return Ok(());
-            }
+    let user = osu
+        .user(user, |f| f)
+        .await?
+        .ok_or_else(|| Error::msg("User not found"))?;
+    let mut scores = osu
+        .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
+        .await?
+        .into_iter()
+        .filter(|s| s.mods.contains(mods))
+        .collect::<Vec<_>>();
+    scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
 
-            if let Some(user_id) = user_id {
-                // Save to database
-                data.get::<OsuUserBests>()
-                    .unwrap()
-                    .save(user_id, m, scores.clone())
-                    .await
-                    .pls_ok();
-            }
-
-            style.display_scores(scores, m, ctx, msg).await?;
-        }
+    if scores.is_empty() {
+        msg.reply(&ctx, "No scores found").await?;
+        return Ok(());
     }
+
+    if let Some(user_id) = user_id {
+        // Save to database
+        data.get::<OsuUserBests>()
+            .unwrap()
+            .save(user_id, m, scores.clone())
+            .await
+            .pls_ok();
+    }
+
+    style.display_scores(scores, m, ctx, msg).await?;
 
     Ok(())
 }
