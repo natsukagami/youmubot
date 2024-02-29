@@ -15,7 +15,7 @@ pub mod replyable;
 pub mod setup;
 
 pub use announcer::{Announcer, AnnouncerHandler};
-pub use args::{Duration, UsernameArg};
+pub use args::{ChannelId, Duration, RoleId, UserId, UsernameArg};
 pub use flags::Flags;
 pub use hook::Hook;
 pub use member_cache::MemberCache;

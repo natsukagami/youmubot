@@ -8,14 +8,14 @@ use crate::{
 };
 use rand::seq::IteratorRandom;
 use serenity::{
-    all::{ChannelId, Member, Mention},
+    all::ChannelId,
     builder::{CreateMessage, EditMessage},
     collector,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::channel::Message,
+    model::{channel::Message, id},
     utils::MessageBuilder,
 };
 use std::{str::FromStr, sync::Arc};
@@ -329,14 +329,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let osu = data.get::<OsuClient>().unwrap();
-    let target = match args.single::<Mention>()? {
-        Mention::User(id) => id,
-        m => {
-            msg.reply(&ctx, format!("Expected user_id, got {}", m))
-                .await?;
-            return Ok(());
-        }
-    };
+    let target = args.single::<UserId>()?.0;
 
     let username = args.quoted().trimmed().single::<String>()?;
     let user: Option<User> = osu
@@ -619,61 +612,29 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let env = data.get::<Env>().unwrap();
-    let bm = load_beatmap(&env, Some(msg), msg.channel_id).await;
 
-    match bm {
-        None => {
-            msg.reply(&ctx, "No beatmap queried on this channel.")
-                .await?;
-        }
-        Some((bm, mods_def)) => {
-            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
-            let b = &bm.0;
-            let m = bm.1;
-            let style = args
-                .single::<ScoreListStyle>()
-                .unwrap_or(ScoreListStyle::Grid);
-            let username_arg = args.single::<UsernameArg>().ok();
-            let user_id = match username_arg.as_ref() {
-                Some(UsernameArg::Tagged(v)) => Some(*v),
-                None => Some(msg.author.id),
-                _ => None,
-            };
-            let user = to_user_id_query(username_arg, &env, &msg.author).await?;
+    let mods = args.find::<Mods>().ok();
+    let style = args.single::<ScoreListStyle>().ok();
+    let username_arg = args.single::<UsernameArg>().ok();
+    let (osu_id, member) = match username_arg {
+        Some(UsernameArg::Tagged(user_id)) => (None, Some(user_id)),
+        Some(UsernameArg::Raw(s)) => (Some(s), None),
+        None => (None, None),
+    };
 
-            let osu = data.get::<OsuClient>().unwrap();
-
-            let user = osu
-                .user(user, |f| f)
-                .await?
-                .ok_or_else(|| Error::msg("User not found"))?;
-            let mut scores = osu
-                .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
-                .await?
-                .into_iter()
-                .filter(|s| s.mods.contains(mods))
-                .collect::<Vec<_>>();
-            scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
-
-            if scores.is_empty() {
-                msg.reply(&ctx, "No scores found").await?;
-                return Ok(());
-            }
-
-            if let Some(user_id) = user_id {
-                // Save to database
-                data.get::<OsuUserBests>()
-                    .unwrap()
-                    .save(user_id, m, scores.clone())
-                    .await
-                    .pls_ok();
-            }
-
-            display::scores::display_scores(style, scores, m, ctx, msg.clone(), msg.channel_id)
-                .await?;
-        }
-    }
-
+    check_impl(
+        env,
+        ctx,
+        msg.clone(),
+        msg.channel_id,
+        &msg.author,
+        Some(msg),
+        osu_id,
+        member,
+        mods,
+        style,
+    )
+    .await?;
     Ok(())
 }
 
@@ -685,49 +646,48 @@ pub async fn check_impl(
     sender: &serenity::all::User,
     msg: Option<&Message>,
     osu_id: Option<String>,
-    member: Option<Member>,
+    member: Option<id::UserId>,
     mods: Option<Mods>,
     style: Option<ScoreListStyle>,
 ) -> CommandResult {
     let bm = load_beatmap(&env, msg, channel_id).await;
 
-    match bm {
+    let BeatmapWithMode(b, m) = match bm {
+        Some((bm, _)) => bm,
         None => {
             reply
                 .reply(&ctx, "No beatmap queried on this channel.")
                 .await?;
+            return Ok(());
         }
-        Some((bm, mods_def)) => {
-            let mods = mods.unwrap_or_default();
-            let b = &bm.0;
-            let m = bm.1;
-            let style = style.unwrap_or_default();
-            let username_arg = member
-                .map(|m| UsernameArg::Tagged(m.user.id))
-                .or(osu_id.map(|id| UsernameArg::Raw(id)));
-            let user = to_user_id_query(username_arg, env, sender).await?;
+    };
 
-            let user = env
-                .client
-                .user(user, |f| f)
-                .await?
-                .ok_or_else(|| Error::msg("User not found"))?;
-            let mut scores = env
-                .client
-                .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
-                .await?
-                .into_iter()
-                .filter(|s| s.mods.contains(mods))
-                .collect::<Vec<_>>();
-            scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
+    let mods = mods.unwrap_or_default();
+    let style = style.unwrap_or_default();
+    let username_arg = member
+        .map(|m| UsernameArg::Tagged(m))
+        .or(osu_id.map(|id| UsernameArg::Raw(id)));
+    let user = to_user_id_query(username_arg, env, sender).await?;
 
-            if scores.is_empty() {
-                reply.reply(&ctx, "No scores found").await?;
-                return Ok(());
-            }
-            display::scores::display_scores(style, scores, m, ctx, reply, channel_id).await?;
-        }
+    let user = env
+        .client
+        .user(user, |f| f)
+        .await?
+        .ok_or_else(|| Error::msg("User not found"))?;
+    let mut scores = env
+        .client
+        .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
+        .await?
+        .into_iter()
+        .filter(|s| s.mods.contains(mods))
+        .collect::<Vec<_>>();
+    scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
+
+    if scores.is_empty() {
+        reply.reply(&ctx, "No scores found").await?;
+        return Ok(());
     }
+    display::scores::display_scores(style, scores, m, ctx, reply, channel_id).await?;
 
     Ok(())
 }

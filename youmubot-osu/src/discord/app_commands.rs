@@ -25,7 +25,7 @@ async fn check<T: AsRef<crate::discord::Env> + Sync>(
         ctx.author(),
         None,
         osu_id,
-        member,
+        member.map(|m| m.user.id),
         mods,
         style,
     )
