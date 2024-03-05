@@ -101,7 +101,7 @@ fn table_formatting<const N: usize, S: AsRef<str> + std::fmt::Debug, Ts: AsRef<[
         }
         m.push_line("");
     }
-    m.push_line("```");
+    m.push("```");
     m.build()
 }
 
@@ -183,7 +183,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                                     let trunc_secs = len.floor() as u64;
                                     let minutes = trunc_secs / 60;
                                     let seconds = len - (60 * minutes) as f64;
-                                    format!("{}m{:02.2}s", minutes, seconds)
+                                    format!("{}m{:05.2}s", minutes, seconds)
                                 }
                                 None => "unknown".to_owned(),
                             };
