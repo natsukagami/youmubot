@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n                user_id as \"user_id: i64\",\n                username,\n                id as \"id: i64\",\n                last_update as \"last_update: DateTime\",\n                pp_std, pp_taiko, pp_mania, pp_catch,\n                failures as \"failures: u8\"\n            FROM osu_users",
+  "query": "SELECT\n                user_id as \"user_id: i64\",\n                username,\n                id as \"id: i64\",\n                last_update as \"last_update: DateTime\",\n                pp_std, pp_taiko, pp_mania, pp_catch,\n                failures as \"failures: u8\",\n                std_weighted_map_length\n            FROM osu_users WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -47,10 +47,15 @@
         "name": "failures: u8",
         "ordinal": 8,
         "type_info": "Int64"
+      },
+      {
+        "name": "std_weighted_map_length",
+        "ordinal": 9,
+        "type_info": "Float"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       false,
@@ -61,8 +66,9 @@
       true,
       true,
       true,
-      false
+      false,
+      true
     ]
   },
-  "hash": "5753fe315c9a55154d2d80e6d293dc8abffcf426b845624a42cd0bfefc75fb74"
+  "hash": "b098282e73cc6fd435330f6ecd446b1a1cd2aeb89517b7ee09e7e6f8d6e0cd79"
 }

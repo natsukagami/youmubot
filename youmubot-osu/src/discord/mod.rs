@@ -326,6 +326,7 @@ async fn add_user(
         failures: 0,
         last_update: chrono::Utc::now(),
         pp: [None, None, None, None],
+        std_weighted_map_length: None,
     };
     data.get::<OsuSavedUsers>().unwrap().new_user(u).await?;
     Ok(())

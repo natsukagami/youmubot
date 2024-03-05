@@ -15,6 +15,15 @@ All PRs welcome.
 - `youmubot-core`: Core commands: admin, fun, community
 - `youmubot-osu`: osu!-related commands.
 
+## Working with `sqlx`
+
+### Regenerate compiler information
+
+From within `./youmubot-db-sql` run
+```bash
+cargo sqlx prepare --database-url "sqlite:$(realpath ..)/youmubot.db"
+```
+
 ## License
 
 Basically MIT.

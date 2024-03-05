@@ -14,6 +14,8 @@ pub struct OsuUser {
     pub pp_catch: Option<f64>,
     /// Number of consecutive update failures
     pub failures: u8,
+
+    pub std_weighted_map_length: Option<f64>,
 }
 
 impl OsuUser {
@@ -30,7 +32,8 @@ impl OsuUser {
                 id as "id: i64",
                 last_update as "last_update: DateTime",
                 pp_std, pp_taiko, pp_mania, pp_catch,
-                failures as "failures: u8"
+                failures as "failures: u8",
+                std_weighted_map_length
             FROM osu_users WHERE user_id = ?"#,
             user_id
         )
@@ -52,7 +55,8 @@ impl OsuUser {
                 id as "id: i64",
                 last_update as "last_update: DateTime",
                 pp_std, pp_taiko, pp_mania, pp_catch,
-                failures as "failures: u8"
+                failures as "failures: u8",
+                std_weighted_map_length
             FROM osu_users WHERE id = ?"#,
             osu_id
         )
@@ -74,7 +78,8 @@ impl OsuUser {
                 id as "id: i64",
                 last_update as "last_update: DateTime",
                 pp_std, pp_taiko, pp_mania, pp_catch,
-                failures as "failures: u8"
+                failures as "failures: u8",
+                std_weighted_map_length
             FROM osu_users"#,
         )
         .fetch_many(conn)
@@ -90,8 +95,8 @@ impl OsuUser {
     {
         query!(
             r#"INSERT
-               INTO osu_users(user_id, username, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+               INTO osu_users(user_id, username, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures, std_weighted_map_length)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (user_id) WHERE id = ? DO UPDATE
                SET
                 last_update = excluded.last_update,
@@ -100,7 +105,8 @@ impl OsuUser {
                 pp_taiko = excluded.pp_taiko,
                 pp_mania = excluded.pp_mania,
                 pp_catch = excluded.pp_catch,
-                failures = excluded.failures
+                failures = excluded.failures,
+                std_weighted_map_length = excluded.std_weighted_map_length
             "#,
             self.user_id,
             self.username,
@@ -111,7 +117,10 @@ impl OsuUser {
             self.pp_mania,
             self.pp_catch,
             self.failures,
-            self.user_id).execute(conn).await?;
+            self.std_weighted_map_length,
+
+            self.user_id,
+        ).execute(conn).await?;
         Ok(())
     }
 

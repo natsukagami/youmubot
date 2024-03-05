@@ -36,6 +36,75 @@ impl FromStr for ModeOrTotal {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Align {
+    Left,
+    Middle,
+    Right,
+}
+
+impl Align {
+    fn pad(self, input: &str, len: usize) -> String {
+        match self {
+            Align::Left => format!("{:<len$}", input),
+            Align::Middle => format!("{:^len$}", input),
+            Align::Right => format!("{:>len$}", input),
+        }
+    }
+}
+
+fn table_formatting<const N: usize, S: AsRef<str> + std::fmt::Debug, Ts: AsRef<[[S; N]]>>(
+    headers: &[&'static str; N],
+    padding: &[Align; N],
+    table: Ts,
+) -> String {
+    let table = table.as_ref();
+    // get length for each column
+    let lens = headers
+        .iter()
+        .enumerate()
+        .map(|(i, header)| {
+            table
+                .iter()
+                .map(|r| r.as_ref()[i].as_ref().len())
+                .max()
+                .unwrap_or(0)
+                .max(header.len())
+        })
+        .collect::<Vec<_>>();
+    // paint with message builder
+    let mut m = MessageBuilder::new();
+    m.push_line("```");
+    // headers first
+    for (i, header) in headers.iter().enumerate() {
+        if i > 0 {
+            m.push(" | ");
+        }
+        m.push(padding[i].pad(header, lens[i]));
+    }
+    m.push_line("");
+    // separator
+    m.push_line(format!(
+        "{:-<total$}",
+        "",
+        total = lens.iter().sum::<usize>() + (lens.len() - 1) * 3
+    ));
+    // table itself
+    for row in table {
+        let row = row.as_ref();
+        for (i, cell) in row.iter().enumerate() {
+            if i > 0 {
+                m.push(" | ");
+            }
+            let cell = cell.as_ref();
+            m.push(padding[i].pad(cell, lens[i]));
+        }
+        m.push_line("");
+    }
+    m.push_line("```");
+    m.build()
+}
+
 #[command("ranks")]
 #[description = "See the server's ranks"]
 #[usage = "[mode (Std, Taiko, Catch, Mania) = Std]"]
@@ -89,6 +158,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let last_update = last_update.unwrap();
     paginate_reply_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
+            use Align::*;
             const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
             Box::pin(async move {
@@ -99,51 +169,62 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 }
                 let total_len = users.len();
                 let users = &users[start..end];
-                let username_len = users
-                    .iter()
-                    .map(|(_, (_, u))| u.username.len())
-                    .max()
-                    .unwrap_or(8)
-                    .max(8);
-                let member_len = users
-                    .iter()
-                    .map(|(_, (mem, _))| mem.len())
-                    .max()
-                    .unwrap_or(8)
-                    .max(8);
-                let mut content = MessageBuilder::new();
-                content
-                    .push_line("```")
+                let table = if matches!(mode, ModeOrTotal::Mode(Mode::Std)) {
+                    const HEADERS: [&'static str; 5] =
+                        ["#", "pp", "Map length", "Username", "Member"];
+                    const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
+
+                    let table = users
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (pp, (mem, ou)))| {
+                            let map_length = match ou.std_weighted_map_length {
+                                Some(len) => {
+                                    let trunc_secs = len.floor() as u64;
+                                    let minutes = trunc_secs / 60;
+                                    let seconds = len - (60 * minutes) as f64;
+                                    format!("{}m{:02.2}s", minutes, seconds)
+                                }
+                                None => "unknown".to_owned(),
+                            };
+                            [
+                                format!("{}", 1 + i + start),
+                                format!("{:.2}", pp),
+                                map_length,
+                                ou.username.clone().into_owned(),
+                                mem.clone(),
+                            ]
+                        })
+                        .collect::<Vec<_>>();
+                    table_formatting(&HEADERS, &ALIGNS, table)
+                } else {
+                    const HEADERS: [&'static str; 4] = ["#", "pp", "Username", "Member"];
+                    const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
+
+                    let table = users
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (pp, (mem, ou)))| {
+                            [
+                                format!("{}", 1 + i + start),
+                                format!("{:.2}", pp),
+                                ou.username.clone().into_owned(),
+                                mem.clone(),
+                            ]
+                        })
+                        .collect::<Vec<_>>();
+                    table_formatting(&HEADERS, &ALIGNS, table)
+                };
+                let content = MessageBuilder::new()
+                    .push_line(table)
                     .push_line(format!(
-                        "Rank | pp       | {:uw$} | Member",
-                        "Username",
-                        uw = username_len
+                        "Page **{}**/**{}**. Last updated: {}",
+                        page + 1,
+                        (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
+                        last_update.format("<t:%s:R>"),
                     ))
-                    .push_line(format!(
-                        "------------------{:-<uw$}---{:-<mw$}",
-                        "",
-                        "",
-                        uw = username_len,
-                        mw = member_len
-                    ));
-                for (id, (pp, (member, u))) in users.iter().enumerate() {
-                    content.push_line(format!(
-                        "{:>4} | {:>8.2} | {:uw$} | {}",
-                        format!("#{}", 1 + id + start),
-                        pp,
-                        u.username,
-                        member,
-                        uw = username_len
-                    ));
-                }
-                content.push_line("```").push_line(format!(
-                    "Page **{}**/**{}**. Last updated: {}",
-                    page + 1,
-                    (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
-                    last_update.format("<t:%s:R>"),
-                ));
-                m.edit(ctx, EditMessage::new().content(content.to_string()))
-                    .await?;
+                    .build();
+                m.edit(ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
         },
