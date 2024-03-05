@@ -19,19 +19,20 @@ use serenity::{
 use youmubot_prelude::{stream::FuturesUnordered, *};
 
 #[derive(Debug, Clone, Copy)]
-enum ModeOrTotal {
+enum RankQuery {
     Total,
+    MapLength,
     Mode(Mode),
 }
 
-impl FromStr for ModeOrTotal {
+impl FromStr for RankQuery {
     type Err = <ModeArg as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "total" {
-            Ok(ModeOrTotal::Total)
-        } else {
-            ModeArg::from_str(s).map(|ModeArg(m)| ModeOrTotal::Mode(m))
+        match s {
+            "total" => Ok(RankQuery::Total),
+            "map-length" => Ok(RankQuery::MapLength),
+            _ => ModeArg::from_str(s).map(|ModeArg(m)| RankQuery::Mode(m)),
         }
     }
 }
@@ -113,8 +114,8 @@ fn table_formatting<const N: usize, S: AsRef<str> + std::fmt::Debug, Ts: AsRef<[
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let mode = args
-        .single::<ModeOrTotal>()
-        .unwrap_or(ModeOrTotal::Mode(Mode::Std));
+        .single::<RankQuery>()
+        .unwrap_or(RankQuery::Mode(Mode::Std));
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let osu_users = data
@@ -132,10 +133,11 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m, ou)))
         .filter_map(|(member, osu_user)| {
             let pp = match mode {
-                ModeOrTotal::Total if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) => {
+                RankQuery::Total if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) => {
                     Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
                 }
-                ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
+                RankQuery::MapLength => osu_user.pp.get(Mode::Std as usize).and_then(|v| *v),
+                RankQuery::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
                 _ => None,
             }?;
             Some((pp, member.user.name.clone(), osu_user))
@@ -146,7 +148,15 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .into_iter()
         .map(|(a, b, u)| (a, (b, u.clone())))
         .collect::<Vec<_>>();
-    users.sort_by(|(a, _), (b, _)| (*b).partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    if matches!(mode, RankQuery::MapLength) {
+        users.sort_by(|(_, (_, a)), (_, (_, b))| {
+            (b.std_weighted_map_length)
+                .partial_cmp(&a.std_weighted_map_length)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        users.sort_by(|(a, _), (b, _)| (*b).partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    }
 
     if users.is_empty() {
         m.reply(&ctx, "No saved users in the current server...")
@@ -169,7 +179,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 }
                 let total_len = users.len();
                 let users = &users[start..end];
-                let table = if matches!(mode, ModeOrTotal::Mode(Mode::Std)) {
+                let table = if matches!(mode, RankQuery::Mode(Mode::Std) | RankQuery::MapLength) {
                     const HEADERS: [&'static str; 5] =
                         ["#", "pp", "Map length", "Username", "Member"];
                     const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
