@@ -144,6 +144,7 @@ async fn paginate_with_first_message(
     let mut reaction_collector = {
         // message.await_reactions(ctx).removed(true).build();
         let message_id = message.id;
+        let me = message.author.id;
         collector::collect(&ctx.shard, move |event| {
             match event {
                 serenity::all::Event::ReactionAdd(r) => Some(r.reaction.clone()),
@@ -151,6 +152,7 @@ async fn paginate_with_first_message(
                 _ => None,
             }
             .filter(|r| r.message_id == message_id)
+            .filter(|r| r.user_id.is_some_and(|id| id != me))
         })
     };
     let mut page = 0;
