@@ -12,7 +12,6 @@ use crate::{
 
 use poise::CreateReply;
 use serenity::{
-    builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
     utils::MessageBuilder,
@@ -20,21 +19,91 @@ use serenity::{
 use youmubot_prelude::{stream::FuturesUnordered, *};
 
 #[derive(Debug, Clone, Copy)]
-enum ModeOrTotal {
+enum RankQuery {
     Total,
+    MapLength,
     Mode(Mode),
 }
 
-impl FromStr for ModeOrTotal {
+impl FromStr for RankQuery {
     type Err = <ModeArg as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "total" {
-            Ok(ModeOrTotal::Total)
-        } else {
-            ModeArg::from_str(s).map(|ModeArg(m)| ModeOrTotal::Mode(m))
+        match s {
+            "total" => Ok(RankQuery::Total),
+            "map-length" => Ok(RankQuery::MapLength),
+            _ => ModeArg::from_str(s).map(|ModeArg(m)| RankQuery::Mode(m)),
         }
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Align {
+    Left,
+    Middle,
+    Right,
+}
+
+impl Align {
+    fn pad(self, input: &str, len: usize) -> String {
+        match self {
+            Align::Left => format!("{:<len$}", input),
+            Align::Middle => format!("{:^len$}", input),
+            Align::Right => format!("{:>len$}", input),
+        }
+    }
+}
+
+fn table_formatting<const N: usize, S: AsRef<str> + std::fmt::Debug, Ts: AsRef<[[S; N]]>>(
+    headers: &[&'static str; N],
+    padding: &[Align; N],
+    table: Ts,
+) -> String {
+    let table = table.as_ref();
+    // get length for each column
+    let lens = headers
+        .iter()
+        .enumerate()
+        .map(|(i, header)| {
+            table
+                .iter()
+                .map(|r| r.as_ref()[i].as_ref().len())
+                .max()
+                .unwrap_or(0)
+                .max(header.len())
+        })
+        .collect::<Vec<_>>();
+    // paint with message builder
+    let mut m = MessageBuilder::new();
+    m.push_line("```");
+    // headers first
+    for (i, header) in headers.iter().enumerate() {
+        if i > 0 {
+            m.push(" | ");
+        }
+        m.push(padding[i].pad(header, lens[i]));
+    }
+    m.push_line("");
+    // separator
+    m.push_line(format!(
+        "{:-<total$}",
+        "",
+        total = lens.iter().sum::<usize>() + (lens.len() - 1) * 3
+    ));
+    // table itself
+    for row in table {
+        let row = row.as_ref();
+        for (i, cell) in row.iter().enumerate() {
+            if i > 0 {
+                m.push(" | ");
+            }
+            let cell = cell.as_ref();
+            m.push(padding[i].pad(cell, lens[i]));
+        }
+        m.push_line("");
+    }
+    m.push("```");
+    m.build()
 }
 
 #[command("ranks")]
@@ -45,8 +114,8 @@ impl FromStr for ModeOrTotal {
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let mode = args
-        .single::<ModeOrTotal>()
-        .unwrap_or(ModeOrTotal::Mode(Mode::Std));
+        .single::<RankQuery>()
+        .unwrap_or(RankQuery::Mode(Mode::Std));
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = data.get::<MemberCache>().unwrap();
     let osu_users = data
@@ -64,10 +133,11 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m, ou)))
         .filter_map(|(member, osu_user)| {
             let pp = match mode {
-                ModeOrTotal::Total if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) => {
+                RankQuery::Total if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) => {
                     Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
                 }
-                ModeOrTotal::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
+                RankQuery::MapLength => osu_user.pp.get(Mode::Std as usize).and_then(|v| *v),
+                RankQuery::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
                 _ => None,
             }?;
             Some((pp, member.user.name.clone(), osu_user))
@@ -78,7 +148,15 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .into_iter()
         .map(|(a, b, u)| (a, (b, u.clone())))
         .collect::<Vec<_>>();
-    users.sort_by(|(a, _), (b, _)| (*b).partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    if matches!(mode, RankQuery::MapLength) {
+        users.sort_by(|(_, (_, a)), (_, (_, b))| {
+            (b.std_weighted_map_length)
+                .partial_cmp(&a.std_weighted_map_length)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        users.sort_by(|(a, _), (b, _)| (*b).partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    }
 
     if users.is_empty() {
         m.reply(&ctx, "No saved users in the current server...")
@@ -90,6 +168,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let last_update = last_update.unwrap();
     paginate_reply_fn(
         move |page: u8, _| {
+            use Align::*;
             const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
             Box::pin(async move {
@@ -100,49 +179,61 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 }
                 let total_len = users.len();
                 let users = &users[start..end];
-                let username_len = users
-                    .iter()
-                    .map(|(_, (_, u))| u.username.len())
-                    .max()
-                    .unwrap_or(8)
-                    .max(8);
-                let member_len = users
-                    .iter()
-                    .map(|(_, (mem, _))| mem.len())
-                    .max()
-                    .unwrap_or(8)
-                    .max(8);
-                let mut content = MessageBuilder::new();
-                content
-                    .push_line("```")
+                let table = if matches!(mode, RankQuery::Mode(Mode::Std) | RankQuery::MapLength) {
+                    const HEADERS: [&'static str; 5] =
+                        ["#", "pp", "Map length", "Username", "Member"];
+                    const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
+
+                    let table = users
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (pp, (mem, ou)))| {
+                            let map_length = match ou.std_weighted_map_length {
+                                Some(len) => {
+                                    let trunc_secs = len.floor() as u64;
+                                    let minutes = trunc_secs / 60;
+                                    let seconds = len - (60 * minutes) as f64;
+                                    format!("{}m{:05.2}s", minutes, seconds)
+                                }
+                                None => "unknown".to_owned(),
+                            };
+                            [
+                                format!("{}", 1 + i + start),
+                                format!("{:.2}", pp),
+                                map_length,
+                                ou.username.clone().into_owned(),
+                                mem.clone(),
+                            ]
+                        })
+                        .collect::<Vec<_>>();
+                    table_formatting(&HEADERS, &ALIGNS, table)
+                } else {
+                    const HEADERS: [&'static str; 4] = ["#", "pp", "Username", "Member"];
+                    const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
+
+                    let table = users
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (pp, (mem, ou)))| {
+                            [
+                                format!("{}", 1 + i + start),
+                                format!("{:.2}", pp),
+                                ou.username.clone().into_owned(),
+                                mem.clone(),
+                            ]
+                        })
+                        .collect::<Vec<_>>();
+                    table_formatting(&HEADERS, &ALIGNS, table)
+                };
+                let content = MessageBuilder::new()
+                    .push_line(table)
                     .push_line(format!(
-                        "Rank | pp       | {:uw$} | Member",
-                        "Username",
-                        uw = username_len
+                        "Page **{}**/**{}**. Last updated: {}",
+                        page + 1,
+                        (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
+                        last_update.format("<t:%s:R>"),
                     ))
-                    .push_line(format!(
-                        "------------------{:-<uw$}---{:-<mw$}",
-                        "",
-                        "",
-                        uw = username_len,
-                        mw = member_len
-                    ));
-                for (id, (pp, (member, u))) in users.iter().enumerate() {
-                    content.push_line(format!(
-                        "{:>4} | {:>8.2} | {:uw$} | {}",
-                        format!("#{}", 1 + id + start),
-                        pp,
-                        u.username,
-                        member,
-                        uw = username_len
-                    ));
-                }
-                content.push_line("```").push_line(format!(
-                    "Page **{}**/**{}**. Last updated: {}",
-                    page + 1,
-                    (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
-                    last_update.format("<t:%s:R>"),
-                ));
+                    .build();
                 Ok(Some(CreateReply::default().content(content.to_string())))
             })
         },

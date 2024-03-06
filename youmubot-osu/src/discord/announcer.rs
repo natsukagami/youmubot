@@ -1,4 +1,5 @@
 use super::db::{OsuSavedUsers, OsuUser};
+use super::OsuClient;
 use super::{embeds::score_embed, BeatmapWithMode};
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
@@ -19,6 +20,7 @@ use serenity::{
 };
 use std::{convert::TryInto, sync::Arc};
 use youmubot_prelude::announcer::CacheAndHttp;
+use youmubot_prelude::stream::{FuturesUnordered, TryStreamExt};
 use youmubot_prelude::*;
 
 /// osu! announcer's unique announcer key.
@@ -83,7 +85,12 @@ impl youmubot_prelude::Announcer for Announcer {
                                 .unwrap();
                             osu_user.username = v.into_iter().next().unwrap().username.into();
                             osu_user.last_update = now;
+                            osu_user.std_weighted_map_length =
+                                Self::std_weighted_map_length(&ctx, &osu_user)
+                                    .await
+                                    .pls_ok();
                             let id = osu_user.id;
+                            println!("{:?}", osu_user);
                             ctx.data
                                 .read()
                                 .await
@@ -184,6 +191,31 @@ impl Announcer {
             .map(|(i, v)| ((i + 1) as u8, v))
             .collect();
         Ok(scores)
+    }
+
+    async fn std_weighted_map_length(ctx: &Context, u: &OsuUser) -> Result<f64> {
+        let data = ctx.data.read().await;
+        let client = data.get::<OsuClient>().unwrap().clone();
+        let cache = data.get::<BeatmapMetaCache>().unwrap();
+        let scores = client
+            .user_best(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(100))
+            .await?;
+        scores
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| async move {
+                let beatmap = cache.get_beatmap_default(s.beatmap_id).await?;
+                const SCALING_FACTOR: f64 = 0.975;
+                Ok(beatmap
+                    .difficulty
+                    .apply_mods(s.mods, 0.0 /* dont care */)
+                    .drain_length
+                    .as_secs_f64()
+                    * (SCALING_FACTOR.powi(i as i32)))
+            })
+            .collect::<FuturesUnordered<_>>()
+            .try_fold(0.0, |a, b| future::ready(Ok(a + b)))
+            .await
     }
 }
 

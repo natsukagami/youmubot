@@ -148,6 +148,7 @@ pub struct OsuUser {
     pub id: u64,
     pub last_update: DateTime<Utc>,
     pub pp: [Option<f64>; 4],
+    pub std_weighted_map_length: Option<f64>,
     /// More than 5 failures => gone
     pub failures: u8,
 }
@@ -163,6 +164,7 @@ impl From<OsuUser> for model::OsuUser {
             pp_taiko: u.pp[Mode::Taiko as usize],
             pp_catch: u.pp[Mode::Catch as usize],
             pp_mania: u.pp[Mode::Mania as usize],
+            std_weighted_map_length: u.std_weighted_map_length,
             failures: u.failures,
         }
     }
@@ -181,6 +183,7 @@ impl From<model::OsuUser> for OsuUser {
                 Mode::Catch => u.pp_catch,
                 Mode::Mania => u.pp_mania,
             }),
+            std_weighted_map_length: u.std_weighted_map_length,
             failures: u.failures,
         }
     }
