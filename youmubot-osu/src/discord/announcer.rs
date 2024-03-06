@@ -1,5 +1,5 @@
 use super::db::{OsuSavedUsers, OsuUser};
-use super::OsuClient;
+use super::{calculate_weighted_map_length, OsuClient};
 use super::{embeds::score_embed, BeatmapWithMode};
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
@@ -200,22 +200,7 @@ impl Announcer {
         let scores = client
             .user_best(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(100))
             .await?;
-        scores
-            .into_iter()
-            .enumerate()
-            .map(|(i, s)| async move {
-                let beatmap = cache.get_beatmap_default(s.beatmap_id).await?;
-                const SCALING_FACTOR: f64 = 0.975;
-                Ok(beatmap
-                    .difficulty
-                    .apply_mods(s.mods, 0.0 /* dont care */)
-                    .drain_length
-                    .as_secs_f64()
-                    * (SCALING_FACTOR.powi(i as i32)))
-            })
-            .collect::<FuturesUnordered<_>>()
-            .try_fold(0.0, |a, b| future::ready(Ok(a + b)))
-            .await
+        calculate_weighted_map_length(&scores, cache, Mode::Std).await
     }
 }
 

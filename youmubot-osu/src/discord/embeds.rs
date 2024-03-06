@@ -423,6 +423,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
 
 pub(crate) fn user_embed(
     u: User,
+    map_length: f64,
     best: Option<(Score, BeatmapWithMode, BeatmapInfo)>,
 ) -> CreateEmbed {
     CreateEmbed::new()
@@ -468,6 +469,19 @@ pub(crate) fn user_embed(
                 grouped_number(u.count_s),
                 grouped_number(u.count_a)
             ),
+            false,
+        )
+        .field(
+            "Weighted Map Length",
+            {
+                let secs = map_length.floor() as u64;
+                let minutes = secs / 60;
+                let seconds = map_length - (60 * minutes) as f64;
+                format!(
+                    "**{}** minutes **{:05.2}** seconds (**{:.2}**s)",
+                    minutes, seconds, map_length
+                )
+            },
             false,
         )
         .field(

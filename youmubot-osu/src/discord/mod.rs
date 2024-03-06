@@ -2,7 +2,7 @@ use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
     discord::display::ScoreListStyle,
     discord::oppai_cache::{BeatmapCache, BeatmapInfo},
-    models::{self, Beatmap, Mode, Mods, User},
+    models::{self, Beatmap, Mode, Mods, Score, User},
     request::{BeatmapRequestKind, UserID},
     Client as OsuHttpClient,
 };
@@ -18,7 +18,7 @@ use serenity::{
     utils::MessageBuilder,
 };
 use std::{str::FromStr, sync::Arc};
-use youmubot_prelude::*;
+use youmubot_prelude::{stream::FuturesUnordered, *};
 
 mod announcer;
 pub(crate) mod beatmap_cache;
@@ -728,12 +728,11 @@ async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> C
     let oppai = data.get::<BeatmapCache>().unwrap();
     match user {
         Some(u) => {
-            let best = match osu
-                .user_best(UserID::ID(u.id), |f| f.limit(1).mode(mode))
-                .await?
-                .into_iter()
-                .next()
-            {
+            let bests = osu
+                .user_best(UserID::ID(u.id), |f| f.limit(100).mode(mode))
+                .await?;
+            let map_length = calculate_weighted_map_length(&bests, cache, mode).await?;
+            let best = match bests.into_iter().next() {
                 Some(m) => {
                     let beatmap = cache.get_beatmap(m.beatmap_id, mode).await?;
                     let info = oppai
@@ -752,7 +751,7 @@ async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> C
                             "{}: here is the user that you requested",
                             msg.author
                         ))
-                        .embed(user_embed(u, best)),
+                        .embed(user_embed(u, map_length, best)),
                 )
                 .await?;
         }
@@ -761,4 +760,27 @@ async fn get_user(ctx: &Context, msg: &Message, mut args: Args, mode: Mode) -> C
         }
     };
     Ok(())
+}
+
+pub(in crate::discord) async fn calculate_weighted_map_length(
+    from_scores: impl IntoIterator<Item = &Score>,
+    cache: &BeatmapMetaCache,
+    mode: Mode,
+) -> Result<f64> {
+    from_scores
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| async move {
+            let beatmap = cache.get_beatmap(s.beatmap_id, mode).await?;
+            const SCALING_FACTOR: f64 = 0.975;
+            Ok(beatmap
+                .difficulty
+                .apply_mods(s.mods, 0.0 /* dont care */)
+                .drain_length
+                .as_secs_f64()
+                * (SCALING_FACTOR.powi(i as i32)))
+        })
+        .collect::<FuturesUnordered<_>>()
+        .try_fold(0.0, |a, b| future::ready(Ok(a + b)))
+        .await
 }
