@@ -8,9 +8,16 @@ use youmubot_prelude::*;
 
 /// BeatmapMetaCache intercepts beatmap-by-id requests and caches them for later recalling.
 /// Does not cache non-Ranked beatmaps.
+#[derive(Clone)]
 pub struct BeatmapMetaCache {
     client: Arc<Client>,
     pool: Pool,
+}
+
+impl std::fmt::Debug for BeatmapMetaCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<BeatmapMetaCache>")
+    }
 }
 
 impl TypeMapKey for BeatmapMetaCache {

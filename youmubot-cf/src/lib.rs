@@ -1,4 +1,5 @@
 use codeforces::Contest;
+use poise::CreateReply;
 use serenity::{
     builder::{CreateMessage, EditMessage},
     framework::standard::{
@@ -173,14 +174,14 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
     let last_updated = ranks.iter().map(|(_, cfu)| cfu.last_update).min().unwrap();
 
     paginate_reply_fn(
-        move |page, ctx, msg| {
+        move |page, _| {
             let ranks = ranks.clone();
             Box::pin(async move {
                 let page = page as usize;
                 let start = ITEMS_PER_PAGE * page;
                 let end = ranks.len().min(start + ITEMS_PER_PAGE);
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let ranks = &ranks[start..end];
 
@@ -233,12 +234,11 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                     last_updated.to_rfc2822()
                 ));
 
-                msg.edit(ctx, EditMessage::new().content(m.build())).await?;
-                Ok(true)
+                Ok(Some(CreateReply::default().content(m.build())))
             })
         },
         ctx,
-        m,
+        m.clone(),
         std::time::Duration::from_secs(60),
     )
     .await?;
@@ -328,7 +328,7 @@ pub(crate) async fn contest_rank_table(
     let ranks = Arc::new(ranks);
 
     paginate_reply_fn(
-        move |page, ctx, msg| {
+        move |page, ctx| {
             let contest = contest.clone();
             let problems = problems.clone();
             let ranks = ranks.clone();
@@ -337,7 +337,7 @@ pub(crate) async fn contest_rank_table(
                 let start = page * ITEMS_PER_PAGE;
                 let end = ranks.len().min(start + ITEMS_PER_PAGE);
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let ranks = &ranks[start..end];
                 let hw = ranks
@@ -412,12 +412,11 @@ pub(crate) async fn contest_rank_table(
                     .push_line(contest.url())
                     .push_codeblock(table.build(), None)
                     .push_line(format!("Page **{}/{}**", page + 1, total_pages));
-                msg.edit(ctx, EditMessage::new().content(m.build())).await?;
-                Ok(true)
+                Ok(Some(CreateReply::default().content(m.build())))
             })
         },
         ctx,
-        reply_to,
+        reply_to.clone(),
         Duration::from_secs(60),
     )
     .await

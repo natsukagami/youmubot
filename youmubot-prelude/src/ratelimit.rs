@@ -7,6 +7,7 @@ use flume::{bounded as channel, Receiver, Sender};
 use std::ops::Deref;
 
 /// Holds the underlying `T` in a rate-limited way.
+#[derive(Debug, Clone)]
 pub struct Ratelimit<T> {
     inner: T,
     recv: Receiver<()>,

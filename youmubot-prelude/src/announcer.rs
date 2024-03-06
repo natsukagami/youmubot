@@ -28,6 +28,10 @@ impl CacheAndHttp {
     pub fn from_client(client: &Client) -> Self {
         Self(client.cache.clone(), client.http.clone())
     }
+
+    pub fn from_context(context: &Context) -> Self {
+        Self(context.cache.clone(), context.http.clone())
+    }
 }
 
 impl CacheHttp for CacheAndHttp {
@@ -94,23 +98,14 @@ impl MemberToChannels {
 ///
 /// This struct manages the list of all Announcers, firing them in a certain interval.
 pub struct AnnouncerHandler {
-    cache_http: CacheAndHttp,
-    data: AppData,
     announcers: HashMap<&'static str, RwLock<Box<dyn Announcer + Send + Sync>>>,
-}
-
-// Querying for the AnnouncerHandler in the internal data returns a vec of keys.
-impl TypeMapKey for AnnouncerHandler {
-    type Value = Vec<&'static str>;
 }
 
 /// Announcer-managing related.
 impl AnnouncerHandler {
     /// Create a new instance of the handler.
-    pub fn new(client: &serenity::Client) -> Self {
+    pub fn new() -> Self {
         Self {
-            cache_http: CacheAndHttp(client.cache.clone(), client.http.clone()),
-            data: client.data.clone(),
             announcers: HashMap::new(),
         }
     }
@@ -136,10 +131,30 @@ impl AnnouncerHandler {
             self
         }
     }
+
+    pub fn run(self, client: &Client) -> AnnouncerRunner {
+        let runner = AnnouncerRunner {
+            cache_http: CacheAndHttp::from_client(client),
+            data: client.data.clone(),
+            announcers: self.announcers,
+        };
+        runner
+    }
+}
+
+pub struct AnnouncerRunner {
+    cache_http: CacheAndHttp,
+    data: AppData,
+    announcers: HashMap<&'static str, RwLock<Box<dyn Announcer + Send + Sync>>>,
+}
+
+// Querying for the AnnouncerRunner in the internal data returns a vec of keys.
+impl TypeMapKey for AnnouncerRunner {
+    type Value = Vec<&'static str>;
 }
 
 /// Execution-related.
-impl AnnouncerHandler {
+impl AnnouncerRunner {
     /// Collect the list of guilds and their respective channels, by the key of the announcer.
     async fn get_guilds(data: &AppData, key: &'static str) -> Result<Vec<(GuildId, ChannelId)>> {
         let data = AnnouncerChannels::open(&*data.read().await)
@@ -214,7 +229,7 @@ pub async fn list_announcers(ctx: &Context, m: &Message, _: Args) -> CommandResu
     let guild_id = m.guild_id.unwrap();
     let data = &*ctx.data.read().await;
     let announcers = AnnouncerChannels::open(data);
-    let channels = data.get::<AnnouncerHandler>().unwrap();
+    let channels = data.get::<AnnouncerRunner>().unwrap();
     let channels = channels
         .iter()
         .filter_map(|&key| {
@@ -249,7 +264,7 @@ pub async fn list_announcers(ctx: &Context, m: &Message, _: Args) -> CommandResu
 pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let key = args.single::<String>()?;
-    let keys = data.get::<AnnouncerHandler>().unwrap();
+    let keys = data.get::<AnnouncerRunner>().unwrap();
     if !keys.contains(&&key[..]) {
         m.reply(
             &ctx,
@@ -296,7 +311,7 @@ pub async fn register_announcer(ctx: &Context, m: &Message, mut args: Args) -> C
 pub async fn remove_announcer(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let key = args.single::<String>()?;
-    let keys = data.get::<AnnouncerHandler>().unwrap();
+    let keys = data.get::<AnnouncerRunner>().unwrap();
     if !keys.contains(&key.as_str()) {
         m.reply(
             &ctx,

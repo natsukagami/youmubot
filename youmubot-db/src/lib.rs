@@ -4,19 +4,20 @@ use serenity::{
     model::id::GuildId,
     prelude::{TypeMap, TypeMapKey},
 };
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 /// GuildMap defines the guild-map type.
 /// It is basically a HashMap from a GuildId to a data structure.
 pub type GuildMap<V> = HashMap<GuildId, V>;
 /// The generic DB type we will be using.
-pub struct DB<T>(std::marker::PhantomData<T>);
+#[derive(Debug, Clone)]
+pub struct DB<T>(pub Arc<Database<T>>);
 
 /// A short type abbreviation for a FileDatabase.
 type Database<T> = FileDatabase<T, Yaml>;
 
 impl<T: std::any::Any + Send + Sync> TypeMapKey for DB<T> {
-    type Value = Database<T>;
+    type Value = Arc<Database<T>>;
 }
 
 impl<T: std::any::Any + Default + Send + Sync + Clone + Serialize + std::fmt::Debug> DB<T>
@@ -29,15 +30,15 @@ where
     }
 
     /// Insert into a ShareMap.
-    pub fn insert_into(data: &mut TypeMap, path: impl AsRef<Path>) -> Result<(), DBError> {
-        let db = Database::<T>::load_from_path_or_default(path)?;
-        data.insert::<DB<T>>(db);
-        Ok(())
+    pub fn insert_into(data: &mut TypeMap, path: impl AsRef<Path>) -> Result<Self, DBError> {
+        let db = Arc::new(Database::<T>::load_from_path_or_default(path)?);
+        data.insert::<DB<T>>(db.clone());
+        Ok(Self(db))
     }
 
     /// Open a previously inserted DB.
     pub fn open(data: &TypeMap) -> DBWriteGuard<T> {
-        data.get::<Self>().expect("DB initialized").into()
+        data.get::<Self>().expect("DB initialized").as_ref().into()
     }
 }
 

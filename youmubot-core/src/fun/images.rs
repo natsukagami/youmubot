@@ -1,5 +1,5 @@
+use poise::CreateReply;
 use serde::Deserialize;
-use serenity::builder::EditMessage;
 use serenity::framework::standard::CommandError as Error;
 use serenity::{
     framework::standard::{
@@ -66,30 +66,24 @@ async fn message_command(
     }
     let images = std::sync::Arc::new(images);
     paginate_reply_fn(
-        move |page, ctx, msg: &mut Message| {
+        move |page, _| {
             let images = images.clone();
             Box::pin(async move {
                 let page = page as usize;
                 if page >= images.len() {
-                    Ok(false)
+                    Ok(None)
                 } else {
-                    msg.edit(
-                        ctx,
-                        EditMessage::new().content(format!(
-                            "[🖼️  **{}/{}**] Here's the image you requested!\n\n{}",
-                            page + 1,
-                            images.len(),
-                            images[page]
-                        )),
-                    )
-                    .await
-                    .map(|_| true)
-                    .map_err(|e| e.into())
+                    Ok(Some(CreateReply::default().content(format!(
+                        "[🖼️  **{}/{}**] Here's the image you requested!\n\n{}",
+                        page + 1,
+                        images.len(),
+                        images[page]
+                    ))))
                 }
             })
         },
         ctx,
-        msg,
+        msg.clone(),
         std::time::Duration::from_secs(120),
     )
     .await?;

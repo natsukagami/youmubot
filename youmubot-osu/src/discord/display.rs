@@ -1,47 +1,26 @@
 pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
-mod scores {
+pub(in crate::discord) mod scores {
     use crate::models::{Mode, Score};
-    use serenity::{framework::standard::CommandResult, model::channel::Message};
-    use youmubot_prelude::*;
+    use serenity::{all::ChannelId, framework::standard::CommandResult};
+    use youmubot_prelude::{replyable::Replyable, *};
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     /// The style for the scores list to be displayed.
-    pub enum ScoreListStyle {
-        Table,
-        Grid,
-    }
+    pub type ScoreListStyle = crate::discord::args::ScoreDisplay;
 
-    impl Default for ScoreListStyle {
-        fn default() -> Self {
-            Self::Table
-        }
-    }
-
-    impl std::str::FromStr for ScoreListStyle {
-        type Err = Error;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            match s {
-                "--table" => Ok(Self::Table),
-                "--grid" => Ok(Self::Grid),
-                _ => Err(Error::msg("unknown value")),
-            }
-        }
-    }
-
-    impl ScoreListStyle {
-        pub async fn display_scores<'a>(
-            self,
-            scores: Vec<Score>,
-            mode: Mode,
-            ctx: &'a Context,
-            m: &'a Message,
-        ) -> CommandResult {
-            match self {
-                ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
-                ScoreListStyle::Grid => grid::display_scores_grid(scores, mode, ctx, m).await,
+    pub async fn display_scores<'a>(
+        style: ScoreListStyle,
+        scores: Vec<Score>,
+        mode: Mode,
+        ctx: &'a Context,
+        m: impl Replyable,
+        channel_id: ChannelId,
+    ) -> CommandResult {
+        match style {
+            ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
+            ScoreListStyle::Grid => {
+                grid::display_scores_grid(scores, mode, ctx, m, channel_id).await
             }
         }
     }
@@ -51,15 +30,18 @@ mod scores {
             cache::save_beatmap, BeatmapCache, BeatmapMetaCache, BeatmapWithMode,
         };
         use crate::models::{Mode, Score};
-        use serenity::builder::EditMessage;
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use poise::CreateReply;
+        use serenity::all::ChannelId;
+        use serenity::framework::standard::CommandResult;
+        use youmubot_prelude::replyable::Replyable;
         use youmubot_prelude::*;
 
         pub async fn display_scores_grid<'a>(
             scores: Vec<Score>,
             mode: Mode,
             ctx: &'a Context,
-            m: &'a Message,
+            m: impl Replyable,
+            channel_id: ChannelId,
         ) -> CommandResult {
             if scores.is_empty() {
                 m.reply(&ctx, "No plays found").await?;
@@ -67,7 +49,11 @@ mod scores {
             }
 
             paginate_reply(
-                Paginate { scores, mode },
+                Paginate {
+                    channel_id,
+                    scores,
+                    mode,
+                },
                 ctx,
                 m,
                 std::time::Duration::from_secs(60),
@@ -77,13 +63,14 @@ mod scores {
         }
 
         pub struct Paginate {
+            channel_id: ChannelId,
             scores: Vec<Score>,
             mode: Mode,
         }
 
         #[async_trait]
         impl pagination::Paginate for Paginate {
-            async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+            async fn render(&mut self, page: u8, ctx: &Context) -> Result<Option<CreateReply>> {
                 let data = ctx.data.read().await;
                 let client = data.get::<crate::discord::OsuClient>().unwrap();
                 let osu = data.get::<BeatmapMetaCache>().unwrap();
@@ -91,7 +78,6 @@ mod scores {
                 let page = page as usize;
                 let score = &self.scores[page];
 
-                let hourglass = msg.react(ctx, '⌛').await?;
                 let mode = self.mode;
                 let beatmap = osu.get_beatmap(score.beatmap_id, mode).await?;
                 let content = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
@@ -101,20 +87,18 @@ mod scores {
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
 
-                msg.edit(
-                    ctx,
-                    EditMessage::new().embed({
-                        crate::discord::embeds::score_embed(score, &bm, &content, &user)
-                            .footer(format!("Page {}/{}", page + 1, self.scores.len()))
-                            .build()
-                    }),
+                let edit = CreateReply::default().embed({
+                    crate::discord::embeds::score_embed(score, &bm, &content, &user)
+                        .footer(format!("Page {}/{}", page + 1, self.scores.len()))
+                        .build()
+                });
+                save_beatmap(
+                    ctx.data.read().await.get::<crate::discord::Env>().unwrap(),
+                    self.channel_id,
+                    &bm,
                 )
                 .await?;
-                save_beatmap(&*ctx.data.read().await, msg.channel_id, &bm).await?;
-
-                // End
-                hourglass.delete(ctx).await?;
-                Ok(true)
+                Ok(Some(edit))
             }
 
             fn len(&self) -> Option<usize> {
@@ -129,15 +113,16 @@ mod scores {
         use crate::discord::oppai_cache::Accuracy;
         use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
         use crate::models::{Mode, Score};
-        use serenity::builder::EditMessage;
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use poise::CreateReply;
+        use serenity::framework::standard::CommandResult;
+        use youmubot_prelude::replyable::Replyable;
         use youmubot_prelude::*;
 
         pub async fn display_scores_table<'a>(
             scores: Vec<Score>,
             mode: Mode,
             ctx: &'a Context,
-            m: &'a Message,
+            m: impl Replyable,
         ) -> CommandResult {
             if scores.is_empty() {
                 m.reply(&ctx, "No plays found").await?;
@@ -169,7 +154,7 @@ mod scores {
 
         #[async_trait]
         impl pagination::Paginate for Paginate {
-            async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+            async fn render(&mut self, page: u8, ctx: &Context) -> Result<Option<CreateReply>> {
                 let data = ctx.data.read().await;
                 let osu = data.get::<BeatmapMetaCache>().unwrap();
                 let beatmap_cache = data.get::<BeatmapCache>().unwrap();
@@ -177,10 +162,9 @@ mod scores {
                 let start = page * ITEMS_PER_PAGE;
                 let end = self.scores.len().min(start + ITEMS_PER_PAGE);
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
 
-                let hourglass = msg.react(ctx, '⌛').await?;
                 let plays = &self.scores[start..end];
                 let mode = self.mode;
                 let beatmaps = plays
@@ -330,10 +314,7 @@ mod scores {
                     self.total_pages()
                 ));
                 m.push_line("[?] means pp was predicted by oppai-rs.");
-                msg.edit(ctx, EditMessage::new().content(m.to_string()))
-                    .await?;
-                hourglass.delete(ctx).await?;
-                Ok(true)
+                Ok(Some(CreateReply::default().content(m.to_string())))
             }
 
             fn len(&self) -> Option<usize> {
@@ -350,13 +331,14 @@ mod beatmapset {
         },
         models::{Beatmap, Mode, Mods},
     };
+    use poise::CreateReply;
     use serenity::{
-        all::Reaction,
-        builder::{CreateEmbedFooter, EditMessage},
-        model::channel::Message,
+        all::{ChannelId, Reaction},
+        builder::CreateEmbedFooter,
         model::channel::ReactionType,
     };
     use youmubot_prelude::*;
+    use youmubot_prelude::{pagination::PageUpdate, replyable::Replyable};
 
     const SHOW_ALL_EMOTE: &str = "🗒️";
 
@@ -365,16 +347,18 @@ mod beatmapset {
         beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
         mods: Option<Mods>,
-        reply_to: &Message,
+        reply_to: impl Replyable + Send + 'static,
+        channel_id: ChannelId,
         message: impl AsRef<str>,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let mods = mods.unwrap_or(Mods::NOMOD);
 
         if beatmapset.is_empty() {
-            return Ok(false);
+            return Ok(());
         }
 
         let p = Paginate {
+            channel_id,
             infos: vec![None; beatmapset.len()],
             maps: beatmapset,
             mode,
@@ -383,16 +367,17 @@ mod beatmapset {
         };
 
         let ctx = ctx.clone();
-        let reply_to = reply_to.clone();
+        // let reply_to = reply_to.clone();
         spawn_future(async move {
-            pagination::paginate_reply(p, &ctx, &reply_to, std::time::Duration::from_secs(60))
+            pagination::paginate_reply(p, &ctx, reply_to, std::time::Duration::from_secs(60))
                 .await
                 .pls_ok();
         });
-        Ok(true)
+        Ok(())
     }
 
     struct Paginate {
+        channel_id: ChannelId,
         maps: Vec<Beatmap>,
         infos: Vec<Option<BeatmapInfoWithPP>>,
         mode: Option<Mode>,
@@ -417,26 +402,15 @@ mod beatmapset {
             Some(self.maps.len())
         }
 
-        async fn render(
-            &mut self,
-            page: u8,
-            ctx: &Context,
-            m: &mut serenity::model::channel::Message,
-        ) -> Result<bool> {
+        async fn render(&mut self, page: u8, ctx: &Context) -> Result<Option<CreateReply>> {
             let page = page as usize;
             if page == self.maps.len() {
-                m.edit(
-                    ctx,
-                    EditMessage::new().embed(crate::discord::embeds::beatmapset_embed(
-                        &self.maps[..],
-                        self.mode,
-                    )),
-                )
-                .await?;
-                return Ok(true);
+                return Ok(Some(CreateReply::default().embed(
+                    crate::discord::embeds::beatmapset_embed(&self.maps[..], self.mode),
+                )));
             }
             if page > self.maps.len() {
-                return Ok(false);
+                return Ok(None);
             }
 
             let map = &self.maps[page];
@@ -448,8 +422,7 @@ mod beatmapset {
                     info
                 }
             };
-            m.edit(ctx,
-                EditMessage::new().content(self.message.as_str()).embed(
+            let edit = CreateReply::default().content(self.message.as_str()).embed(
                     crate::discord::embeds::beatmap_embed(
                         map,
                         self.mode.unwrap_or(map.mode),
@@ -464,47 +437,46 @@ mod beatmapset {
                             SHOW_ALL_EMOTE,
                         ))
                     })
-                )
-            )
-            .await?;
+                );
             save_beatmap(
-                &*ctx.data.read().await,
-                m.channel_id,
+                ctx.data.read().await.get::<crate::discord::Env>().unwrap(),
+                self.channel_id,
                 &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),
             )
             .await
             .pls_ok();
 
-            Ok(true)
+            Ok(Some(edit))
         }
 
-        async fn prerender(
-            &mut self,
-            ctx: &Context,
-            m: &mut serenity::model::channel::Message,
-        ) -> Result<()> {
-            m.react(&ctx, SHOW_ALL_EMOTE.parse::<ReactionType>().unwrap())
-                .await?;
-            Ok(())
+        async fn prerender(&mut self, ctx: &Context) -> Result<PageUpdate> {
+            // m.react(&ctx, SHOW_ALL_EMOTE.parse::<ReactionType>().unwrap())
+            //     .await?;
+            Ok(PageUpdate {
+                react: vec![SHOW_ALL_EMOTE.parse::<ReactionType>().unwrap()],
+                ..Default::default()
+            })
         }
 
         async fn handle_reaction(
             &mut self,
             page: u8,
             ctx: &Context,
-            message: &mut serenity::model::channel::Message,
             reaction: &Reaction,
-        ) -> Result<Option<u8>> {
+        ) -> Result<PageUpdate> {
             // Render the old style.
             if let ReactionType::Unicode(s) = &reaction.emoji {
                 if s == SHOW_ALL_EMOTE {
-                    self.render(self.maps.len() as u8, ctx, message).await?;
-                    return Ok(Some(self.maps.len() as u8));
+                    let message = self.render(self.maps.len() as u8, ctx).await?;
+                    let update = PageUpdate {
+                        message,
+                        page: Some(self.maps.len() as u8),
+                        ..Default::default()
+                    };
+                    return Ok(update);
                 }
             }
-            pagination::handle_pagination_reaction(page, self, ctx, message, reaction)
-                .await
-                .map(Some)
+            pagination::handle_pagination_reaction(page, self, ctx, reaction).await
         }
     }
 }
