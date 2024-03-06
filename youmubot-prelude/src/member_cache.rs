@@ -1,3 +1,4 @@
+use anyhow::bail;
 use chrono::{DateTime, Utc};
 use serenity::model::{
     guild::Member,
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 const VALID_CACHE_SECONDS: i64 = 15 * 60; // 15 minutes
+const INVALID_CACHE_SECONDS: i64 = 2 * 60; // 2 minutes
 
 type Map<K, V> = Mutex<HashMap<K, V>>;
 
@@ -16,7 +18,7 @@ type Map<K, V> = Mutex<HashMap<K, V>>;
 #[derive(Debug, Default)]
 pub struct MemberCache {
     per_user: Map<(UserId, GuildId), Expiring<Option<Member>>>,
-    per_guild: Map<GuildId, Expiring<Arc<[Member]>>>,
+    per_guild: Map<GuildId, Expiring<Option<Arc<[Member]>>>>,
 }
 
 #[derive(Debug)]
@@ -90,21 +92,32 @@ impl MemberCache {
         // Check cache
         if let Entry::Occupied(oe) = &entry {
             if oe.get().timeout > now {
-                return Ok(oe.get().value.clone());
+                return match &oe.get().value {
+                    Some(v) => Ok(v.clone()),
+                    None => bail!("guild members for {} unavailable", guild_id),
+                };
             }
         }
         // query
         eprintln!("querying members of {}", guild_id);
-        let members: Arc<[Member]> = guild_id
+        let members: Option<Arc<[Member]>> = guild_id
             .members(cache_http.http(), None, None)
-            .await?
-            .into();
-        Ok(entry
+            .await
+            .ok()
+            .map(|v| v.into());
+        match &entry
             .or_insert(Expiring::new(
                 members.clone(),
-                now + chrono::Duration::seconds(VALID_CACHE_SECONDS),
+                now + chrono::Duration::seconds(if members.is_some() {
+                    VALID_CACHE_SECONDS
+                } else {
+                    INVALID_CACHE_SECONDS
+                }),
             ))
             .value
-            .clone())
+        {
+            Some(v) => Ok(v.clone()),
+            None => bail!("guild members for {} unavailable", guild_id),
+        }
     }
 }
