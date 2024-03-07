@@ -18,11 +18,8 @@ use serenity::{
 };
 use youmubot_prelude::{
     stream::FuturesUnordered,
-    table_format::{
-        table_formatting,
-        Align
-    },
-    *
+    table_format::{table_formatting, Align},
+    *,
 };
 
 #[derive(Debug, Clone, Copy)]
