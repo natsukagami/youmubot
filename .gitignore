@@ -3,7 +3,8 @@ target
 *.yaml
 cargo-remote
 .vscode
-youmubot.db
+data/youmubot.db
 youmubot.db-*
 /result
 /.direnv
+.idea

@@ -11,6 +11,7 @@ pub mod member_cache;
 pub mod pagination;
 pub mod ratelimit;
 pub mod setup;
+pub mod table_format;
 
 pub use announcer::{Announcer, AnnouncerHandler};
 pub use args::{ChannelId, Duration, RoleId, UserId, UsernameArg};
