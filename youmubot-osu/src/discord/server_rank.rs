@@ -1,6 +1,19 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use super::{db::OsuSavedUsers, ModeArg, OsuClient};
+use serenity::{
+    builder::EditMessage,
+    framework::standard::{macros::command, Args, CommandResult},
+    model::channel::Message,
+    utils::MessageBuilder,
+};
+
+use youmubot_prelude::table_format::Align::{Left, Right};
+use youmubot_prelude::{
+    stream::FuturesUnordered,
+    table_format::{table_formatting, Align},
+    *,
+};
+
 use crate::{
     discord::{
         display::ScoreListStyle,
@@ -10,17 +23,7 @@ use crate::{
     request::UserID,
 };
 
-use serenity::{
-    builder::EditMessage,
-    framework::standard::{macros::command, Args, CommandResult},
-    model::channel::Message,
-    utils::MessageBuilder,
-};
-use youmubot_prelude::{
-    stream::FuturesUnordered,
-    table_format::{table_formatting, Align},
-    *,
-};
+use super::{db::OsuSavedUsers, ModeArg, OsuClient};
 
 #[derive(Debug, Clone, Copy)]
 enum RankQuery {
@@ -345,124 +348,63 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
             let scores = scores[start..end].to_vec();
             let bm = (bm.0.clone(), bm.1);
             Box::pin(async move {
-                // username width
-                let uw = scores
+                const SCORE_HEADERS: [&'static str; 8] =
+                    ["#", "Score", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
+                const PP_HEADERS: [&'static str; 8] =
+                    ["#", "PP", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
+                const ALIGNS: [Align; 8] = [Right, Right, Right, Right, Right, Right, Right, Right];
+
+                let score_arr = scores
                     .iter()
-                    .map(|(_, u, _)| u.len())
-                    .max()
-                    .unwrap_or(8)
-                    .max(8);
-                let accuracies = scores
-                    .iter()
-                    .map(|(_, _, v)| format!("{:.2}%", v.accuracy(bm.1)))
-                    .collect::<Vec<_>>();
-                let aw = accuracies.iter().map(|v| v.len()).max().unwrap().max(3);
-                let misses = scores
-                    .iter()
-                    .map(|(_, _, v)| format!("{}", v.count_miss))
-                    .collect::<Vec<_>>();
-                let mw = misses.iter().map(|v| v.len()).max().unwrap().max(4);
-                let ranks = scores
-                    .iter()
-                    .map(|(_, _, v)| v.rank.to_string())
-                    .collect::<Vec<_>>();
-                let rw = ranks.iter().map(|v| v.len()).max().unwrap().max(4);
-                let pp_label = match order {
-                    OrderBy::PP => "pp",
-                    OrderBy::Score => "score",
-                };
-                let pp = scores
-                    .iter()
-                    .map(|((official, pp), _, s)| match order {
-                        OrderBy::PP => format!("{:.2}{}", pp, if *official { "" } else { "[?]" }),
-                        OrderBy::Score => crate::discord::embeds::grouped_number(if has_lazer_score { s.normalized_score as u64 } else { s.score.unwrap() }),
+                    .enumerate()
+                    .map(|(id, ((official, pp), member, score))| {
+                        [
+                            format!("{}", 1 + id + start),
+                            match order {
+                                OrderBy::PP => {
+                                    format!("{:.2}{}", pp, if *official { "" } else { "[?]" })
+                                }
+                                OrderBy::Score => {
+                                    crate::discord::embeds::grouped_number(if has_lazer_score {
+                                        score.normalized_score as u64
+                                    } else {
+                                        score.score.unwrap()
+                                    })
+                                }
+                            },
+                            score.mods.to_string(),
+                            score.rank.to_string(),
+                            format!("{:.2}%", score.accuracy(bm.1)),
+                            format!("{}x", score.max_combo),
+                            format!("{}", score.count_miss),
+                            member.to_string(),
+                        ]
                     })
                     .collect::<Vec<_>>();
-                let pw = pp.iter().map(|v| v.len()).max().unwrap_or(pp_label.len());
-                /*mods width*/
-                let mdw = scores
-                    .iter()
-                    .map(|(_, _, v)| v.mods.str_len())
-                    .max()
-                    .unwrap()
-                    .max(4);
-                let combos = scores
-                    .iter()
-                    .map(|(_, _, v)| format!("{}x", v.max_combo))
-                    .collect::<Vec<_>>();
-                let cw = combos
-                    .iter()
-                    .map(|v| v.len())
-                    .max()
-                    .unwrap()
-                    .max(5);
-                let mut content = MessageBuilder::new();
-                content
-                    .push_line("```")
-                    .push_line(format!(
-                        "rank | {:>pw$} | {:mdw$} | {:rw$} | {:>aw$} | {:>cw$} | {:mw$} | {:uw$}",
-                        pp_label,
-                        "mods",
-                        "rank",
-                        "acc",
-                        "combo",
-                        "miss",
-                        "user",
-                        pw = pw,
-                        mdw = mdw,
-                        rw = rw,
-                        aw = aw,
-                        mw = mw,
-                        uw = uw,
-                        cw = cw,
-                    ))
-                    .push_line(format!(
-                        "-------{:-<pw$}---{:-<mdw$}---{:-<rw$}---{:-<aw$}---{:-<cw$}---{:-<mw$}---{:-<uw$}",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        pw = pw,
-                        mdw = mdw,
-                        rw = rw,
-                        aw = aw,
-                        mw = mw,
-                        uw = uw,
-                        cw = cw,
-                    ));
-                for (id, (_, member, p)) in scores.iter().enumerate() {
-                    content.push_line_safe(format!(
-                        "{:>4} | {:>pw$} | {} | {:>rw$} | {:>aw$} | {:>cw$} | {:>mw$} | {:uw$}",
-                        format!("#{}", 1 + id + start),
-                        pp[id],
-                        p.mods.to_string_padded(mdw),
-                        ranks[id],
-                        accuracies[id],
-                        combos[id],
-                        misses[id],
-                        member,
-                        pw = pw,
-                        rw = rw,
-                        aw = aw,
-                        cw = cw,
-                        mw = mw,
-                        uw = uw,
-                    ));
-                }
-                content.push_line("```").push_line(format!(
-                    "Page **{}**/**{}**. Not seeing your scores? Run `osu check` to update.",
-                    page + 1,
-                    (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
-                ));
-                if let crate::models::ApprovalStatus::Ranked(_) = bm.0.approval {
-                } else if order == OrderBy::PP {
-                    content.push_line("PP was calculated by `oppai-rs`, **not** official values.");
-                }
 
-                m.edit(&ctx, EditMessage::new().content(content.build())).await?;
+                let score_table = match order {
+                    OrderBy::PP => table_formatting(&PP_HEADERS, &ALIGNS, score_arr),
+                    OrderBy::Score => table_formatting(&SCORE_HEADERS, &ALIGNS, score_arr),
+                };
+                let content = MessageBuilder::new()
+                    .push_line(score_table)
+                    .push_line(format!(
+                        "Page **{}**/**{}**. Not seeing your scores? Run `osu check` to update.",
+                        page + 1,
+                        (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
+                    ))
+                    .push(
+                        if let crate::models::ApprovalStatus::Ranked(_) = bm.0.approval {
+                            ""
+                        } else if order == OrderBy::PP {
+                            "PP was calculated by `oppai-rs`, **not** official values.\n"
+                        } else {
+                            ""
+                        },
+                    )
+                    .build();
+
+                m.edit(&ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
         },
