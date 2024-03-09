@@ -49,13 +49,13 @@ mod scores {
     }
 
     pub mod grid {
-        use serenity::builder::EditMessage;
         use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use serenity::builder::EditMessage;
 
         use youmubot_prelude::*;
 
         use crate::discord::{
-            cache::save_beatmap, BeatmapCache, BeatmapMetaCache, BeatmapWithMode,
+            BeatmapCache, BeatmapMetaCache, BeatmapWithMode, cache::save_beatmap,
         };
         use crate::models::{Mode, Score};
 
@@ -76,7 +76,7 @@ mod scores {
                 m,
                 std::time::Duration::from_secs(60),
             )
-            .await?;
+                .await?;
             Ok(())
         }
 
@@ -113,7 +113,7 @@ mod scores {
                             .build()
                     }),
                 )
-                .await?;
+                    .await?;
                 save_beatmap(&*ctx.data.read().await, msg.channel_id, &bm).await?;
 
                 // End
@@ -130,15 +130,15 @@ mod scores {
     pub mod table {
         use std::borrow::Cow;
 
-        use serenity::builder::EditMessage;
         use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use serenity::builder::EditMessage;
 
-        use youmubot_prelude::table_format::Align::{Left, Right};
-        use youmubot_prelude::table_format::{table_formatting, Align};
         use youmubot_prelude::*;
+        use youmubot_prelude::table_format::{Align, table_formatting};
+        use youmubot_prelude::table_format::Align::{Left, Right};
 
-        use crate::discord::oppai_cache::Accuracy;
         use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
+        use crate::discord::oppai_cache::Accuracy;
         use crate::models::{Mode, Score};
 
         pub async fn display_scores_table<'a>(
@@ -158,7 +158,7 @@ mod scores {
                 m,
                 std::time::Duration::from_secs(60),
             )
-            .await?;
+                .await?;
             Ok(())
         }
 
@@ -224,10 +224,10 @@ mod scores {
                                         ),
                                         p.mods,
                                     )
-                                    .ok()
-                                    .map(|pp| format!("{:.2}[?]", pp))
+                                        .ok()
+                                        .map(|pp| format!("{:.2}[?]", pp))
                                 }
-                                .unwrap_or_else(|| "-".to_owned()));
+                                    .unwrap_or_else(|| "-".to_owned()));
                                 r
                             }
                         }
@@ -259,7 +259,7 @@ mod scores {
                             } else {
                                 format!("{}x S", p.max_combo)
                             }
-                            .into(),
+                                .into(),
                             _v => format!("{}x {}m {}", p.max_combo, p.count_miss, p.rank).into(),
                         }
                     })
@@ -280,13 +280,13 @@ mod scores {
                                 beatmap.short_link(Some(self.mode), Some(play.mods)),
                             )
                         })
-                        .unwrap_or_else(|| "FETCH_FAILED".to_owned())
+                            .unwrap_or_else(|| "FETCH_FAILED".to_owned())
                     })
                     .collect::<Vec<_>>();
 
                 const SCORE_HEADERS: [&'static str; 6] =
                     ["#", "pp", "accuracy", "ranks", "mods", "beatmap"];
-                const SCORE_ALIGNS: [Align; 6] = [Right, Right, Right, Right, Left, Left];
+                const SCORE_ALIGNS: [Align; 6] = [Right, Right, Right, Right, Right, Left];
 
                 let score_arr = plays
                     .iter()
@@ -337,7 +337,7 @@ mod beatmapset {
 
     use crate::{
         discord::{
-            cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapCache, BeatmapWithMode,
+            BeatmapCache, BeatmapWithMode, cache::save_beatmap, oppai_cache::BeatmapInfoWithPP,
         },
         models::{Beatmap, Mode, Mods},
     };
@@ -416,7 +416,7 @@ mod beatmapset {
                         self.mode,
                     )),
                 )
-                .await?;
+                    .await?;
                 return Ok(true);
             }
             if page > self.maps.len() {
@@ -433,31 +433,31 @@ mod beatmapset {
                 }
             };
             m.edit(ctx,
-                EditMessage::new().content(self.message.as_str()).embed(
-                    crate::discord::embeds::beatmap_embed(
-                        map,
-                        self.mode.unwrap_or(map.mode),
-                        self.mods,
-                        info,
-                    )
-                    .footer( {
-                        CreateEmbedFooter::new(format!(
-                            "Difficulty {}/{}. To show all difficulties in a single embed (old style), react {}",
-                            page + 1,
-                            self.maps.len(),
-                            SHOW_ALL_EMOTE,
-                        ))
-                    })
-                )
+                   EditMessage::new().content(self.message.as_str()).embed(
+                       crate::discord::embeds::beatmap_embed(
+                           map,
+                           self.mode.unwrap_or(map.mode),
+                           self.mods,
+                           info,
+                       )
+                           .footer({
+                               CreateEmbedFooter::new(format!(
+                                   "Difficulty {}/{}. To show all difficulties in a single embed (old style), react {}",
+                                   page + 1,
+                                   self.maps.len(),
+                                   SHOW_ALL_EMOTE,
+                               ))
+                           })
+                   ),
             )
-            .await?;
+                .await?;
             save_beatmap(
                 &*ctx.data.read().await,
                 m.channel_id,
                 &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),
             )
-            .await
-            .pls_ok();
+                .await
+                .pls_ok();
 
             Ok(true)
         }
