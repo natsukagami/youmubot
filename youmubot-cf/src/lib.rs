@@ -4,8 +4,8 @@ use codeforces::Contest;
 use serenity::{
     builder::{CreateMessage, EditMessage},
     framework::standard::{
-        Args,
-        CommandResult, macros::{command, group},
+        macros::{command, group},
+        Args, CommandResult,
     },
     model::{channel::Message, guild::Member},
     utils::MessageBuilder,
@@ -14,8 +14,8 @@ use serenity::{
 use db::{CfSavedUsers, CfUser};
 pub use hook::InfoHook;
 use youmubot_prelude::{
+    table_format::{table_formatting, Align},
     *,
-    table_format::{Align, table_formatting},
 };
 
 mod announcer;
