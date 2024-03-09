@@ -285,7 +285,7 @@ mod scores {
                     .collect::<Vec<_>>();
 
                 const SCORE_HEADERS: [&'static str; 6] =
-                    ["#", "pp", "accuracy", "ranks", "mods", "beatmap"];
+                    ["#", "PP", "Acc", "Ranks", "Mods", "Beatmap"];
                 const SCORE_ALIGNS: [Align; 6] = [Right, Right, Right, Right, Right, Left];
 
                 let score_arr = plays
