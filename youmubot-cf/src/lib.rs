@@ -1,15 +1,22 @@
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
 use codeforces::Contest;
 use serenity::{
     builder::{CreateMessage, EditMessage},
     framework::standard::{
-        macros::{command, group},
-        Args, CommandResult,
+        Args,
+        CommandResult, macros::{command, group},
     },
     model::{channel::Message, guild::Member},
     utils::MessageBuilder,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use youmubot_prelude::*;
+
+use db::{CfSavedUsers, CfUser};
+pub use hook::InfoHook;
+use youmubot_prelude::{
+    *,
+    table_format::{Align, table_formatting},
+};
 
 mod announcer;
 mod db;
@@ -25,10 +32,6 @@ struct CFClient;
 impl TypeMapKey for CFClient {
     type Value = Arc<codeforces::Client>;
 }
-
-use db::{CfSavedUsers, CfUser};
-
-pub use hook::InfoHook;
 
 /// Sets up the CF databases.
 pub async fn setup(path: &std::path::Path, data: &mut TypeMap, announcers: &mut AnnouncerHandler) {
@@ -174,6 +177,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
 
     paginate_reply_fn(
         move |page, ctx, msg| {
+            use Align::*;
             let ranks = ranks.clone();
             Box::pin(async move {
                 let page = page as usize;
@@ -184,56 +188,37 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                 }
                 let ranks = &ranks[start..end];
 
-                let handle_width = ranks.iter().map(|(_, cfu)| cfu.handle.len()).max().unwrap();
-                let username_width = ranks
+                const HEADERS: [&'static str; 4] = ["Rank", "Rating", "Handle", "Username"];
+                const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
+
+                let ranks_arr = ranks
                     .iter()
-                    .map(|(mem, _)| mem.distinct().len())
-                    .max()
-                    .unwrap();
+                    .enumerate()
+                    .map(|(i, (mem, cfu))| {
+                        [
+                            format!("#{}", 1 + i + start),
+                            cfu.rating
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "----".to_owned()),
+                            cfu.handle.clone(),
+                            mem.distinct(),
+                        ]
+                    })
+                    .collect::<Vec<_>>();
 
-                let mut m = MessageBuilder::new();
-                m.push_line("```");
+                let table = table_formatting(&HEADERS, &ALIGNS, ranks_arr);
 
-                // Table header
-                m.push_line(format!(
-                    "Rank | Rating | {:hw$} | {:uw$}",
-                    "Handle",
-                    "Username",
-                    hw = handle_width,
-                    uw = username_width
-                ));
-                m.push_line(format!(
-                    "----------------{:->hw$}---{:->uw$}",
-                    "",
-                    "",
-                    hw = handle_width,
-                    uw = username_width
-                ));
+                let content = MessageBuilder::new()
+                    .push_line(table)
+                    .push_line(format!(
+                        "Page **{}/{}**. Last updated **{}**",
+                        page + 1,
+                        total_pages,
+                        last_updated.to_rfc2822()
+                    ))
+                    .build();
 
-                for (id, (mem, cfu)) in ranks.iter().enumerate() {
-                    let id = id + start + 1;
-                    m.push_line(format!(
-                        "{:>4} | {:>6} | {:hw$} | {:uw$}",
-                        format!("#{}", id),
-                        cfu.rating
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| "----".to_owned()),
-                        cfu.handle,
-                        mem.distinct(),
-                        hw = handle_width,
-                        uw = username_width
-                    ));
-                }
-
-                m.push_line("```");
-                m.push(format!(
-                    "Page **{}/{}**. Last updated **{}**",
-                    page + 1,
-                    total_pages,
-                    last_updated.to_rfc2822()
-                ));
-
-                msg.edit(ctx, EditMessage::new().content(m.build())).await?;
+                msg.edit(ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
         },
