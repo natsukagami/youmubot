@@ -352,7 +352,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                     ["#", "Score", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
                 const PP_HEADERS: [&'static str; 8] =
                     ["#", "PP", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
-                const ALIGNS: [Align; 8] = [Right, Right, Right, Right, Right, Right, Right, Right];
+                const ALIGNS: [Align; 8] = [Right, Right, Right, Right, Right, Right, Right, Left];
 
                 let score_arr = scores
                     .iter()
