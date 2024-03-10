@@ -14,7 +14,7 @@ use serenity::{
 use db::{CfSavedUsers, CfUser};
 pub use hook::InfoHook;
 use youmubot_prelude::table_format::table_formatting_unsafe;
-use youmubot_prelude::table_format::Align::Right;
+use youmubot_prelude::table_format::Align::{Left, Right};
 use youmubot_prelude::{
     table_format::{table_formatting, Align},
     *,
@@ -338,7 +338,7 @@ pub(crate) async fn contest_rank_table(
                 .concat();
 
                 let score_aligns: Vec<Align> = [
-                    vec![Right, Right, Right, Right, Right],
+                    vec![Right, Left, Left, Right, Right],
                     problems.iter().map(|_| Right).collect::<Vec<Align>>(),
                 ]
                 .concat();
