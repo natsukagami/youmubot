@@ -17,9 +17,9 @@ impl Align {
     }
 }
 
-pub fn table_formatting<const N: usize, S: AsRef<str> + std::fmt::Debug, Ts: AsRef<[[S; N]]>>(
-    headers: &[&'static str; N],
-    padding: &[Align; N],
+pub fn table_formatting_unsafe<S: AsRef<str> + std::fmt::Debug, Ss: AsRef<[S]>, Ts: AsRef<[Ss]>>(
+    headers: &[&str],
+    padding: &[Align],
     table: Ts,
 ) -> String {
     let table = table.as_ref();
@@ -67,4 +67,12 @@ pub fn table_formatting<const N: usize, S: AsRef<str> + std::fmt::Debug, Ts: AsR
     }
     m.push("```");
     m.build()
+}
+
+pub fn table_formatting<const N: usize, S: AsRef<str> + std::fmt::Debug, Ts: AsRef<[[S; N]]>>(
+    headers: &[&'static str; N],
+    padding: &[Align; N],
+    table: Ts,
+) -> String {
+    table_formatting_unsafe(headers, padding, table)
 }

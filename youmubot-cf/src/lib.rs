@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
 use codeforces::Contest;
 use serenity::{
     builder::{CreateMessage, EditMessage},
@@ -8,8 +10,15 @@ use serenity::{
     model::{channel::Message, guild::Member},
     utils::MessageBuilder,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use youmubot_prelude::*;
+
+use db::{CfSavedUsers, CfUser};
+pub use hook::InfoHook;
+use youmubot_prelude::table_format::table_formatting_unsafe;
+use youmubot_prelude::table_format::Align::{Left, Right};
+use youmubot_prelude::{
+    table_format::{table_formatting, Align},
+    *,
+};
 
 mod announcer;
 mod db;
@@ -25,10 +34,6 @@ struct CFClient;
 impl TypeMapKey for CFClient {
     type Value = Arc<codeforces::Client>;
 }
-
-use db::{CfSavedUsers, CfUser};
-
-pub use hook::InfoHook;
 
 /// Sets up the CF databases.
 pub async fn setup(path: &std::path::Path, data: &mut TypeMap, announcers: &mut AnnouncerHandler) {
@@ -174,6 +179,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
 
     paginate_reply_fn(
         move |page, ctx, msg| {
+            use Align::*;
             let ranks = ranks.clone();
             Box::pin(async move {
                 let page = page as usize;
@@ -184,56 +190,37 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                 }
                 let ranks = &ranks[start..end];
 
-                let handle_width = ranks.iter().map(|(_, cfu)| cfu.handle.len()).max().unwrap();
-                let username_width = ranks
+                const HEADERS: [&'static str; 4] = ["Rank", "Rating", "Handle", "Username"];
+                const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
+
+                let ranks_arr = ranks
                     .iter()
-                    .map(|(mem, _)| mem.distinct().len())
-                    .max()
-                    .unwrap();
+                    .enumerate()
+                    .map(|(i, (mem, cfu))| {
+                        [
+                            format!("#{}", 1 + i + start),
+                            cfu.rating
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "----".to_owned()),
+                            cfu.handle.clone(),
+                            mem.distinct(),
+                        ]
+                    })
+                    .collect::<Vec<_>>();
 
-                let mut m = MessageBuilder::new();
-                m.push_line("```");
+                let table = table_formatting(&HEADERS, &ALIGNS, ranks_arr);
 
-                // Table header
-                m.push_line(format!(
-                    "Rank | Rating | {:hw$} | {:uw$}",
-                    "Handle",
-                    "Username",
-                    hw = handle_width,
-                    uw = username_width
-                ));
-                m.push_line(format!(
-                    "----------------{:->hw$}---{:->uw$}",
-                    "",
-                    "",
-                    hw = handle_width,
-                    uw = username_width
-                ));
+                let content = MessageBuilder::new()
+                    .push_line(table)
+                    .push_line(format!(
+                        "Page **{}/{}**. Last updated **{}**",
+                        page + 1,
+                        total_pages,
+                        last_updated.to_rfc2822()
+                    ))
+                    .build();
 
-                for (id, (mem, cfu)) in ranks.iter().enumerate() {
-                    let id = id + start + 1;
-                    m.push_line(format!(
-                        "{:>4} | {:>6} | {:hw$} | {:uw$}",
-                        format!("#{}", id),
-                        cfu.rating
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| "----".to_owned()),
-                        cfu.handle,
-                        mem.distinct(),
-                        hw = handle_width,
-                        uw = username_width
-                    ));
-                }
-
-                m.push_line("```");
-                m.push(format!(
-                    "Page **{}/{}**. Last updated **{}**",
-                    page + 1,
-                    total_pages,
-                    last_updated.to_rfc2822()
-                ));
-
-                msg.edit(ctx, EditMessage::new().content(m.build())).await?;
+                msg.edit(ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
         },
@@ -340,79 +327,66 @@ pub(crate) async fn contest_rank_table(
                     return Ok(false);
                 }
                 let ranks = &ranks[start..end];
-                let hw = ranks
-                    .iter()
-                    .map(|(mem, handle, _)| format!("{} ({})", handle, mem.distinct()).len())
-                    .max()
-                    .unwrap_or(0)
-                    .max(6);
-                let hackw = ranks
-                    .iter()
-                    .map(|(_, _, row)| {
-                        format!(
-                            "{}/{}",
-                            row.successful_hack_count, row.unsuccessful_hack_count
-                        )
-                        .len()
-                    })
-                    .max()
-                    .unwrap_or(0)
-                    .max(5);
 
-                let mut table = MessageBuilder::new();
-                let mut header = MessageBuilder::new();
-                // Header
-                header.push(format!(
-                    " Rank | {:hw$} | Total | {:hackw$}",
-                    "Handle",
-                    "Hacks",
-                    hw = hw,
-                    hackw = hackw
-                ));
-                for p in &problems {
-                    header.push(format!(" | {:4}", p.index));
-                }
-                let header = header.build();
-                table
-                    .push_line(&header)
-                    .push_line(format!("{:-<w$}", "", w = header.len()));
+                let score_headers: Vec<&str> = [
+                    vec!["Rank", "Handle", "User", "Total", "Hacks"],
+                    problems
+                        .iter()
+                        .map(|p| p.index.as_str())
+                        .collect::<Vec<&str>>(),
+                ]
+                .concat();
 
-                // Body
-                for (mem, handle, row) in ranks {
-                    table.push(format!(
-                        "{:>5} | {:<hw$} | {:>5.0} | {:<hackw$}",
-                        row.rank,
-                        format!("{} ({})", handle, mem.distinct()),
-                        row.points,
-                        format!(
-                            "{}/{}",
-                            row.successful_hack_count, row.unsuccessful_hack_count
-                        ),
-                        hw = hw,
-                        hackw = hackw
-                    ));
-                    for p in &row.problem_results {
-                        table.push(" | ");
-                        if p.points > 0.0 {
-                            table.push(format!("{:^4.0}", p.points));
-                        } else if p.best_submission_time_seconds.is_some() {
-                            table.push(format!("{:^4}", "?"));
-                        } else if p.rejected_attempt_count > 0 {
-                            table.push(format!("{:^4}", format!("-{}", p.rejected_attempt_count)));
-                        } else {
-                            table.push(format!("{:^4}", ""));
+                let score_aligns: Vec<Align> = [
+                    vec![Right, Left, Left, Right, Right],
+                    problems.iter().map(|_| Right).collect::<Vec<Align>>(),
+                ]
+                .concat();
+
+                let score_arr = ranks
+                    .iter()
+                    .map(|(mem, handle, row)| {
+                        let mut p_results: Vec<String> = Vec::new();
+                        for result in &row.problem_results {
+                            if result.points > 0.0 {
+                                p_results.push(format!("{}", result.points));
+                            } else if result.best_submission_time_seconds.is_some() {
+                                p_results.push(format!("{}", "?"));
+                            } else if result.rejected_attempt_count > 0 {
+                                p_results.push(format!("-{}", result.rejected_attempt_count));
+                            } else {
+                                p_results.push(format!("{}", "----"));
+                            }
                         }
-                    }
-                    table.push_line("");
-                }
 
-                let mut m = MessageBuilder::new();
-                m.push_bold_safe(&contest.name)
+                        [
+                            vec![
+                                format!("{}", row.rank),
+                                handle.clone(),
+                                mem.distinct(),
+                                format!("{}", row.points),
+                                format!(
+                                    "{}/{}",
+                                    row.successful_hack_count, row.unsuccessful_hack_count
+                                ),
+                            ],
+                            p_results,
+                        ]
+                        .concat()
+                    })
+                    .collect::<Vec<_>>();
+
+                let score_table = table_formatting_unsafe(&score_headers, &score_aligns, score_arr);
+
+                let content = MessageBuilder::new()
+                    .push_bold_safe(&contest.name)
                     .push(" ")
                     .push_line(contest.url())
-                    .push_codeblock(table.build(), None)
-                    .push_line(format!("Page **{}/{}**", page + 1, total_pages));
-                msg.edit(ctx, EditMessage::new().content(m.build())).await?;
+                    .push_line(score_table)
+                    .push_line(format!("Page **{}/{}**", page + 1, total_pages))
+                    .build();
+
+                msg.edit(ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
         },

@@ -1,4 +1,3 @@
-use crate::db::Roles as DB;
 use serenity::{
     builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
@@ -9,9 +8,13 @@ use serenity::{
     },
     utils::MessageBuilder,
 };
-use youmubot_prelude::*;
 
 pub use reaction_watcher::Watchers as ReactionWatchers;
+use youmubot_prelude::table_format::Align::Right;
+use youmubot_prelude::table_format::{table_formatting, Align};
+use youmubot_prelude::*;
+
+use crate::db::Roles as DB;
 
 #[command("listroles")]
 #[description = "List all available roles in the server."]
@@ -50,59 +53,31 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
                         if end <= start {
                             return Ok(false);
                         }
+
                         let roles = &roles[start..end];
-                        let nw = roles // name width
+
+                        const ROLE_HEADERS: [&'static str; 3] = ["Name", "ID", "Description"];
+                        const ROLE_ALIGNS: [Align; 3] = [Right, Right, Right];
+
+                        let roles_arr = roles
                             .iter()
-                            .map(|(r, _)| r.name.len())
-                            .max()
-                            .unwrap()
-                            .max(6);
-                        let idw = roles[0].0.id.to_string().len();
-                        let dw = roles
-                            .iter()
-                            .map(|v| v.1.len())
-                            .max()
-                            .unwrap()
-                            .max(" Description ".len());
-                        let mut m = MessageBuilder::new();
-                        m.push_line("```");
+                            .map(|(role, description)| {
+                                [
+                                    role.name.clone(),
+                                    format!("{}", role.id),
+                                    description.clone(),
+                                ]
+                            })
+                            .collect::<Vec<_>>();
 
-                        // Table header
-                        m.push_line(format!(
-                            "{:nw$} | {:idw$} | {:dw$}",
-                            "Name",
-                            "ID",
-                            "Description",
-                            nw = nw,
-                            idw = idw,
-                            dw = dw,
-                        ));
-                        m.push_line(format!(
-                            "{:->nw$}---{:->idw$}---{:->dw$}",
-                            "",
-                            "",
-                            "",
-                            nw = nw,
-                            idw = idw,
-                            dw = dw,
-                        ));
+                        let roles_table = table_formatting(&ROLE_HEADERS, &ROLE_ALIGNS, roles_arr);
 
-                        for (role, description) in roles.iter() {
-                            m.push_line(format!(
-                                "{:nw$} | {:idw$} | {:dw$}",
-                                role.name,
-                                role.id,
-                                description,
-                                nw = nw,
-                                idw = idw,
-                                dw = dw,
-                            ));
-                        }
-                        m.push_line("```");
-                        m.push(format!("Page **{}/{}**", page + 1, pages));
+                        let content = MessageBuilder::new()
+                            .push_line(roles_table)
+                            .push_line(format!("Page **{}/{}**", page + 1, pages))
+                            .build();
 
-                        msg.edit(ctx, EditMessage::new().content(m.to_string()))
-                            .await?;
+                        msg.edit(ctx, EditMessage::new().content(content)).await?;
                         Ok(true)
                     })
                 },
@@ -415,7 +390,6 @@ async fn rmrolemessage(ctx: &Context, m: &Message, _args: Args) -> CommandResult
 }
 
 mod reaction_watcher {
-    use crate::db::{Role, RoleMessage, Roles};
     use dashmap::DashMap;
     use flume::{Receiver, Sender};
     use serenity::{
@@ -427,7 +401,10 @@ mod reaction_watcher {
             id::{ChannelId, GuildId, MessageId},
         },
     };
+
     use youmubot_prelude::*;
+
+    use crate::db::{Role, RoleMessage, Roles};
 
     /// A set of watchers.
     #[derive(Debug)]

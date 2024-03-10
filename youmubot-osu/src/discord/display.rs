@@ -2,9 +2,11 @@ pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
 mod scores {
-    use crate::models::{Mode, Score};
     use serenity::{framework::standard::CommandResult, model::channel::Message};
+
     use youmubot_prelude::*;
+
+    use crate::models::{Mode, Score};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     /// The style for the scores list to be displayed.
@@ -47,13 +49,15 @@ mod scores {
     }
 
     pub mod grid {
+        use serenity::builder::EditMessage;
+        use serenity::{framework::standard::CommandResult, model::channel::Message};
+
+        use youmubot_prelude::*;
+
         use crate::discord::{
             cache::save_beatmap, BeatmapCache, BeatmapMetaCache, BeatmapWithMode,
         };
         use crate::models::{Mode, Score};
-        use serenity::builder::EditMessage;
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
-        use youmubot_prelude::*;
 
         pub async fn display_scores_grid<'a>(
             scores: Vec<Score>,
@@ -126,12 +130,16 @@ mod scores {
     pub mod table {
         use std::borrow::Cow;
 
+        use serenity::builder::EditMessage;
+        use serenity::{framework::standard::CommandResult, model::channel::Message};
+
+        use youmubot_prelude::table_format::Align::{Left, Right};
+        use youmubot_prelude::table_format::{table_formatting, Align};
+        use youmubot_prelude::*;
+
         use crate::discord::oppai_cache::Accuracy;
         use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
         use crate::models::{Mode, Score};
-        use serenity::builder::EditMessage;
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
-        use youmubot_prelude::*;
 
         pub async fn display_scores_table<'a>(
             scores: Vec<Score>,
@@ -196,7 +204,8 @@ mod scores {
                     .collect::<stream::FuturesOrdered<_>>()
                     .map(|v| v.ok())
                     .collect::<Vec<_>>();
-                let pp = plays
+
+                let pps = plays
                     .iter()
                     .map(|p| async move {
                         match p.pp.map(|pp| format!("{:.2}", pp)) {
@@ -226,7 +235,8 @@ mod scores {
                     .collect::<stream::FuturesOrdered<_>>()
                     .map(|v| v.unwrap_or_else(|_| "-".to_owned()))
                     .collect::<Vec<String>>();
-                let (beatmaps, pp) = future::join(beatmaps, pp).await;
+
+                let (beatmaps, pps) = future::join(beatmaps, pps).await;
 
                 let ranks = plays
                     .iter()
@@ -274,64 +284,36 @@ mod scores {
                     })
                     .collect::<Vec<_>>();
 
-                let pw = pp.iter().map(|v| v.len()).max().unwrap_or(2);
-                /*mods width*/
-                let mw = plays.iter().map(|v| v.mods.str_len()).max().unwrap().max(4);
-                /*beatmap names*/
-                let bw = beatmaps.iter().map(|v| v.len()).max().unwrap().max(7);
-                /* ranks width */
-                let rw = ranks.iter().map(|v| v.len()).max().unwrap().max(5);
+                const SCORE_HEADERS: [&'static str; 6] =
+                    ["#", "PP", "Acc", "Ranks", "Mods", "Beatmap"];
+                const SCORE_ALIGNS: [Align; 6] = [Right, Right, Right, Right, Right, Left];
 
-                let mut m = serenity::utils::MessageBuilder::new();
-                // Table header
-                m.push_line(format!(
-                    " #  | {:pw$} | accuracy | {:rw$} | {:mw$} | {:bw$}",
-                    "pp",
-                    "ranks",
-                    "mods",
-                    "beatmap",
-                    rw = rw,
-                    pw = pw,
-                    mw = mw,
-                    bw = bw
-                ));
-                m.push_line(format!(
-                    "------{:-<pw$}--------------{:-<rw$}---{:-<mw$}---{:-<bw$}",
-                    "",
-                    "",
-                    "",
-                    "",
-                    rw = rw,
-                    pw = pw,
-                    mw = mw,
-                    bw = bw
-                ));
-                // Each row
-                for (id, (play, beatmap)) in plays.iter().zip(beatmaps.iter()).enumerate() {
-                    m.push_line(format!(
-                        "{:>3} | {:>pw$} | {:>8} | {:>rw$} | {} | {:bw$}",
-                        id + start + 1,
-                        pp[id],
-                        format!("{:.2}%", play.accuracy(self.mode)),
-                        ranks[id],
-                        play.mods.to_string_padded(mw),
-                        beatmap,
-                        rw = rw,
-                        pw = pw,
-                        bw = bw
-                    ));
-                }
-                // End
-                let table = m.build().replace("```", "\\`\\`\\`");
-                let mut m = serenity::utils::MessageBuilder::new();
-                m.push_codeblock(table, None).push_line(format!(
-                    "Page **{}/{}**",
-                    page + 1,
-                    self.total_pages()
-                ));
-                m.push_line("[?] means pp was predicted by oppai-rs.");
-                msg.edit(ctx, EditMessage::new().content(m.to_string()))
-                    .await?;
+                let score_arr = plays
+                    .iter()
+                    .zip(beatmaps.iter())
+                    .zip(ranks.iter().zip(pps.iter()))
+                    .enumerate()
+                    .map(|(id, ((play, beatmap), (rank, pp)))| {
+                        [
+                            format!("{}", id + start + 1),
+                            format!("{}", pp),
+                            format!("{:.2}%", play.accuracy(self.mode)),
+                            format!("{}", rank),
+                            play.mods.to_string(),
+                            beatmap.clone(),
+                        ]
+                    })
+                    .collect::<Vec<_>>();
+
+                let score_table = table_formatting(&SCORE_HEADERS, &SCORE_ALIGNS, score_arr);
+
+                let content = serenity::utils::MessageBuilder::new()
+                    .push_line(score_table)
+                    .push_line(format!("Page **{}/{}**", page + 1, self.total_pages()))
+                    .push_line("[?] means pp was predicted by oppai-rs.")
+                    .build();
+
+                msg.edit(ctx, EditMessage::new().content(content)).await?;
                 hourglass.delete(ctx).await?;
                 Ok(true)
             }
@@ -344,19 +326,21 @@ mod scores {
 }
 
 mod beatmapset {
-    use crate::{
-        discord::{
-            cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapCache, BeatmapWithMode,
-        },
-        models::{Beatmap, Mode, Mods},
-    };
     use serenity::{
         all::Reaction,
         builder::{CreateEmbedFooter, EditMessage},
         model::channel::Message,
         model::channel::ReactionType,
     };
+
     use youmubot_prelude::*;
+
+    use crate::{
+        discord::{
+            cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapCache, BeatmapWithMode,
+        },
+        models::{Beatmap, Mode, Mods},
+    };
 
     const SHOW_ALL_EMOTE: &str = "🗒️";
 
@@ -449,24 +433,24 @@ mod beatmapset {
                 }
             };
             m.edit(ctx,
-                EditMessage::new().content(self.message.as_str()).embed(
-                    crate::discord::embeds::beatmap_embed(
-                        map,
-                        self.mode.unwrap_or(map.mode),
-                        self.mods,
-                        info,
-                    )
-                    .footer( {
-                        CreateEmbedFooter::new(format!(
-                            "Difficulty {}/{}. To show all difficulties in a single embed (old style), react {}",
-                            page + 1,
-                            self.maps.len(),
-                            SHOW_ALL_EMOTE,
-                        ))
-                    })
-                )
+                   EditMessage::new().content(self.message.as_str()).embed(
+                       crate::discord::embeds::beatmap_embed(
+                           map,
+                           self.mode.unwrap_or(map.mode),
+                           self.mods,
+                           info,
+                       )
+                           .footer({
+                               CreateEmbedFooter::new(format!(
+                                   "Difficulty {}/{}. To show all difficulties in a single embed (old style), react {}",
+                                   page + 1,
+                                   self.maps.len(),
+                                   SHOW_ALL_EMOTE,
+                               ))
+                           })
+                   ),
             )
-            .await?;
+                .await?;
             save_beatmap(
                 &*ctx.data.read().await,
                 m.channel_id,
