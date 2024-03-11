@@ -1,12 +1,14 @@
+use std::ops::Deref;
 /// Provides a simple ratelimit lock (that only works in tokio)
 // use tokio::time::
 use std::time::Duration;
 
-use crate::Result;
 use flume::{bounded as channel, Receiver, Sender};
-use std::ops::Deref;
+
+use crate::Result;
 
 /// Holds the underlying `T` in a rate-limited way.
+#[derive(Debug, Clone)]
 pub struct Ratelimit<T> {
     inner: T,
     recv: Receiver<()>,

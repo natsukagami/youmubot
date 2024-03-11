@@ -1,24 +1,33 @@
-use crate::{
-    discord::beatmap_cache::BeatmapMetaCache,
-    discord::display::ScoreListStyle,
-    discord::oppai_cache::{BeatmapCache, BeatmapInfo},
-    models::{self, Beatmap, Mode, Mods, Score, User},
-    request::{BeatmapRequestKind, UserID},
-    Client as OsuHttpClient,
-};
+use std::{str::FromStr, sync::Arc};
+
 use rand::seq::IteratorRandom;
 use serenity::{
     builder::{CreateMessage, EditMessage},
     collector,
     framework::standard::{
-        macros::{command, group},
-        Args, CommandResult,
+        Args,
+        CommandResult, macros::{command, group},
     },
     model::channel::Message,
     utils::MessageBuilder,
 };
-use std::{str::FromStr, sync::Arc};
-use youmubot_prelude::{stream::FuturesUnordered, *};
+
+use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
+use embeds::{beatmap_embed, score_embed, user_embed};
+pub use hook::{dot_osu_hook, hook};
+use hook::SHORT_LINK_REGEX;
+use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
+use youmubot_prelude::{*, stream::FuturesUnordered};
+use youmubot_prelude::announcer::AnnouncerHandler;
+
+use crate::{
+    Client as OsuHttpClient,
+    discord::beatmap_cache::BeatmapMetaCache,
+    discord::display::ScoreListStyle,
+    discord::oppai_cache::{BeatmapCache, BeatmapInfo},
+    models::{self, Beatmap, Mode, Mods, Score, User},
+    request::{BeatmapRequestKind, UserID},
+};
 
 mod announcer;
 pub(crate) mod beatmap_cache;
@@ -30,17 +39,35 @@ mod hook;
 pub(crate) mod oppai_cache;
 mod server_rank;
 
-use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
-use embeds::{beatmap_embed, score_embed, user_embed};
-use hook::SHORT_LINK_REGEX;
-pub use hook::{dot_osu_hook, hook};
-use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
-
 /// The osu! client.
 pub(crate) struct OsuClient;
 
 impl TypeMapKey for OsuClient {
     type Value = Arc<OsuHttpClient>;
+}
+
+/// The environment for osu! app commands.
+#[derive(Clone)]
+pub struct Env {
+    pub(crate) prelude: youmubot_prelude::Env,
+    // databases
+    pub(crate) saved_users: OsuSavedUsers,
+    pub(crate) last_beatmaps: OsuLastBeatmap,
+    pub(crate) user_bests: OsuUserBests,
+    // clients
+    pub(crate) client: Arc<OsuHttpClient>,
+    pub(crate) oppai: BeatmapCache,
+    pub(crate) beatmaps: BeatmapMetaCache,
+}
+
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<osu::Env>")
+    }
+}
+
+impl TypeMapKey for Env {
+    type Value = Env;
 }
 
 /// Sets up the osu! command handling section.
@@ -55,50 +82,59 @@ impl TypeMapKey for OsuClient {
 ///  - Hooks. Hooks are completely opt-in.
 ///  
 pub async fn setup(
-    _path: &std::path::Path,
     data: &mut TypeMap,
+    prelude: youmubot_prelude::Env,
     announcers: &mut AnnouncerHandler,
-) -> CommandResult {
-    let sql_client = data.get::<SQLClient>().unwrap().clone();
+) -> Result<Env> {
     // Databases
-    data.insert::<OsuSavedUsers>(OsuSavedUsers::new(sql_client.clone()));
-    data.insert::<OsuLastBeatmap>(OsuLastBeatmap::new(sql_client.clone()));
-    data.insert::<OsuUserBests>(OsuUserBests::new(sql_client.clone()));
+    let saved_users = OsuSavedUsers::new(prelude.sql.clone());
+    let last_beatmaps = OsuLastBeatmap::new(prelude.sql.clone());
+    let user_bests = OsuUserBests::new(prelude.sql.clone());
 
     // API client
-    let http_client = data.get::<HTTPClient>().unwrap().clone();
-    let mk_osu_client = || async {
-        Arc::new(
-            OsuHttpClient::new(
-                std::env::var("OSU_API_CLIENT_ID")
-                    .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
-                    .parse()
-                    .expect("client_id should be u64"),
-                std::env::var("OSU_API_CLIENT_SECRET")
-                    .expect("Please set OSU_API_CLIENT_SECRET as osu! api v2 client secret."),
-            )
-            .await
-            .expect("osu! should be initialized"),
+    let osu_client = Arc::new(
+        OsuHttpClient::new(
+            std::env::var("OSU_API_CLIENT_ID")
+                .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
+                .parse()
+                .expect("client_id should be u64"),
+            std::env::var("OSU_API_CLIENT_SECRET")
+                .expect("Please set OSU_API_CLIENT_SECRET as osu! api v2 client secret."),
         )
-    };
-    let osu_client = mk_osu_client().await;
-    data.insert::<OsuClient>(osu_client.clone());
-    data.insert::<oppai_cache::BeatmapCache>(oppai_cache::BeatmapCache::new(
-        http_client.clone(),
-        sql_client.clone(),
-    ));
-    data.insert::<beatmap_cache::BeatmapMetaCache>(beatmap_cache::BeatmapMetaCache::new(
-        osu_client.clone(),
-        sql_client,
-    ));
+        .await
+        .expect("osu! should be initialized"),
+    );
+    let oppai_cache = oppai_cache::BeatmapCache::new(prelude.http.clone(), prelude.sql.clone());
+    let beatmap_cache =
+        beatmap_cache::BeatmapMetaCache::new(osu_client.clone(), prelude.sql.clone());
 
     // Announcer
-    let osu_client = mk_osu_client().await;
     announcers.add(
         announcer::ANNOUNCER_KEY,
-        announcer::Announcer::new(osu_client),
+        announcer::Announcer::new(osu_client.clone()),
     );
-    Ok(())
+
+    // Legacy data
+    data.insert::<OsuLastBeatmap>(last_beatmaps.clone());
+    data.insert::<OsuSavedUsers>(saved_users.clone());
+    data.insert::<OsuUserBests>(user_bests.clone());
+    data.insert::<OsuClient>(osu_client.clone());
+    data.insert::<BeatmapCache>(oppai_cache.clone());
+    data.insert::<BeatmapMetaCache>(beatmap_cache.clone());
+
+    let env = Env {
+        prelude,
+        saved_users,
+        last_beatmaps,
+        user_bests,
+        client: osu_client,
+        oppai: oppai_cache,
+        beatmaps: beatmap_cache,
+    };
+
+    data.insert::<Env>(env.clone());
+
+    Ok(env)
 }
 
 #[group]
@@ -289,7 +325,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let data = ctx.data.read().await;
     let osu = data.get::<OsuClient>().unwrap();
-    let target = args.single::<UserId>()?.0;
+    let target = args.single::<serenity::model::id::UserId>()?;
 
     let username = args.quoted().trimmed().single::<String>()?;
     let user: Option<User> = osu
@@ -577,58 +613,57 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     let data = ctx.data.read().await;
     let bm = load_beatmap(ctx, msg).await;
 
-    let bm = match bm {
-        Some((bm, _)) => bm,
+    match bm {
         None => {
             msg.reply(&ctx, "No beatmap queried on this channel.")
                 .await?;
-            return Ok(());
         }
-    };
+        Some((bm, mods_def)) => {
+            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
+            let b = &bm.0;
+            let m = bm.1;
+            let style = args
+                .single::<ScoreListStyle>()
+                .unwrap_or(ScoreListStyle::Grid);
+            let username_arg = args.single::<UsernameArg>().ok();
+            let user_id = match username_arg.as_ref() {
+                Some(UsernameArg::Tagged(v)) => Some(*v),
+                None => Some(msg.author.id),
+                _ => None,
+            };
+            let user = to_user_id_query(username_arg, &data, msg).await?;
 
-    let mods = args.find::<Mods>().ok().unwrap_or_default();
-    let b = &bm.0;
-    let m = bm.1;
-    let style = args
-        .single::<ScoreListStyle>()
-        .unwrap_or(ScoreListStyle::Grid);
-    let username_arg = args.single::<UsernameArg>().ok();
-    let user_id = match username_arg.as_ref() {
-        Some(UsernameArg::Tagged(v)) => Some(*v),
-        None => Some(msg.author.id),
-        _ => None,
-    };
-    let user = to_user_id_query(username_arg, &data, msg).await?;
+            let osu = data.get::<OsuClient>().unwrap();
 
-    let osu = data.get::<OsuClient>().unwrap();
+            let user = osu
+                .user(user, |f| f)
+                .await?
+                .ok_or_else(|| Error::msg("User not found"))?;
+            let mut scores = osu
+                .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
+                .await?
+                .into_iter()
+                .filter(|s| s.mods.contains(mods))
+                .collect::<Vec<_>>();
+            scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
 
-    let user = osu
-        .user(user, |f| f)
-        .await?
-        .ok_or_else(|| Error::msg("User not found"))?;
-    let mut scores = osu
-        .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
-        .await?
-        .into_iter()
-        .filter(|s| s.mods.contains(mods))
-        .collect::<Vec<_>>();
-    scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
+            if scores.is_empty() {
+                msg.reply(&ctx, "No scores found").await?;
+                return Ok(());
+            }
 
-    if scores.is_empty() {
-        msg.reply(&ctx, "No scores found").await?;
-        return Ok(());
+            if let Some(user_id) = user_id {
+                // Save to database
+                data.get::<OsuUserBests>()
+                    .unwrap()
+                    .save(user_id, m, scores.clone())
+                    .await
+                    .pls_ok();
+            }
+
+            style.display_scores(scores, m, ctx, msg).await?;
+        }
     }
-
-    if let Some(user_id) = user_id {
-        // Save to database
-        data.get::<OsuUserBests>()
-            .unwrap()
-            .save(user_id, m, scores.clone())
-            .await
-            .pls_ok();
-    }
-
-    style.display_scores(scores, m, ctx, msg).await?;
 
     Ok(())
 }

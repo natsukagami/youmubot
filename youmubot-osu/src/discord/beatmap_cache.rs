@@ -1,16 +1,25 @@
+use std::sync::Arc;
+
+use youmubot_db_sql::{models::osu as models, Pool};
+use youmubot_prelude::*;
+
 use crate::{
     models::{ApprovalStatus, Beatmap, Mode},
     Client,
 };
-use std::sync::Arc;
-use youmubot_db_sql::{models::osu as models, Pool};
-use youmubot_prelude::*;
 
 /// BeatmapMetaCache intercepts beatmap-by-id requests and caches them for later recalling.
 /// Does not cache non-Ranked beatmaps.
+#[derive(Clone)]
 pub struct BeatmapMetaCache {
     client: Arc<Client>,
     pool: Pool,
+}
+
+impl std::fmt::Debug for BeatmapMetaCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<BeatmapMetaCache>")
+    }
 }
 
 impl TypeMapKey for BeatmapMetaCache {

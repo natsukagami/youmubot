@@ -13,6 +13,7 @@ use serenity::{
 
 use db::{CfSavedUsers, CfUser};
 pub use hook::InfoHook;
+use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::table_format::table_formatting_unsafe;
 use youmubot_prelude::table_format::Align::{Left, Right};
 use youmubot_prelude::{
