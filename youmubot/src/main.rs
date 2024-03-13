@@ -1,7 +1,7 @@
 use dotenv::var;
 use serenity::{
     framework::standard::{
-        BucketBuilder, CommandResult, Configuration, DispatchError, macros::hook, StandardFramework,
+        macros::hook, BucketBuilder, CommandResult, Configuration, DispatchError, StandardFramework,
     },
     model::{
         channel::{Channel, Message},
@@ -10,8 +10,8 @@ use serenity::{
     },
 };
 
-use youmubot_prelude::*;
 use youmubot_prelude::announcer::AnnouncerHandler;
+use youmubot_prelude::*;
 
 struct Handler {
     hooks: Vec<RwLock<Box<dyn Hook>>>,
@@ -53,6 +53,10 @@ impl AsRef<youmubot_osu::discord::Env> for Env {
     fn as_ref(&self) -> &youmubot_osu::discord::Env {
         &self.osu
     }
+}
+
+impl TypeMapKey for Env {
+    type Value = Env;
 }
 
 #[async_trait]
@@ -167,6 +171,8 @@ async fn main() {
             osu,
         }
     };
+
+    data.insert::<Env>(env);
 
     #[cfg(feature = "core")]
     println!("Core enabled.");

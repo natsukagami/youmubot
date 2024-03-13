@@ -5,7 +5,7 @@ pub use anyhow::{anyhow as error, bail, Error, Result};
 /// Re-exporting async_trait helps with implementing Announcer.
 pub use async_trait::async_trait;
 /// Re-export useful future and stream utils
-pub use futures_util::{future, FutureExt, stream, StreamExt, TryFutureExt, TryStreamExt};
+pub use futures_util::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 /// Module `prelude` provides a sane set of default imports that can be used inside
 /// a Youmubot source file.
 pub use serenity::prelude::*;
@@ -18,7 +18,7 @@ pub use debugging_ok::OkPrint;
 pub use flags::Flags;
 pub use hook::Hook;
 pub use member_cache::MemberCache;
-pub use pagination::{paginate, Paginate, paginate_fn, paginate_reply, paginate_reply_fn};
+pub use pagination::{paginate, paginate_fn, paginate_reply, paginate_reply_fn, Paginate};
 
 pub mod announcer;
 pub mod args;
@@ -61,8 +61,8 @@ pub struct Env {
 pub mod prelude_commands {
     use serenity::{
         framework::standard::{
-            CommandResult,
             macros::{command, group},
+            CommandResult,
         },
         model::channel::Message,
         prelude::Context,
