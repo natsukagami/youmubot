@@ -6,11 +6,11 @@ use serenity::{builder::CreateMessage, model::channel::Message, utils::MessageBu
 
 use youmubot_prelude::*;
 
+use crate::discord::OsuEnv;
 use crate::{
     discord::oppai_cache::BeatmapInfoWithPP,
     models::{Beatmap, Mode, Mods},
 };
-use crate::discord::OsuEnv;
 
 use super::embeds::beatmap_embed;
 

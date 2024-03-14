@@ -1,5 +1,6 @@
 use std::{convert::TryInto, sync::Arc};
 
+use serenity::builder::CreateMessage;
 use serenity::{
     http::CacheHttp,
     model::{
@@ -7,24 +8,23 @@ use serenity::{
         id::{ChannelId, UserId},
     },
 };
-use serenity::builder::CreateMessage;
 
 use announcer::MemberToChannels;
-use youmubot_prelude::*;
 use youmubot_prelude::announcer::CacheAndHttp;
 use youmubot_prelude::stream::TryStreamExt;
+use youmubot_prelude::*;
 
 use crate::{
-    Client as Osu,
     discord::cache::save_beatmap,
     discord::oppai_cache::BeatmapContent,
     models::{Mode, Score, User, UserEventRank},
     request::UserID,
+    Client as Osu,
 };
 
-use super::{calculate_weighted_map_length, OsuEnv};
-use super::{BeatmapWithMode, embeds::score_embed};
 use super::db::{OsuSavedUsers, OsuUser};
+use super::{calculate_weighted_map_length, OsuEnv};
+use super::{embeds::score_embed, BeatmapWithMode};
 
 /// osu! announcer's unique announcer key.
 pub const ANNOUNCER_KEY: &str = "osu";

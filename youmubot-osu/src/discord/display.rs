@@ -49,12 +49,12 @@ mod scores {
     }
 
     pub mod grid {
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
         use serenity::builder::EditMessage;
+        use serenity::{framework::standard::CommandResult, model::channel::Message};
 
         use youmubot_prelude::*;
 
-        use crate::discord::{BeatmapWithMode, cache::save_beatmap, OsuEnv};
+        use crate::discord::{cache::save_beatmap, BeatmapWithMode, OsuEnv};
         use crate::models::{Mode, Score};
 
         pub async fn display_scores_grid<'a>(
@@ -129,15 +129,15 @@ mod scores {
     pub mod table {
         use std::borrow::Cow;
 
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
         use serenity::builder::EditMessage;
+        use serenity::{framework::standard::CommandResult, model::channel::Message};
 
-        use youmubot_prelude::*;
-        use youmubot_prelude::table_format::{Align, table_formatting};
         use youmubot_prelude::table_format::Align::{Left, Right};
+        use youmubot_prelude::table_format::{table_formatting, Align};
+        use youmubot_prelude::*;
 
-        use crate::discord::{Beatmap, BeatmapInfo, OsuEnv};
         use crate::discord::oppai_cache::Accuracy;
+        use crate::discord::{Beatmap, BeatmapInfo, OsuEnv};
         use crate::models::{Mode, Score};
 
         pub async fn display_scores_table<'a>(
@@ -336,11 +336,11 @@ mod beatmapset {
 
     use youmubot_prelude::*;
 
+    use crate::discord::OsuEnv;
     use crate::{
-        discord::{BeatmapWithMode, cache::save_beatmap, oppai_cache::BeatmapInfoWithPP},
+        discord::{cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapWithMode},
         models::{Beatmap, Mode, Mods},
     };
-    use crate::discord::OsuEnv;
 
     const SHOW_ALL_EMOTE: &str = "🗒️";
 

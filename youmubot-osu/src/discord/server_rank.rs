@@ -2,17 +2,17 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use serenity::{
     builder::EditMessage,
-    framework::standard::{Args, CommandResult, macros::command},
+    framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
     utils::MessageBuilder,
 };
 
-use youmubot_prelude::{
-    *,
-    stream::FuturesUnordered,
-    table_format::{Align, table_formatting},
-};
 use youmubot_prelude::table_format::Align::{Left, Right};
+use youmubot_prelude::{
+    stream::FuturesUnordered,
+    table_format::{table_formatting, Align},
+    *,
+};
 
 use crate::{
     discord::{display::ScoreListStyle, oppai_cache::Accuracy},
@@ -56,12 +56,6 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let guild = m.guild_id.expect("Guild-only command");
     let member_cache = &prelude_env.members;
 
-    env.saved_users
-        .all()
-        .await?
-        .iter()
-        .for_each(|v| println!("{} {}", v.user_id.get(), v.username));
-
     let osu_users = env
         .saved_users
         .all()
@@ -70,20 +64,6 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .map(|v| (v.user_id, v))
         .collect::<HashMap<_, _>>();
 
-    member_cache
-        .query_members(&ctx, guild)
-        .await?
-        .iter()
-        .for_each(|v| {
-            println!("{} {}", v.user.id.get(), v.user.name);
-            println!(
-                "{}",
-                osu_users
-                    .get(&v.user.id)
-                    .map(|ou| format!("{}", ou.username))
-                    .unwrap_or(String::from("None"))
-            );
-        });
     let users = member_cache
         .query_members(&ctx, guild)
         .await?

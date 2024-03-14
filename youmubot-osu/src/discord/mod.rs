@@ -5,8 +5,8 @@ use serenity::{
     builder::{CreateMessage, EditMessage},
     collector,
     framework::standard::{
-        Args,
-        CommandResult, macros::{command, group},
+        macros::{command, group},
+        Args, CommandResult,
     },
     model::channel::Message,
     utils::MessageBuilder,
@@ -14,19 +14,19 @@ use serenity::{
 
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
-pub use hook::{dot_osu_hook, hook};
 use hook::SHORT_LINK_REGEX;
+pub use hook::{dot_osu_hook, hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
-use youmubot_prelude::{*, stream::FuturesUnordered};
 use youmubot_prelude::announcer::AnnouncerHandler;
+use youmubot_prelude::{stream::FuturesUnordered, *};
 
 use crate::{
-    Client as OsuHttpClient,
     discord::beatmap_cache::BeatmapMetaCache,
     discord::display::ScoreListStyle,
     discord::oppai_cache::{BeatmapCache, BeatmapInfo},
     models::{Beatmap, Mode, Mods, Score, User},
     request::{BeatmapRequestKind, UserID},
+    Client as OsuHttpClient,
 };
 
 mod announcer;
