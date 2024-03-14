@@ -1,6 +1,5 @@
 use std::{convert::TryInto, sync::Arc};
 
-use serenity::builder::CreateMessage;
 use serenity::{
     http::CacheHttp,
     model::{
@@ -8,24 +7,24 @@ use serenity::{
         id::{ChannelId, UserId},
     },
 };
+use serenity::builder::CreateMessage;
 
 use announcer::MemberToChannels;
+use youmubot_prelude::*;
 use youmubot_prelude::announcer::CacheAndHttp;
 use youmubot_prelude::stream::TryStreamExt;
-use youmubot_prelude::*;
 
 use crate::{
-    discord::beatmap_cache::BeatmapMetaCache,
+    Client as Osu,
     discord::cache::save_beatmap,
-    discord::oppai_cache::{BeatmapCache, BeatmapContent},
+    discord::oppai_cache::BeatmapContent,
     models::{Mode, Score, User, UserEventRank},
     request::UserID,
-    Client as Osu,
 };
 
+use super::{calculate_weighted_map_length, OsuEnv};
+use super::{BeatmapWithMode, embeds::score_embed};
 use super::db::{OsuSavedUsers, OsuUser};
-use super::{calculate_weighted_map_length, OsuClient};
-use super::{embeds::score_embed, BeatmapWithMode};
 
 /// osu! announcer's unique announcer key.
 pub const ANNOUNCER_KEY: &str = "osu";
@@ -52,8 +51,9 @@ impl youmubot_prelude::Announcer for Announcer {
         // For each user...
         let users = {
             let data = d.read().await;
-            let data = data.get::<OsuSavedUsers>().unwrap();
-            data.all().await?
+            let env = data.get::<OsuEnv>().unwrap();
+            let saved_users = &env.saved_users;
+            saved_users.all().await?
         };
         let now = chrono::Utc::now();
         users
@@ -199,8 +199,9 @@ impl Announcer {
 
     async fn std_weighted_map_length(ctx: &Context, u: &OsuUser) -> Result<f64> {
         let data = ctx.data.read().await;
-        let client = data.get::<OsuClient>().unwrap().clone();
-        let cache = data.get::<BeatmapMetaCache>().unwrap();
+        let env = data.get::<OsuEnv>().unwrap();
+        let client = env.client.clone();
+        let cache = &env.beatmaps;
         let scores = client
             .user_best(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(100))
             .await?;
@@ -283,8 +284,9 @@ impl<'a> CollectedScore<'a> {
 
     async fn get_beatmap(&self, ctx: &Context) -> Result<(BeatmapWithMode, BeatmapContent)> {
         let data = ctx.data.read().await;
-        let cache = data.get::<BeatmapMetaCache>().unwrap();
-        let oppai = data.get::<BeatmapCache>().unwrap();
+        let env = data.get::<OsuEnv>().unwrap();
+        let cache = &env.beatmaps;
+        let oppai = &env.oppai;
         let beatmap = cache.get_beatmap_default(self.score.beatmap_id).await?;
         let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
         Ok((BeatmapWithMode(beatmap, self.mode), content))
@@ -341,9 +343,11 @@ impl<'a> CollectedScore<'a> {
                     }),
             )
             .await?;
-        save_beatmap(&*ctx.data.read().await, channel, bm)
-            .await
-            .pls_ok();
+
+        let data = ctx.data.read().await;
+        let env = data.get::<OsuEnv>().unwrap();
+
+        save_beatmap(&data, &env, channel, bm).await.pls_ok();
         Ok(m)
     }
 }

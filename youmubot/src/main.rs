@@ -40,7 +40,7 @@ impl Handler {
 struct Env {
     prelude: youmubot_prelude::Env,
     #[cfg(feature = "osu")]
-    osu: youmubot_osu::discord::Env,
+    osu: youmubot_osu::discord::OsuEnv,
 }
 
 impl AsRef<youmubot_prelude::Env> for Env {
@@ -49,8 +49,8 @@ impl AsRef<youmubot_prelude::Env> for Env {
     }
 }
 
-impl AsRef<youmubot_osu::discord::Env> for Env {
-    fn as_ref(&self) -> &youmubot_osu::discord::Env {
+impl AsRef<youmubot_osu::discord::OsuEnv> for Env {
+    fn as_ref(&self) -> &youmubot_osu::discord::OsuEnv {
         &self.osu
     }
 }

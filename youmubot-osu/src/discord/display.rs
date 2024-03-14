@@ -49,14 +49,12 @@ mod scores {
     }
 
     pub mod grid {
-        use serenity::builder::EditMessage;
         use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use serenity::builder::EditMessage;
 
         use youmubot_prelude::*;
 
-        use crate::discord::{
-            cache::save_beatmap, BeatmapCache, BeatmapMetaCache, BeatmapWithMode,
-        };
+        use crate::discord::{BeatmapWithMode, cache::save_beatmap, OsuEnv};
         use crate::models::{Mode, Score};
 
         pub async fn display_scores_grid<'a>(
@@ -89,18 +87,19 @@ mod scores {
         impl pagination::Paginate for Paginate {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
                 let data = ctx.data.read().await;
-                let client = data.get::<crate::discord::OsuClient>().unwrap();
-                let osu = data.get::<BeatmapMetaCache>().unwrap();
-                let beatmap_cache = data.get::<BeatmapCache>().unwrap();
+                let env = data.get::<OsuEnv>().unwrap();
+                let osu_client = &env.client;
+                let beatmaps = &env.beatmaps;
+                let beatmap_cache = &env.oppai;
                 let page = page as usize;
                 let score = &self.scores[page];
 
                 let hourglass = msg.react(ctx, '⌛').await?;
                 let mode = self.mode;
-                let beatmap = osu.get_beatmap(score.beatmap_id, mode).await?;
+                let beatmap = beatmaps.get_beatmap(score.beatmap_id, mode).await?;
                 let content = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
                 let bm = BeatmapWithMode(beatmap, mode);
-                let user = client
+                let user = osu_client
                     .user(crate::request::UserID::ID(score.user_id), |f| f)
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
@@ -114,7 +113,7 @@ mod scores {
                     }),
                 )
                 .await?;
-                save_beatmap(&*ctx.data.read().await, msg.channel_id, &bm).await?;
+                save_beatmap(&data, &env, msg.channel_id, &bm).await?;
 
                 // End
                 hourglass.delete(ctx).await?;
@@ -130,15 +129,15 @@ mod scores {
     pub mod table {
         use std::borrow::Cow;
 
-        use serenity::builder::EditMessage;
         use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use serenity::builder::EditMessage;
 
-        use youmubot_prelude::table_format::Align::{Left, Right};
-        use youmubot_prelude::table_format::{table_formatting, Align};
         use youmubot_prelude::*;
+        use youmubot_prelude::table_format::{Align, table_formatting};
+        use youmubot_prelude::table_format::Align::{Left, Right};
 
+        use crate::discord::{Beatmap, BeatmapInfo, OsuEnv};
         use crate::discord::oppai_cache::Accuracy;
-        use crate::discord::{Beatmap, BeatmapCache, BeatmapInfo, BeatmapMetaCache};
         use crate::models::{Mode, Score};
 
         pub async fn display_scores_table<'a>(
@@ -179,8 +178,10 @@ mod scores {
         impl pagination::Paginate for Paginate {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
                 let data = ctx.data.read().await;
-                let osu = data.get::<BeatmapMetaCache>().unwrap();
-                let beatmap_cache = data.get::<BeatmapCache>().unwrap();
+                let env = data.get::<OsuEnv>().unwrap();
+
+                let beatmaps = &env.beatmaps;
+                let beatmap_cache = &env.oppai;
                 let page = page as usize;
                 let start = page * ITEMS_PER_PAGE;
                 let end = self.scores.len().min(start + ITEMS_PER_PAGE);
@@ -194,7 +195,7 @@ mod scores {
                 let beatmaps = plays
                     .iter()
                     .map(|play| async move {
-                        let beatmap = osu.get_beatmap(play.beatmap_id, mode).await?;
+                        let beatmap = beatmaps.get_beatmap(play.beatmap_id, mode).await?;
                         let info = {
                             let b = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
                             b.get_info_with(mode, play.mods).ok()
@@ -336,11 +337,10 @@ mod beatmapset {
     use youmubot_prelude::*;
 
     use crate::{
-        discord::{
-            cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapCache, BeatmapWithMode,
-        },
+        discord::{BeatmapWithMode, cache::save_beatmap, oppai_cache::BeatmapInfoWithPP},
         models::{Beatmap, Mode, Mods},
     };
+    use crate::discord::OsuEnv;
 
     const SHOW_ALL_EMOTE: &str = "🗒️";
 
@@ -387,7 +387,9 @@ mod beatmapset {
     impl Paginate {
         async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Result<BeatmapInfoWithPP> {
             let data = ctx.data.read().await;
-            let cache = data.get::<BeatmapCache>().unwrap();
+            let env = data.get::<OsuEnv>().unwrap();
+
+            let cache = &env.oppai;
             cache
                 .get_beatmap(b.beatmap_id)
                 .await
@@ -401,15 +403,10 @@ mod beatmapset {
             Some(self.maps.len())
         }
 
-        async fn render(
-            &mut self,
-            page: u8,
-            ctx: &Context,
-            m: &mut serenity::model::channel::Message,
-        ) -> Result<bool> {
+        async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
             let page = page as usize;
             if page == self.maps.len() {
-                m.edit(
+                msg.edit(
                     ctx,
                     EditMessage::new().embed(crate::discord::embeds::beatmapset_embed(
                         &self.maps[..],
@@ -432,8 +429,8 @@ mod beatmapset {
                     info
                 }
             };
-            m.edit(ctx,
-                   EditMessage::new().content(self.message.as_str()).embed(
+            msg.edit(ctx,
+                     EditMessage::new().content(self.message.as_str()).embed(
                        crate::discord::embeds::beatmap_embed(
                            map,
                            self.mode.unwrap_or(map.mode),
@@ -451,9 +448,12 @@ mod beatmapset {
                    ),
             )
                 .await?;
+            let data = ctx.data.read().await;
+            let env = data.get::<OsuEnv>().unwrap();
             save_beatmap(
-                &*ctx.data.read().await,
-                m.channel_id,
+                &data,
+                &env,
+                msg.channel_id,
                 &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),
             )
             .await
