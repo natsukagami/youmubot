@@ -46,10 +46,9 @@ pub fn dot_osu_hook<'a>(
                 let url = attachment.url.clone();
 
                 async move {
-                    let data = ctx.data.read().await;
-                    let env = data.get::<OsuEnv>().unwrap();
+                    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                    let oppai = &env.oppai;
+                    let oppai = env.oppai;
                     let (beatmap, _) = oppai.download_beatmap_from_url(&url).await.ok()?;
                     crate::discord::embeds::beatmap_offline_embed(
                         &beatmap,
@@ -73,10 +72,9 @@ pub fn dot_osu_hook<'a>(
             .map(|attachment| {
                 let url = attachment.url.clone();
                 async move {
-                    let data = ctx.data.read().await;
-                    let env = data.get::<OsuEnv>().unwrap();
+                    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                    let oppai = &env.oppai;
+                    let oppai = env.oppai;
                     let beatmaps = oppai.download_osz_from_url(&url).await.pls_ok()?;
                     Some(
                         beatmaps
@@ -141,10 +139,9 @@ pub fn hook<'a>(
                         let mode = l.mode.unwrap_or(b.mode);
                         let bm = super::BeatmapWithMode(*b, mode);
 
-                        let data = ctx.data.read().await;
-                        let env = data.get::<OsuEnv>().unwrap();
+                        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                        crate::discord::cache::save_beatmap(&data, &env, msg.channel_id, &bm)
+                        crate::discord::cache::save_beatmap(&env, msg.channel_id, &bm)
                             .await
                             .pls_ok();
                     }
@@ -258,10 +255,9 @@ fn handle_new_links<'a>(
     NEW_LINK_REGEX
         .captures_iter(content)
         .map(|capture| async move {
-            let data = ctx.data.read().await;
-            let env = data.get::<OsuEnv>().unwrap();
-            let beatmaps = &env.beatmaps;
-            let oppai = &env.oppai;
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+            let beatmaps = env.beatmaps;
+            let oppai = env.oppai;
             let mode = capture
                 .name("mode")
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));
@@ -338,10 +334,9 @@ fn handle_short_links<'a>(
                     return Err(Error::msg("not in server announcer channel"));
                 }
             }
-            let data = ctx.data.read().await;
-            let env = data.get::<OsuEnv>().unwrap();
-            let beatmaps = &env.beatmaps;
-            let oppai = &env.oppai;
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+            let beatmaps = env.beatmaps;
+            let oppai = env.oppai;
             let mode = capture
                 .name("mode")
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));

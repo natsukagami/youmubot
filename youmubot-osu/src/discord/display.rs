@@ -86,11 +86,10 @@ mod scores {
         #[async_trait]
         impl pagination::Paginate for Paginate {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
-                let data = ctx.data.read().await;
-                let env = data.get::<OsuEnv>().unwrap();
-                let osu_client = &env.client;
-                let beatmaps = &env.beatmaps;
-                let beatmap_cache = &env.oppai;
+                let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+                let osu_client = env.client;
+                let beatmaps = env.beatmaps;
+                let beatmap_cache = env.oppai;
                 let page = page as usize;
                 let score = &self.scores[page];
 
@@ -113,7 +112,7 @@ mod scores {
                     }),
                 )
                 .await?;
-                save_beatmap(&data, &env, msg.channel_id, &bm).await?;
+                save_beatmap(&env, msg.channel_id, &bm).await?;
 
                 // End
                 hourglass.delete(ctx).await?;
@@ -177,11 +176,10 @@ mod scores {
         #[async_trait]
         impl pagination::Paginate for Paginate {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
-                let data = ctx.data.read().await;
-                let env = data.get::<OsuEnv>().unwrap();
+                let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                let beatmaps = &env.beatmaps;
-                let beatmap_cache = &env.oppai;
+                let beatmaps = env.beatmaps;
+                let beatmap_cache = env.oppai;
                 let page = page as usize;
                 let start = page * ITEMS_PER_PAGE;
                 let end = self.scores.len().min(start + ITEMS_PER_PAGE);
@@ -386,11 +384,10 @@ mod beatmapset {
 
     impl Paginate {
         async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Result<BeatmapInfoWithPP> {
-            let data = ctx.data.read().await;
-            let env = data.get::<OsuEnv>().unwrap();
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-            let cache = &env.oppai;
-            cache
+            let oppai = env.oppai;
+            oppai
                 .get_beatmap(b.beatmap_id)
                 .await
                 .and_then(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), self.mods))
@@ -448,10 +445,8 @@ mod beatmapset {
                    ),
             )
                 .await?;
-            let data = ctx.data.read().await;
-            let env = data.get::<OsuEnv>().unwrap();
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
             save_beatmap(
-                &data,
                 &env,
                 msg.channel_id,
                 &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),

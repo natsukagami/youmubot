@@ -47,9 +47,8 @@ impl FromStr for RankQuery {
 #[max_args(1)]
 #[only_in(guilds)]
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
-    let data = ctx.data.read().await;
-    let env = data.get::<OsuEnv>().unwrap();
-    let prelude_env = &env.prelude;
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+    let prelude_env = env.prelude;
     let mode = args
         .single::<RankQuery>()
         .unwrap_or(RankQuery::Mode(Mode::Std));
@@ -219,12 +218,11 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
     let order = args.single::<OrderBy>().unwrap_or_default();
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
 
-    let data = ctx.data.read().await;
-    let env = data.get::<OsuEnv>().unwrap();
-    let prelude_env = &env.prelude;
-    let member_cache = &prelude_env.members;
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+    let prelude_env = env.prelude;
+    let member_cache = prelude_env.members;
 
-    let (bm, _) = match super::load_beatmap(ctx, env, msg).await {
+    let (bm, _) = match super::load_beatmap(&env, msg).await {
         Some((bm, mods_def)) => {
             let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
             (bm, mods)
@@ -236,11 +234,11 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
         }
     };
 
-    let osu_client = &env.client.clone();
+    let osu_client = env.client.clone();
 
     // Get oppai map.
     let mode = bm.1;
-    let oppai = &env.oppai;
+    let oppai = env.oppai;
     let oppai_map = oppai.get_beatmap(bm.0.beatmap_id).await?;
 
     let guild = msg.guild_id.expect("Guild-only command");

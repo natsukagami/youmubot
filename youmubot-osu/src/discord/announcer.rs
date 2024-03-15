@@ -50,10 +50,8 @@ impl youmubot_prelude::Announcer for Announcer {
     ) -> Result<()> {
         // For each user...
         let users = {
-            let data = d.read().await;
-            let env = data.get::<OsuEnv>().unwrap();
-            let saved_users = &env.saved_users;
-            saved_users.all().await?
+            let env = d.read().await.get::<OsuEnv>().unwrap().clone();
+            env.saved_users.all().await?
         };
         let now = chrono::Utc::now();
         users
@@ -198,10 +196,9 @@ impl Announcer {
     }
 
     async fn std_weighted_map_length(ctx: &Context, u: &OsuUser) -> Result<f64> {
-        let data = ctx.data.read().await;
-        let env = data.get::<OsuEnv>().unwrap();
-        let client = env.client.clone();
-        let cache = &env.beatmaps;
+        let env = ctx.data.read().awaitget::<OsuEnv>().unwrap().clone();
+        let client = env.client;
+        let cache = env.beatmaps;
         let scores = client
             .user_best(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(100))
             .await?;
@@ -283,10 +280,9 @@ impl<'a> CollectedScore<'a> {
     }
 
     async fn get_beatmap(&self, ctx: &Context) -> Result<(BeatmapWithMode, BeatmapContent)> {
-        let data = ctx.data.read().await;
-        let env = data.get::<OsuEnv>().unwrap();
-        let cache = &env.beatmaps;
-        let oppai = &env.oppai;
+        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+        let cache = env.beatmaps;
+        let oppai = env.oppai;
         let beatmap = cache.get_beatmap_default(self.score.beatmap_id).await?;
         let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
         Ok((BeatmapWithMode(beatmap, self.mode), content))
@@ -344,10 +340,9 @@ impl<'a> CollectedScore<'a> {
             )
             .await?;
 
-        let data = ctx.data.read().await;
-        let env = data.get::<OsuEnv>().unwrap();
+        let env = ctx.data.read().get::<OsuEnv>().unwrap().clone();
 
-        save_beatmap(&data, &env, channel, bm).await.pls_ok();
+        save_beatmap(&env, channel, bm).await.pls_ok();
         Ok(m)
     }
 }
