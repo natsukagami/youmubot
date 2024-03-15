@@ -196,13 +196,13 @@ impl Announcer {
     }
 
     async fn std_weighted_map_length(ctx: &Context, u: &OsuUser) -> Result<f64> {
-        let env = ctx.data.read().awaitget::<OsuEnv>().unwrap().clone();
+        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
         let client = env.client;
         let cache = env.beatmaps;
         let scores = client
             .user_best(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(100))
             .await?;
-        calculate_weighted_map_length(&scores, cache, Mode::Std).await
+        calculate_weighted_map_length(&scores, &cache, Mode::Std).await
     }
 }
 
@@ -340,7 +340,7 @@ impl<'a> CollectedScore<'a> {
             )
             .await?;
 
-        let env = ctx.data.read().get::<OsuEnv>().unwrap().clone();
+        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
         save_beatmap(&env, channel, bm).await.pls_ok();
         Ok(m)

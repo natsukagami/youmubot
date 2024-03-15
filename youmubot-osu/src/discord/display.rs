@@ -87,9 +87,9 @@ mod scores {
         impl pagination::Paginate for Paginate {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-                let osu_client = env.client;
-                let beatmaps = env.beatmaps;
-                let beatmap_cache = env.oppai;
+                let osu_client = &env.client;
+                let beatmaps = &env.beatmaps;
+                let beatmap_cache = &env.oppai;
                 let page = page as usize;
                 let score = &self.scores[page];
 
@@ -178,8 +178,8 @@ mod scores {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                let beatmaps = env.beatmaps;
-                let beatmap_cache = env.oppai;
+                let beatmaps = &env.beatmaps;
+                let beatmap_cache = &env.oppai;
                 let page = page as usize;
                 let start = page * ITEMS_PER_PAGE;
                 let end = self.scores.len().min(start + ITEMS_PER_PAGE);

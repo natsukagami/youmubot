@@ -216,8 +216,8 @@ impl AsRef<Beatmap> for BeatmapWithMode {
 #[usage = "[username or user_id]"]
 #[num_args(1)]
 pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let env = ctx.data.read().get::<OsuEnv>().unwrap().clone();
-    let osu_client = env.client;
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+    let osu_client = &env.client;
 
     let user = args.single::<String>()?;
     let u = match osu_client.user(UserID::from_string(user), |f| f).await? {
@@ -336,7 +336,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-    let osu_client = env.client;
+    let osu_client = &env.client;
 
     let target = args.single::<UserId>()?.0;
 
@@ -449,9 +449,9 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     )
     .await?;
 
-    let osu_client = env.client;
-    let meta_cache = env.beatmaps;
-    let oppai = env.oppai;
+    let osu_client = &env.client;
+    let meta_cache = &env.beatmaps;
+    let oppai = &env.oppai;
     let user = osu_client
         .user(user, |f| f.mode(mode))
         .await?
@@ -691,10 +691,10 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .unwrap_or(Mode::Std);
 
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg).await?;
-    let meta_cache = env.beatmaps;
-    let osu_client = env.client;
+    let meta_cache = &env.beatmaps;
+    let osu_client = &env.client;
 
-    let oppai = env.oppai;
+    let oppai = &env.oppai;
     let user = osu_client
         .user(user, |f| f.mode(mode))
         .await?

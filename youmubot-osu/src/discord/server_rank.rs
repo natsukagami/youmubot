@@ -219,8 +219,8 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
 
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let prelude_env = env.prelude;
-    let member_cache = prelude_env.members;
+    let prelude_env = &env.prelude;
+    let member_cache = &prelude_env.members;
 
     let (bm, _) = match super::load_beatmap(&env, msg).await {
         Some((bm, mods_def)) => {
