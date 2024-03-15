@@ -80,7 +80,7 @@ impl TypeMapKey for OsuEnv {
 ///  This does NOT automatically enable:
 ///  - Commands on the "osu" prefix
 ///  - Hooks. Hooks are completely opt-in.
-///  
+///
 pub async fn setup(
     data: &mut TypeMap,
     prelude: youmubot_prelude::Env,
@@ -364,14 +364,34 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
 }
 
 async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv) -> Result<()> {
+    let pp = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
+        .into_iter()
+        .map(|mode| async move {
+            env.client
+                .user(UserID::ID(user.id), |f| f.mode(mode))
+                .await
+                .map(|u_opt| u_opt.map(|u| u.pp.unwrap_or(0.0)))
+        })
+        .collect::<stream::FuturesOrdered<_>>()
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    let scores = env
+        .client
+        .user_best(UserID::ID(user.id), |f| f.mode(Mode::Std).limit(100))
+        .await?;
+
+    let std_weight_map_length =
+        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std).await?;
+
     let u = OsuUser {
         user_id: target,
         username: user.username.into(),
         id: user.id,
         failures: 0,
         last_update: chrono::Utc::now(),
-        pp: [None, None, None, None],
-        std_weighted_map_length: None,
+        pp: pp.try_into().unwrap(),
+        std_weighted_map_length: Some(std_weight_map_length),
     };
     env.saved_users.new_user(u).await?;
     Ok(())
