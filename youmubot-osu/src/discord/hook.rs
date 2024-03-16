@@ -48,8 +48,7 @@ pub fn dot_osu_hook<'a>(
                 async move {
                     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                    let oppai = env.oppai;
-                    let (beatmap, _) = oppai.download_beatmap_from_url(&url).await.ok()?;
+                    let (beatmap, _) = env.oppai.download_beatmap_from_url(&url).await.ok()?;
                     crate::discord::embeds::beatmap_offline_embed(
                         &beatmap,
                         Mode::from(beatmap.content.mode as u8), /*For now*/
@@ -74,8 +73,7 @@ pub fn dot_osu_hook<'a>(
                 async move {
                     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                    let oppai = env.oppai;
-                    let beatmaps = oppai.download_osz_from_url(&url).await.pls_ok()?;
+                    let beatmaps = env.oppai.download_osz_from_url(&url).await.pls_ok()?;
                     Some(
                         beatmaps
                             .into_iter()
@@ -179,7 +177,6 @@ fn handle_old_links<'a>(
         .map(move |capture| async move {
             let data = ctx.data.read().await;
             let env = data.get::<OsuEnv>().unwrap();
-            let meta_cache = &env.beatmaps;
             let req_type = capture.name("link_type").unwrap().as_str();
             let mode = capture
                 .name("mode")
@@ -196,14 +193,18 @@ fn handle_old_links<'a>(
                 });
             let beatmaps = match req_type {
                 "b" => vec![match mode {
-                    Some(mode) => meta_cache.get_beatmap(capture["id"].parse()?, mode).await?,
+                    Some(mode) => {
+                        env.beatmaps
+                            .get_beatmap(capture["id"].parse()?, mode)
+                            .await?
+                    }
                     None => {
-                        meta_cache
+                        env.beatmaps
                             .get_beatmap_default(capture["id"].parse()?)
                             .await?
                     }
                 }],
-                "s" => meta_cache.get_beatmapset(capture["id"].parse()?).await?,
+                "s" => env.beatmaps.get_beatmapset(capture["id"].parse()?).await?,
                 _ => unreachable!(),
             };
             if beatmaps.is_empty() {
@@ -256,19 +257,21 @@ fn handle_new_links<'a>(
         .captures_iter(content)
         .map(|capture| async move {
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-            let beatmaps = env.beatmaps;
-            let oppai = env.oppai;
             let mode = capture
                 .name("mode")
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));
             let link = capture.get(0).unwrap().as_str();
             let beatmaps = match capture.name("beatmap_id") {
                 Some(ref v) => vec![match mode {
-                    Some(mode) => beatmaps.get_beatmap(v.as_str().parse()?, mode).await?,
-                    None => beatmaps.get_beatmap_default(v.as_str().parse()?).await?,
+                    Some(mode) => env.beatmaps.get_beatmap(v.as_str().parse()?, mode).await?,
+                    None => {
+                        env.beatmaps
+                            .get_beatmap_default(v.as_str().parse()?)
+                            .await?
+                    }
                 }],
                 None => {
-                    beatmaps
+                    env.beatmaps
                         .get_beatmapset(capture.name("set_id").unwrap().as_str().parse()?)
                         .await?
                 }
@@ -286,7 +289,7 @@ fn handle_new_links<'a>(
                         .unwrap_or(Mods::NOMOD);
                     let info = {
                         let mode = mode.unwrap_or(beatmap.mode);
-                        oppai
+                        env.oppai
                             .get_beatmap(beatmap.beatmap_id)
                             .await
                             .and_then(|b| b.get_possible_pp_with(mode, mods))?
@@ -335,15 +338,13 @@ fn handle_short_links<'a>(
                 }
             }
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-            let beatmaps = env.beatmaps;
-            let oppai = env.oppai;
             let mode = capture
                 .name("mode")
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));
             let id: u64 = capture.name("id").unwrap().as_str().parse()?;
             let beatmap = match mode {
-                Some(mode) => beatmaps.get_beatmap(id, mode).await,
-                None => beatmaps.get_beatmap_default(id).await,
+                Some(mode) => env.beatmaps.get_beatmap(id, mode).await,
+                None => env.beatmaps.get_beatmap_default(id).await,
             }?;
             let mods = capture
                 .name("mods")
@@ -351,7 +352,7 @@ fn handle_short_links<'a>(
                 .unwrap_or(Mods::NOMOD);
             let info = {
                 let mode = mode.unwrap_or(beatmap.mode);
-                oppai
+                env.oppai
                     .get_beatmap(beatmap.beatmap_id)
                     .await
                     .and_then(|b| b.get_possible_pp_with(mode, mods))?
