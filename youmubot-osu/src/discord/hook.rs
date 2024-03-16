@@ -179,8 +179,7 @@ fn handle_old_links<'a>(
         .map(move |capture| async move {
             let data = ctx.data.read().await;
             let env = data.get::<OsuEnv>().unwrap();
-            let oppai = &env.oppai;
-            let beatmaps = &env.beatmaps;
+            let meta_cache = &env.beatmaps;
             let req_type = capture.name("link_type").unwrap().as_str();
             let mode = capture
                 .name("mode")
@@ -197,10 +196,14 @@ fn handle_old_links<'a>(
                 });
             let beatmaps = match req_type {
                 "b" => vec![match mode {
-                    Some(mode) => beatmaps.get_beatmap(capture["id"].parse()?, mode).await?,
-                    None => beatmaps.get_beatmap_default(capture["id"].parse()?).await?,
+                    Some(mode) => meta_cache.get_beatmap(capture["id"].parse()?, mode).await?,
+                    None => {
+                        meta_cache
+                            .get_beatmap_default(capture["id"].parse()?)
+                            .await?
+                    }
                 }],
-                "s" => beatmaps.get_beatmapset(capture["id"].parse()?).await?,
+                "s" => meta_cache.get_beatmapset(capture["id"].parse()?).await?,
                 _ => unreachable!(),
             };
             if beatmaps.is_empty() {
@@ -216,7 +219,7 @@ fn handle_old_links<'a>(
                         .unwrap_or(Mods::NOMOD);
                     let info = {
                         let mode = mode.unwrap_or(b.mode);
-                        oppai
+                        env.oppai
                             .get_beatmap(b.beatmap_id)
                             .await
                             .and_then(|b| b.get_possible_pp_with(mode, mods))?
@@ -238,13 +241,10 @@ fn handle_old_links<'a>(
         })
         .collect::<stream::FuturesUnordered<_>>()
         .filter_map(|v| {
-            future::ready(match v {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{}", e);
-                    None
-                }
-            })
+            future::ready(v.unwrap_or_else(|e| {
+                eprintln!("{}", e);
+                None
+            }))
         })
 }
 

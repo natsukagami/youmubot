@@ -48,12 +48,10 @@ impl FromStr for RankQuery {
 #[only_in(guilds)]
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let prelude_env = env.prelude;
     let mode = args
         .single::<RankQuery>()
         .unwrap_or(RankQuery::Mode(Mode::Std));
     let guild = m.guild_id.expect("Guild-only command");
-    let member_cache = &prelude_env.members;
 
     let osu_users = env
         .saved_users
@@ -63,7 +61,9 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .map(|v| (v.user_id, v))
         .collect::<HashMap<_, _>>();
 
-    let users = member_cache
+    let users = env
+        .prelude
+        .members
         .query_members(&ctx, guild)
         .await?
         .iter()
@@ -219,8 +219,6 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
 
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let prelude_env = &env.prelude;
-    let member_cache = &prelude_env.members;
 
     let (bm, _) = match super::load_beatmap(&env, msg).await {
         Some((bm, mods_def)) => {
@@ -254,7 +252,9 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
             .into_iter()
             .map(|v| (v.user_id, v))
             .collect::<HashMap<_, _>>();
-        let mut scores = member_cache
+        let mut scores = env
+            .prelude
+            .members
             .query_members(&ctx, guild)
             .await?
             .iter()

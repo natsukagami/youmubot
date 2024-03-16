@@ -450,8 +450,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     .await?;
 
     let osu_client = &env.client;
-    let meta_cache = &env.beatmaps;
-    let oppai = &env.oppai;
+
     let user = osu_client
         .user(user, |f| f.mode(mode))
         .await?
@@ -464,8 +463,11 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .into_iter()
                 .last()
                 .ok_or_else(|| Error::msg("No such play"))?;
-            let beatmap = meta_cache.get_beatmap(recent_play.beatmap_id, mode).await?;
-            let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(recent_play.beatmap_id, mode)
+                .await?;
+            let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id
@@ -574,8 +576,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         Some((BeatmapWithMode(b, m), mods_def)) => {
             let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
             if beatmapset {
-                let beatmap_cache = &env.beatmaps;
-                let beatmapset = beatmap_cache.get_beatmapset(b.beatmapset_id).await?;
+                let beatmapset = env.beatmaps.get_beatmapset(b.beatmapset_id).await?;
                 display::display_beatmapset(
                     ctx,
                     beatmapset,
@@ -691,10 +692,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .unwrap_or(Mode::Std);
 
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg).await?;
-    let meta_cache = &env.beatmaps;
     let osu_client = &env.client;
-
-    let oppai = &env.oppai;
     let user = osu_client
         .user(user, |f| f.mode(mode))
         .await?
@@ -712,8 +710,8 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .into_iter()
                 .last()
                 .ok_or_else(|| Error::msg("No such play"))?;
-            let beatmap = meta_cache.get_beatmap(top_play.beatmap_id, mode).await?;
-            let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
+            let beatmap = env.beatmaps.get_beatmap(top_play.beatmap_id, mode).await?;
+            let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, mode);
 
             msg.channel_id
@@ -751,8 +749,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
 #[max_args(1)]
 pub async fn clean_cache(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let meta_cache = env.beatmaps;
-    meta_cache.clear().await?;
+    env.beatmaps.clear().await?;
 
     if args.remains() == Some("--oppai") {
         env.oppai.clear().await?;
@@ -770,19 +767,20 @@ async fn get_user(
 ) -> CommandResult {
     let user = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg).await?;
     let osu_client = &env.client;
-    let cache = &env.beatmaps;
+    let meta_cache = &env.beatmaps;
     let user = osu_client.user(user, |f| f.mode(mode)).await?;
-    let oppai = &env.oppai;
+
     match user {
         Some(u) => {
             let bests = osu_client
                 .user_best(UserID::ID(u.id), |f| f.limit(100).mode(mode))
                 .await?;
-            let map_length = calculate_weighted_map_length(&bests, cache, mode).await?;
+            let map_length = calculate_weighted_map_length(&bests, meta_cache, mode).await?;
             let best = match bests.into_iter().next() {
                 Some(m) => {
-                    let beatmap = cache.get_beatmap(m.beatmap_id, mode).await?;
-                    let info = oppai
+                    let beatmap = meta_cache.get_beatmap(m.beatmap_id, mode).await?;
+                    let info = env
+                        .oppai
                         .get_beatmap(m.beatmap_id)
                         .await?
                         .get_info_with(mode, m.mods)?;

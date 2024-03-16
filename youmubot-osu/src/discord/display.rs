@@ -87,18 +87,16 @@ mod scores {
         impl pagination::Paginate for Paginate {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-                let osu_client = &env.client;
-                let beatmaps = &env.beatmaps;
-                let beatmap_cache = &env.oppai;
                 let page = page as usize;
                 let score = &self.scores[page];
 
                 let hourglass = msg.react(ctx, '⌛').await?;
                 let mode = self.mode;
-                let beatmap = beatmaps.get_beatmap(score.beatmap_id, mode).await?;
-                let content = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
+                let beatmap = env.beatmaps.get_beatmap(score.beatmap_id, mode).await?;
+                let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
                 let bm = BeatmapWithMode(beatmap, mode);
-                let user = osu_client
+                let user = env
+                    .client
                     .user(crate::request::UserID::ID(score.user_id), |f| f)
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
@@ -178,8 +176,8 @@ mod scores {
             async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-                let beatmaps = &env.beatmaps;
-                let beatmap_cache = &env.oppai;
+                let meta_cache = &env.beatmaps;
+                let oppai = &env.oppai;
                 let page = page as usize;
                 let start = page * ITEMS_PER_PAGE;
                 let end = self.scores.len().min(start + ITEMS_PER_PAGE);
@@ -193,9 +191,9 @@ mod scores {
                 let beatmaps = plays
                     .iter()
                     .map(|play| async move {
-                        let beatmap = beatmaps.get_beatmap(play.beatmap_id, mode).await?;
+                        let beatmap = meta_cache.get_beatmap(play.beatmap_id, mode).await?;
                         let info = {
-                            let b = beatmap_cache.get_beatmap(beatmap.beatmap_id).await?;
+                            let b = oppai.get_beatmap(beatmap.beatmap_id).await?;
                             b.get_info_with(mode, play.mods).ok()
                         };
                         Ok((beatmap, info)) as Result<(Beatmap, Option<BeatmapInfo>)>
@@ -210,7 +208,7 @@ mod scores {
                         match p.pp.map(|pp| format!("{:.2}", pp)) {
                             Some(v) => Ok(v),
                             None => {
-                                let b = beatmap_cache.get_beatmap(p.beatmap_id).await?;
+                                let b = oppai.get_beatmap(p.beatmap_id).await?;
                                 let r: Result<_> = Ok({
                                     b.get_pp_from(
                                         mode,
@@ -386,8 +384,7 @@ mod beatmapset {
         async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Result<BeatmapInfoWithPP> {
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-            let oppai = env.oppai;
-            oppai
+            env.oppai
                 .get_beatmap(b.beatmap_id)
                 .await
                 .and_then(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), self.mods))
