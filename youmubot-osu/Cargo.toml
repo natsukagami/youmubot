@@ -22,6 +22,7 @@ serde = { version = "1.0.137", features = ["derive"] }
 serenity = "0.12"
 zip = "0.6.2"
 rand = "0.8"
+futures-util = "0.3.30"
 
 youmubot-db = { path = "../youmubot-db" }
 youmubot-db-sql = { path = "../youmubot-db-sql" }

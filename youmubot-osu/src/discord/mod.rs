@@ -1,5 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
+use futures_util::join;
 use rand::seq::IteratorRandom;
 use serenity::{
     builder::{CreateMessage, EditMessage},
@@ -80,7 +81,6 @@ impl TypeMapKey for OsuEnv {
 ///  This does NOT automatically enable:
 ///  - Commands on the "osu" prefix
 ///  - Hooks. Hooks are completely opt-in.
-///
 pub async fn setup(
     data: &mut TypeMap,
     prelude: youmubot_prelude::Env,
@@ -364,25 +364,34 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
 }
 
 async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv) -> Result<()> {
-    let pp = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
-        .into_iter()
-        .map(|mode| async move {
-            env.client
-                .user(UserID::ID(user.id), |f| f.mode(mode))
-                .await
-                .map(|u_opt| u_opt.map(|u| u.pp.unwrap_or(0.0)))
-        })
-        .collect::<stream::FuturesOrdered<_>>()
-        .try_collect::<Vec<_>>()
-        .await?;
+    let pp_fut = async {
+        [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
+            .into_iter()
+            .map(|mode| async move {
+                env.client
+                    .user(UserID::ID(user.id), |f| f.mode(mode))
+                    .await
+                    .map(|u_opt| u_opt.map(|u| u.pp.unwrap_or(0.0)))
+            })
+            .collect::<stream::FuturesOrdered<_>>()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap()
+    };
 
-    let scores = env
-        .client
-        .user_best(UserID::ID(user.id), |f| f.mode(Mode::Std).limit(100))
-        .await?;
+    let std_weight_map_length_fut = async {
+        let scores = env
+            .client
+            .user_best(UserID::ID(user.id), |f| f.mode(Mode::Std).limit(100))
+            .await
+            .unwrap();
 
-    let std_weight_map_length =
-        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std).await?;
+        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std)
+            .await
+            .unwrap()
+    };
+
+    let (pp, std_weight_map_length) = join!(pp_fut, std_weight_map_length_fut);
 
     let u = OsuUser {
         user_id: target,
