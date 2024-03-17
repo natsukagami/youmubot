@@ -375,9 +375,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
                         eprintln!("{}", err);
                         None
                     })
-                    .iter()
-                    .filter_map(|u| u.pp)
-                    .next()
+                    .and_then(|u| u.pp)
             })
             .collect::<stream::FuturesOrdered<_>>()
             .collect::<Vec<_>>()
@@ -394,13 +392,9 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
                 vec![]
             });
 
-        match calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std).await {
-            Ok(v) => Some(v),
-            Err(err) => {
-                eprintln!("{}", err);
-                None
-            }
-        }
+        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std)
+            .await
+            .pls_ok()
     };
 
     let (pp, std_weight_map_length) = join!(pp_fut, std_weight_map_length_fut);
