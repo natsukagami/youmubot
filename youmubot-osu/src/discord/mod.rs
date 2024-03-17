@@ -368,18 +368,21 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
         [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
             .into_iter()
             .map(|mode| async move {
-                env.client
+                match env
+                    .client
                     .user(UserID::ID(user.id), |f| f.mode(mode))
                     .await
-                    .map(|u_opt| u_opt.map(|u| u.pp.unwrap_or(0.0)))
+                    .unwrap_or_else(|err| {
+                        eprintln!("{}", err);
+                        None
+                    }) {
+                    Some(u) => u.pp,
+                    None => None,
+                }
             })
             .collect::<stream::FuturesOrdered<_>>()
-            .try_collect::<Vec<_>>()
+            .collect::<Vec<_>>()
             .await
-            .unwrap_or_else(|err| {
-                eprintln!("{}", err);
-                vec![None, None, None, None]
-            })
     };
 
     let std_weight_map_length_fut = async {
