@@ -368,17 +368,16 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
         [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
             .into_iter()
             .map(|mode| async move {
-                match env
-                    .client
+                env.client
                     .user(UserID::ID(user.id), |f| f.mode(mode))
                     .await
                     .unwrap_or_else(|err| {
                         eprintln!("{}", err);
                         None
-                    }) {
-                    Some(u) => u.pp,
-                    None => None,
-                }
+                    })
+                    .iter()
+                    .filter_map(|u| u.pp)
+                    .next()
             })
             .collect::<stream::FuturesOrdered<_>>()
             .collect::<Vec<_>>()
