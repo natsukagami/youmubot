@@ -1,14 +1,17 @@
-use crate::{models::Mode, mods::Mods};
+use std::io::Read;
+use std::sync::Arc;
+
 use osuparse::MetadataSection;
 use rosu_pp::catch::CatchDifficultyAttributes;
 use rosu_pp::mania::ManiaDifficultyAttributes;
 use rosu_pp::osu::OsuDifficultyAttributes;
 use rosu_pp::taiko::TaikoDifficultyAttributes;
 use rosu_pp::{AttributeProvider, Beatmap, CatchPP, DifficultyAttributes, ManiaPP, OsuPP, TaikoPP};
-use std::io::Read;
-use std::sync::Arc;
+
 use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
+
+use crate::{models::Mode, mods::Mods};
 
 /// the information collected from a download/Oppai request.
 #[derive(Debug)]
@@ -37,7 +40,8 @@ impl BeatmapInfo {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Accuracy {
-    ByCount(u64, u64, u64, u64), // 300 / 100 / 50 / misses
+    ByCount(u64, u64, u64, u64),
+    // 300 / 100 / 50 / misses
     #[allow(dead_code)]
     ByValue(f64, u64),
 }
@@ -159,6 +163,7 @@ impl<'a> PPCalc<'a> for OsuPP<'a> {
         self.calculate().difficulty
     }
 }
+
 impl<'a> PPCalc<'a> for TaikoPP<'a> {
     type Attrs = TaikoDifficultyAttributes;
 
@@ -193,6 +198,7 @@ impl<'a> PPCalc<'a> for TaikoPP<'a> {
         self.calculate().difficulty
     }
 }
+
 impl<'a> PPCalc<'a> for CatchPP<'a> {
     type Attrs = CatchDifficultyAttributes;
 
@@ -227,6 +233,7 @@ impl<'a> PPCalc<'a> for CatchPP<'a> {
         self.calculate().difficulty
     }
 }
+
 impl<'a> PPCalc<'a> for ManiaPP<'a> {
     type Attrs = ManiaDifficultyAttributes;
 
@@ -304,6 +311,7 @@ impl BeatmapContent {
 }
 
 /// A central cache for the beatmaps.
+#[derive(Debug, Clone)]
 pub struct BeatmapCache {
     client: ratelimit::Ratelimit<reqwest::Client>,
     pool: Pool,

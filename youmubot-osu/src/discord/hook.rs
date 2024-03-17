@@ -1,13 +1,16 @@
-use crate::{
-    discord::beatmap_cache::BeatmapMetaCache,
-    discord::oppai_cache::{BeatmapCache, BeatmapInfoWithPP},
-    models::{Beatmap, Mode, Mods},
-};
+use std::str::FromStr;
+
 use lazy_static::lazy_static;
 use regex::Regex;
 use serenity::{builder::CreateMessage, model::channel::Message, utils::MessageBuilder};
-use std::str::FromStr;
+
 use youmubot_prelude::*;
+
+use crate::discord::OsuEnv;
+use crate::{
+    discord::oppai_cache::BeatmapInfoWithPP,
+    models::{Beatmap, Mode, Mods},
+};
 
 use super::embeds::beatmap_embed;
 
@@ -43,9 +46,9 @@ pub fn dot_osu_hook<'a>(
                 let url = attachment.url.clone();
 
                 async move {
-                    let data = ctx.data.read().await;
-                    let oppai = data.get::<BeatmapCache>().unwrap();
-                    let (beatmap, _) = oppai.download_beatmap_from_url(&url).await.ok()?;
+                    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+
+                    let (beatmap, _) = env.oppai.download_beatmap_from_url(&url).await.ok()?;
                     crate::discord::embeds::beatmap_offline_embed(
                         &beatmap,
                         Mode::from(beatmap.content.mode as u8), /*For now*/
@@ -68,9 +71,9 @@ pub fn dot_osu_hook<'a>(
             .map(|attachment| {
                 let url = attachment.url.clone();
                 async move {
-                    let data = ctx.data.read().await;
-                    let oppai = data.get::<BeatmapCache>().unwrap();
-                    let beatmaps = oppai.download_osz_from_url(&url).await.pls_ok()?;
+                    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+
+                    let beatmaps = env.oppai.download_osz_from_url(&url).await.pls_ok()?;
                     Some(
                         beatmaps
                             .into_iter()
@@ -133,13 +136,12 @@ pub fn hook<'a>(
                             .pls_ok();
                         let mode = l.mode.unwrap_or(b.mode);
                         let bm = super::BeatmapWithMode(*b, mode);
-                        crate::discord::cache::save_beatmap(
-                            &*ctx.data.read().await,
-                            msg.channel_id,
-                            &bm,
-                        )
-                        .await
-                        .pls_ok();
+
+                        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+
+                        crate::discord::cache::save_beatmap(&env, msg.channel_id, &bm)
+                            .await
+                            .pls_ok();
                     }
                     EmbedType::Beatmapset(b) => {
                         handle_beatmapset(ctx, b, l.link, l.mode, msg)
@@ -174,8 +176,7 @@ fn handle_old_links<'a>(
         .captures_iter(content)
         .map(move |capture| async move {
             let data = ctx.data.read().await;
-            let cache = data.get::<BeatmapCache>().unwrap();
-            let osu = data.get::<BeatmapMetaCache>().unwrap();
+            let env = data.get::<OsuEnv>().unwrap();
             let req_type = capture.name("link_type").unwrap().as_str();
             let mode = capture
                 .name("mode")
@@ -192,10 +193,18 @@ fn handle_old_links<'a>(
                 });
             let beatmaps = match req_type {
                 "b" => vec![match mode {
-                    Some(mode) => osu.get_beatmap(capture["id"].parse()?, mode).await?,
-                    None => osu.get_beatmap_default(capture["id"].parse()?).await?,
+                    Some(mode) => {
+                        env.beatmaps
+                            .get_beatmap(capture["id"].parse()?, mode)
+                            .await?
+                    }
+                    None => {
+                        env.beatmaps
+                            .get_beatmap_default(capture["id"].parse()?)
+                            .await?
+                    }
                 }],
-                "s" => osu.get_beatmapset(capture["id"].parse()?).await?,
+                "s" => env.beatmaps.get_beatmapset(capture["id"].parse()?).await?,
                 _ => unreachable!(),
             };
             if beatmaps.is_empty() {
@@ -211,7 +220,7 @@ fn handle_old_links<'a>(
                         .unwrap_or(Mods::NOMOD);
                     let info = {
                         let mode = mode.unwrap_or(b.mode);
-                        cache
+                        env.oppai
                             .get_beatmap(b.beatmap_id)
                             .await
                             .and_then(|b| b.get_possible_pp_with(mode, mods))?
@@ -233,13 +242,10 @@ fn handle_old_links<'a>(
         })
         .collect::<stream::FuturesUnordered<_>>()
         .filter_map(|v| {
-            future::ready(match v {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{}", e);
-                    None
-                }
-            })
+            future::ready(v.unwrap_or_else(|e| {
+                eprintln!("{}", e);
+                None
+            }))
         })
 }
 
@@ -250,20 +256,23 @@ fn handle_new_links<'a>(
     NEW_LINK_REGEX
         .captures_iter(content)
         .map(|capture| async move {
-            let data = ctx.data.read().await;
-            let osu = data.get::<BeatmapMetaCache>().unwrap();
-            let cache = data.get::<BeatmapCache>().unwrap();
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
             let mode = capture
                 .name("mode")
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));
             let link = capture.get(0).unwrap().as_str();
             let beatmaps = match capture.name("beatmap_id") {
                 Some(ref v) => vec![match mode {
-                    Some(mode) => osu.get_beatmap(v.as_str().parse()?, mode).await?,
-                    None => osu.get_beatmap_default(v.as_str().parse()?).await?,
+                    Some(mode) => env.beatmaps.get_beatmap(v.as_str().parse()?, mode).await?,
+                    None => {
+                        env.beatmaps
+                            .get_beatmap_default(v.as_str().parse()?)
+                            .await?
+                    }
                 }],
                 None => {
-                    osu.get_beatmapset(capture.name("set_id").unwrap().as_str().parse()?)
+                    env.beatmaps
+                        .get_beatmapset(capture.name("set_id").unwrap().as_str().parse()?)
                         .await?
                 }
             };
@@ -280,7 +289,7 @@ fn handle_new_links<'a>(
                         .unwrap_or(Mods::NOMOD);
                     let info = {
                         let mode = mode.unwrap_or(beatmap.mode);
-                        cache
+                        env.oppai
                             .get_beatmap(beatmap.beatmap_id)
                             .await
                             .and_then(|b| b.get_possible_pp_with(mode, mods))?
@@ -328,16 +337,14 @@ fn handle_short_links<'a>(
                     return Err(Error::msg("not in server announcer channel"));
                 }
             }
-            let data = ctx.data.read().await;
-            let osu = data.get::<BeatmapMetaCache>().unwrap();
-            let cache = data.get::<BeatmapCache>().unwrap();
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
             let mode = capture
                 .name("mode")
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));
             let id: u64 = capture.name("id").unwrap().as_str().parse()?;
             let beatmap = match mode {
-                Some(mode) => osu.get_beatmap(id, mode).await,
-                None => osu.get_beatmap_default(id).await,
+                Some(mode) => env.beatmaps.get_beatmap(id, mode).await,
+                None => env.beatmaps.get_beatmap_default(id).await,
             }?;
             let mods = capture
                 .name("mods")
@@ -345,7 +352,7 @@ fn handle_short_links<'a>(
                 .unwrap_or(Mods::NOMOD);
             let info = {
                 let mode = mode.unwrap_or(beatmap.mode);
-                cache
+                env.oppai
                     .get_beatmap(beatmap.beatmap_id)
                     .await
                     .and_then(|b| b.get_possible_pp_with(mode, mods))?

@@ -15,15 +15,12 @@ use youmubot_prelude::{
 };
 
 use crate::{
-    discord::{
-        display::ScoreListStyle,
-        oppai_cache::{Accuracy, BeatmapCache},
-    },
+    discord::{display::ScoreListStyle, oppai_cache::Accuracy},
     models::{Mode, Mods},
     request::UserID,
 };
 
-use super::{db::OsuSavedUsers, ModeArg, OsuClient};
+use super::{ModeArg, OsuEnv};
 
 #[derive(Debug, Clone, Copy)]
 enum RankQuery {
@@ -50,21 +47,23 @@ impl FromStr for RankQuery {
 #[max_args(1)]
 #[only_in(guilds)]
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
-    let data = ctx.data.read().await;
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
     let mode = args
         .single::<RankQuery>()
         .unwrap_or(RankQuery::Mode(Mode::Std));
     let guild = m.guild_id.expect("Guild-only command");
-    let member_cache = data.get::<MemberCache>().unwrap();
-    let osu_users = data
-        .get::<OsuSavedUsers>()
-        .unwrap()
+
+    let osu_users = env
+        .saved_users
         .all()
         .await?
         .into_iter()
         .map(|v| (v.user_id, v))
         .collect::<HashMap<_, _>>();
-    let users = member_cache
+
+    let users = env
+        .prelude
+        .members
         .query_members(&ctx, guild)
         .await?
         .iter()
@@ -102,7 +101,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         return Ok(());
     }
 
-    let users = std::sync::Arc::new(users);
+    let users = Arc::new(users);
     let last_update = last_update.unwrap();
     paginate_reply_fn(
         move |page: u8, ctx: &Context, m: &mut Message| {
@@ -197,7 +196,7 @@ impl Default for OrderBy {
     }
 }
 
-impl std::str::FromStr for OrderBy {
+impl FromStr for OrderBy {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -215,55 +214,57 @@ impl std::str::FromStr for OrderBy {
 #[description = "See the server's ranks on the last seen beatmap"]
 #[max_args(2)]
 #[only_in(guilds)]
-pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
+pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let order = args.single::<OrderBy>().unwrap_or_default();
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
 
-    let data = ctx.data.read().await;
-    let member_cache = data.get::<MemberCache>().unwrap();
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-    let (bm, _) = match super::load_beatmap(ctx, m).await {
+    let (bm, _) = match super::load_beatmap(&env, msg).await {
         Some((bm, mods_def)) => {
             let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
             (bm, mods)
         }
         None => {
-            m.reply(&ctx, "No beatmap queried on this channel.").await?;
+            msg.reply(&ctx, "No beatmap queried on this channel.")
+                .await?;
             return Ok(());
         }
     };
 
-    let osu = data.get::<OsuClient>().unwrap().clone();
+    let osu_client = env.client.clone();
 
     // Get oppai map.
     let mode = bm.1;
-    let oppai = data.get::<BeatmapCache>().unwrap();
+    let oppai = env.oppai;
     let oppai_map = oppai.get_beatmap(bm.0.beatmap_id).await?;
 
-    let guild = m.guild_id.expect("Guild-only command");
+    let guild = msg.guild_id.expect("Guild-only command");
     let scores = {
         const NO_SCORES: &str = "No scores have been recorded for this beatmap.";
         // Signal that we are running.
-        let running_reaction = m.react(&ctx, '⌛').await?;
+        let running_reaction = msg.react(&ctx, '⌛').await?;
 
-        let osu_users = data
-            .get::<OsuSavedUsers>()
-            .unwrap()
+        let osu_users = env
+            .saved_users
             .all()
             .await?
             .into_iter()
             .map(|v| (v.user_id, v))
             .collect::<HashMap<_, _>>();
-        let mut scores = member_cache
+        let mut scores = env
+            .prelude
+            .members
             .query_members(&ctx, guild)
             .await?
             .iter()
             .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m.distinct(), ou.id)))
             .map(|(mem, osu_id)| {
-                osu.scores(bm.0.beatmap_id, move |f| {
-                    f.user(UserID::ID(osu_id)).mode(bm.1)
-                })
-                .map(|r| Some((mem, r.ok()?)))
+                osu_client
+                    .scores(bm.0.beatmap_id, move |f| {
+                        f.user(UserID::ID(osu_id)).mode(bm.1)
+                    })
+                    .map(|r| Some((mem, r.ok()?)))
             })
             .collect::<FuturesUnordered<_>>()
             .filter_map(future::ready)
@@ -300,7 +301,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
         running_reaction.delete(&ctx).await?;
 
         if scores.is_empty() {
-            m.reply(&ctx, NO_SCORES).await?;
+            msg.reply(&ctx, NO_SCORES).await?;
             return Ok(());
         }
         match order {
@@ -315,7 +316,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
     };
 
     if scores.is_empty() {
-        m.reply(
+        msg.reply(
             &ctx,
             "No scores have been recorded for this beatmap. Run `osu check` to scan for yours!",
         )
@@ -329,7 +330,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
                 scores.into_iter().map(|(_, _, a)| a).collect(),
                 mode,
                 ctx,
-                m,
+                msg,
             )
             .await?;
         return Ok(());
@@ -409,7 +410,7 @@ pub async fn show_leaderboard(ctx: &Context, m: &Message, mut args: Args) -> Com
             })
         },
         ctx,
-        m,
+        msg,
         std::time::Duration::from_secs(60),
     )
     .await?;

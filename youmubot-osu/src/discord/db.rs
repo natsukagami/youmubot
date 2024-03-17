@@ -1,14 +1,16 @@
 use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
-use youmubot_db_sql::{models::osu as models, models::osu_user as model, Pool};
-
-use crate::models::{Beatmap, Mode, Score};
 use serde::{Deserialize, Serialize};
 use serenity::model::id::{ChannelId, UserId};
+
+use youmubot_db_sql::{models::osu as models, models::osu_user as model, Pool};
 use youmubot_prelude::*;
 
+use crate::models::{Beatmap, Mode, Score};
+
 /// Save the user IDs.
+#[derive(Debug, Clone)]
 pub struct OsuSavedUsers {
     pool: Pool,
 }
@@ -60,6 +62,7 @@ impl OsuSavedUsers {
 }
 
 /// Save each channel's last requested beatmap.
+#[derive(Debug, Clone)]
 pub struct OsuLastBeatmap(Pool);
 
 impl TypeMapKey for OsuLastBeatmap {
@@ -99,6 +102,7 @@ impl OsuLastBeatmap {
 }
 
 /// Save each channel's last requested beatmap.
+#[derive(Debug, Clone)]
 pub struct OsuUserBests(Pool);
 
 impl TypeMapKey for OsuUserBests {
@@ -188,13 +192,15 @@ impl From<model::OsuUser> for OsuUser {
 
 #[allow(dead_code)]
 mod legacy {
-    use chrono::{DateTime, Utc};
+    use std::collections::HashMap;
 
-    use crate::models::{Beatmap, Mode, Score};
+    use chrono::{DateTime, Utc};
     use serde::{Deserialize, Serialize};
     use serenity::model::id::{ChannelId, UserId};
-    use std::collections::HashMap;
+
     use youmubot_db::DB;
+
+    use crate::models::{Beatmap, Mode, Score};
 
     pub type OsuSavedUsers = DB<HashMap<UserId, OsuUser>>;
 

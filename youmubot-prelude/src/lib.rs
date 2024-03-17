@@ -1,7 +1,24 @@
+use std::sync::Arc;
+
+/// Re-export the anyhow errors
+pub use anyhow::{anyhow as error, bail, Error, Result};
+/// Re-exporting async_trait helps with implementing Announcer.
+pub use async_trait::async_trait;
+/// Re-export useful future and stream utils
+pub use futures_util::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 /// Module `prelude` provides a sane set of default imports that can be used inside
 /// a Youmubot source file.
 pub use serenity::prelude::*;
-use std::sync::Arc;
+/// Re-export the spawn function
+pub use tokio::spawn as spawn_future;
+
+pub use announcer::{Announcer, AnnouncerRunner};
+pub use args::{ChannelId, Duration, RoleId, UserId, UsernameArg};
+pub use debugging_ok::OkPrint;
+pub use flags::Flags;
+pub use hook::Hook;
+pub use member_cache::MemberCache;
+pub use pagination::{paginate, paginate_fn, paginate_reply, paginate_reply_fn, Paginate};
 
 pub mod announcer;
 pub mod args;
@@ -12,26 +29,6 @@ pub mod pagination;
 pub mod ratelimit;
 pub mod setup;
 pub mod table_format;
-
-pub use announcer::{Announcer, AnnouncerHandler};
-pub use args::{ChannelId, Duration, RoleId, UserId, UsernameArg};
-pub use flags::Flags;
-pub use hook::Hook;
-pub use member_cache::MemberCache;
-pub use pagination::{paginate, paginate_fn, paginate_reply, paginate_reply_fn, Paginate};
-
-/// Re-exporting async_trait helps with implementing Announcer.
-pub use async_trait::async_trait;
-
-/// Re-export the anyhow errors
-pub use anyhow::{anyhow as error, bail, Error, Result};
-pub use debugging_ok::OkPrint;
-
-/// Re-export useful future and stream utils
-pub use futures_util::{future, stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
-
-/// Re-export the spawn function
-pub use tokio::spawn as spawn_future;
 
 /// The global app data.
 pub type AppData = Arc<RwLock<TypeMap>>;
@@ -50,8 +47,18 @@ impl TypeMapKey for SQLClient {
     type Value = youmubot_db_sql::Pool;
 }
 
+/// The created base environment.
+#[derive(Debug, Clone)]
+pub struct Env {
+    // clients
+    pub http: reqwest::Client,
+    pub sql: youmubot_db_sql::Pool,
+    pub members: Arc<MemberCache>,
+    // databases
+    // pub(crate) announcer_channels: announcer::AnnouncerChannels,
+}
+
 pub mod prelude_commands {
-    use crate::announcer::ANNOUNCERCOMMANDS_GROUP;
     use serenity::{
         framework::standard::{
             macros::{command, group},
@@ -60,6 +67,8 @@ pub mod prelude_commands {
         model::channel::Message,
         prelude::Context,
     };
+
+    use crate::announcer::ANNOUNCERCOMMANDS_GROUP;
 
     #[group("Prelude")]
     #[description = "All the commands that makes the base of Youmu"]

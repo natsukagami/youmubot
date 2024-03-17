@@ -15,16 +15,15 @@ use youmubot_prelude::stream::TryStreamExt;
 use youmubot_prelude::*;
 
 use crate::{
-    discord::beatmap_cache::BeatmapMetaCache,
     discord::cache::save_beatmap,
-    discord::oppai_cache::{BeatmapCache, BeatmapContent},
+    discord::oppai_cache::BeatmapContent,
     models::{Mode, Score, User, UserEventRank},
     request::UserID,
     Client as Osu,
 };
 
 use super::db::{OsuSavedUsers, OsuUser};
-use super::{calculate_weighted_map_length, OsuClient};
+use super::{calculate_weighted_map_length, OsuEnv};
 use super::{embeds::score_embed, BeatmapWithMode};
 
 /// osu! announcer's unique announcer key.
@@ -51,9 +50,8 @@ impl youmubot_prelude::Announcer for Announcer {
     ) -> Result<()> {
         // For each user...
         let users = {
-            let data = d.read().await;
-            let data = data.get::<OsuSavedUsers>().unwrap();
-            data.all().await?
+            let env = d.read().await.get::<OsuEnv>().unwrap().clone();
+            env.saved_users.all().await?
         };
         let now = chrono::Utc::now();
         users
@@ -198,13 +196,12 @@ impl Announcer {
     }
 
     async fn std_weighted_map_length(ctx: &Context, u: &OsuUser) -> Result<f64> {
-        let data = ctx.data.read().await;
-        let client = data.get::<OsuClient>().unwrap().clone();
-        let cache = data.get::<BeatmapMetaCache>().unwrap();
-        let scores = client
+        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+        let scores = env
+            .client
             .user_best(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(100))
             .await?;
-        calculate_weighted_map_length(&scores, cache, Mode::Std).await
+        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std).await
     }
 }
 
@@ -282,11 +279,12 @@ impl<'a> CollectedScore<'a> {
     }
 
     async fn get_beatmap(&self, ctx: &Context) -> Result<(BeatmapWithMode, BeatmapContent)> {
-        let data = ctx.data.read().await;
-        let cache = data.get::<BeatmapMetaCache>().unwrap();
-        let oppai = data.get::<BeatmapCache>().unwrap();
-        let beatmap = cache.get_beatmap_default(self.score.beatmap_id).await?;
-        let content = oppai.get_beatmap(beatmap.beatmap_id).await?;
+        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+        let beatmap = env
+            .beatmaps
+            .get_beatmap_default(self.score.beatmap_id)
+            .await?;
+        let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
         Ok((BeatmapWithMode(beatmap, self.mode), content))
     }
 
@@ -341,9 +339,10 @@ impl<'a> CollectedScore<'a> {
                     }),
             )
             .await?;
-        save_beatmap(&*ctx.data.read().await, channel, bm)
-            .await
-            .pls_ok();
+
+        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+
+        save_beatmap(&env, channel, bm).await.pls_ok();
         Ok(m)
     }
 }

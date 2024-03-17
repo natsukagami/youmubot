@@ -1,16 +1,19 @@
-pub mod discord;
-pub mod models;
-pub mod request;
+use std::convert::TryInto;
+use std::sync::Arc;
 
 use models::*;
 use request::builders::*;
 use request::*;
-use std::convert::TryInto;
 use youmubot_prelude::*;
 
+pub mod discord;
+pub mod models;
+pub mod request;
+
 /// Client is the client that will perform calls to the osu! api server.
+#[derive(Clone)]
 pub struct Client {
-    rosu: rosu_v2::Osu,
+    rosu: Arc<rosu_v2::Osu>,
 }
 
 pub fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::Error> {
@@ -31,7 +34,9 @@ impl Client {
             .client_secret(client_secret)
             .build()
             .await?;
-        Ok(Client { rosu })
+        Ok(Client {
+            rosu: Arc::new(rosu),
+        })
     }
 
     pub async fn beatmaps(

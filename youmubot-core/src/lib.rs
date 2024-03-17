@@ -1,10 +1,15 @@
+use std::collections::HashSet;
+
 use serenity::{
     framework::standard::{
         help_commands, macros::help, Args, CommandGroup, CommandResult, HelpOptions,
     },
     model::{channel::Message, id::UserId},
 };
-use std::collections::HashSet;
+
+pub use admin::ADMIN_GROUP;
+pub use community::COMMUNITY_GROUP;
+pub use fun::FUN_GROUP;
 use youmubot_prelude::{announcer::CacheAndHttp, *};
 
 pub mod admin;
@@ -12,14 +17,9 @@ pub mod community;
 mod db;
 pub mod fun;
 
-pub use admin::ADMIN_GROUP;
-pub use community::COMMUNITY_GROUP;
-pub use fun::FUN_GROUP;
-
 /// Sets up all databases in the client.
 pub fn setup(
     path: &std::path::Path,
-    client: &serenity::client::Client,
     data: &mut TypeMap,
 ) -> serenity::framework::standard::CommandResult {
     db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
@@ -29,15 +29,18 @@ pub fn setup(
         &path.join("roles.yaml"),
     )?;
 
-    // Create handler threads
-    tokio::spawn(admin::watch_soft_bans(
-        CacheAndHttp::from_client(client),
-        client.data.clone(),
-    ));
-
     // Start reaction handlers
     data.insert::<community::ReactionWatchers>(community::ReactionWatchers::new(&*data)?);
 
+    Ok(())
+}
+
+pub fn ready_hook(ctx: &Context) -> CommandResult {
+    // Create handler threads
+    tokio::spawn(admin::watch_soft_bans(
+        CacheAndHttp::from_context(ctx),
+        ctx.data.clone(),
+    ));
     Ok(())
 }
 

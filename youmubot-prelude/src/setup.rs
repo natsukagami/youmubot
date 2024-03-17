@@ -1,5 +1,8 @@
-use serenity::prelude::*;
 use std::{path::Path, time::Duration};
+
+use serenity::prelude::*;
+
+use crate::Env;
 
 /// Set up the prelude libraries.
 ///
@@ -8,8 +11,8 @@ pub async fn setup_prelude(
     db_path: impl AsRef<Path>,
     sql_path: impl AsRef<Path>,
     data: &mut TypeMap,
-) {
-    // Setup the announcer DB.
+) -> Env {
+    // Set up the announcer DB.
     crate::announcer::AnnouncerChannels::insert_into(
         data,
         db_path.as_ref().join("announcers.yaml"),
@@ -22,17 +25,25 @@ pub async fn setup_prelude(
         .expect("SQL database set up");
 
     // Set up the HTTP client.
-    data.insert::<crate::HTTPClient>(
-        reqwest::ClientBuilder::new()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(60))
-            .build()
-            .expect("Build be able to build HTTP client"),
-    );
+    let http_client = reqwest::ClientBuilder::new()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .expect("Build be able to build HTTP client");
+    data.insert::<crate::HTTPClient>(http_client.clone());
 
     // Set up the member cache.
-    data.insert::<crate::MemberCache>(std::sync::Arc::new(crate::MemberCache::default()));
+    let member_cache = std::sync::Arc::new(crate::MemberCache::default());
+    data.insert::<crate::MemberCache>(member_cache.clone());
 
     // Set up the SQL client.
-    data.insert::<crate::SQLClient>(sql_pool);
+    data.insert::<crate::SQLClient>(sql_pool.clone());
+
+    let env = Env {
+        http: http_client,
+        sql: sql_pool,
+        members: member_cache,
+    };
+
+    env
 }
