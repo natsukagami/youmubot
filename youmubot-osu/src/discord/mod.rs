@@ -1,5 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
+use futures_util::join;
 use rand::seq::IteratorRandom;
 use serenity::{
     builder::{CreateMessage, EditMessage},
@@ -80,7 +81,6 @@ impl TypeMapKey for OsuEnv {
 ///  This does NOT automatically enable:
 ///  - Commands on the "osu" prefix
 ///  - Hooks. Hooks are completely opt-in.
-///  
 pub async fn setup(
     data: &mut TypeMap,
     prelude: youmubot_prelude::Env,
@@ -364,14 +364,49 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
 }
 
 async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv) -> Result<()> {
+    let pp_fut = async {
+        [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
+            .into_iter()
+            .map(|mode| async move {
+                env.client
+                    .user(UserID::ID(user.id), |f| f.mode(mode))
+                    .await
+                    .unwrap_or_else(|err| {
+                        eprintln!("{}", err);
+                        None
+                    })
+                    .and_then(|u| u.pp)
+            })
+            .collect::<stream::FuturesOrdered<_>>()
+            .collect::<Vec<_>>()
+            .await
+    };
+
+    let std_weight_map_length_fut = async {
+        let scores = env
+            .client
+            .user_best(UserID::ID(user.id), |f| f.mode(Mode::Std).limit(100))
+            .await
+            .unwrap_or_else(|err| {
+                eprintln!("{}", err);
+                vec![]
+            });
+
+        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std)
+            .await
+            .pls_ok()
+    };
+
+    let (pp, std_weight_map_length) = join!(pp_fut, std_weight_map_length_fut);
+
     let u = OsuUser {
         user_id: target,
         username: user.username.into(),
         id: user.id,
         failures: 0,
         last_update: chrono::Utc::now(),
-        pp: [None, None, None, None],
-        std_weighted_map_length: None,
+        pp: pp.try_into().unwrap(),
+        std_weighted_map_length: std_weight_map_length,
     };
     env.saved_users.new_user(u).await?;
     Ok(())
