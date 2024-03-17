@@ -376,7 +376,10 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
             .collect::<stream::FuturesOrdered<_>>()
             .try_collect::<Vec<_>>()
             .await
-            .unwrap()
+            .unwrap_or_else(|err| {
+                eprintln!("{}", err);
+                vec![None, None, None, None]
+            })
     };
 
     let std_weight_map_length_fut = async {
@@ -384,11 +387,18 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
             .client
             .user_best(UserID::ID(user.id), |f| f.mode(Mode::Std).limit(100))
             .await
-            .unwrap();
+            .unwrap_or_else(|err| {
+                eprintln!("{}", err);
+                vec![]
+            });
 
-        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std)
-            .await
-            .unwrap()
+        match calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std).await {
+            Ok(v) => Some(v),
+            Err(err) => {
+                eprintln!("{}", err);
+                None
+            }
+        }
     };
 
     let (pp, std_weight_map_length) = join!(pp_fut, std_weight_map_length_fut);
@@ -400,7 +410,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
         failures: 0,
         last_update: chrono::Utc::now(),
         pp: pp.try_into().unwrap(),
-        std_weighted_map_length: Some(std_weight_map_length),
+        std_weighted_map_length: std_weight_map_length,
     };
     env.saved_users.new_user(u).await?;
     Ok(())
