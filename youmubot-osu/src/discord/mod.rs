@@ -612,7 +612,11 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         .into_iter()
         .filter(|s| s.mods.contains(mods))
         .collect::<Vec<_>>();
-    scores.sort_by(|a, b| b.pp.unwrap().partial_cmp(&a.pp.unwrap()).unwrap());
+    scores.sort_by(|a, b| {
+        b.pp.unwrap_or(-1.0)
+            .partial_cmp(&a.pp.unwrap_or(-1.0))
+            .unwrap()
+    });
 
     if scores.is_empty() {
         msg.reply(&ctx, "No scores found").await?;
