@@ -33,6 +33,9 @@ pub mod table_format;
 /// The global app data.
 pub type AppData = Arc<RwLock<TypeMap>>;
 
+/// The global context type for app commands
+pub type CmdContext<'a, Env> = poise::Context<'a, Env, anyhow::Error>;
+
 /// The HTTP client.
 pub struct HTTPClient;
 
