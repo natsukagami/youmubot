@@ -13,6 +13,10 @@ use serenity::{
 use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::*;
 
+use crate::compose_framework::ComposedFramework;
+
+mod compose_framework;
+
 struct Handler {
     hooks: Vec<RwLock<Box<dyn Hook>>>,
     ready_hooks: Vec<fn(&Context) -> CommandResult>,
@@ -172,7 +176,7 @@ async fn main() {
         }
     };
 
-    data.insert::<Env>(env);
+    data.insert::<Env>(env.clone());
 
     #[cfg(feature = "core")]
     println!("Core enabled.");
@@ -183,6 +187,41 @@ async fn main() {
 
     // Set up base framework
     let fw = setup_framework(&token[..]).await;
+
+    // Poise for application commands
+    let poise_fw = poise::Framework::builder()
+        .setup(|_, _, _| Box::pin(async { Ok(env) as Result<_> }))
+        .options(poise::FrameworkOptions {
+            prefix_options: poise::PrefixFrameworkOptions {
+                prefix: None,
+                mention_as_prefix: true,
+                execute_untracked_edits: true,
+                execute_self_messages: false,
+                ignore_thread_creation: true,
+                case_insensitive_commands: true,
+                ..Default::default()
+            },
+            on_error: |err| {
+                Box::pin(async move {
+                    if let poise::FrameworkError::Command { error, ctx, .. } = err {
+                        let reply = format!(
+                            "Command '{}' returned error {:?}",
+                            ctx.invoked_command_name(),
+                            error
+                        );
+                        ctx.reply(&reply).await.pls_ok();
+                        println!("{}", reply)
+                    } else {
+                        eprintln!("Poise error: {:?}", err)
+                    }
+                })
+            },
+            commands: vec![poise_register()],
+            ..Default::default()
+        })
+        .build();
+
+    let composed = ComposedFramework::new(vec![Box::new(fw), Box::new(poise_fw)]);
 
     // Sets up a client
     let mut client = {
@@ -198,7 +237,7 @@ async fn main() {
             | GatewayIntents::DIRECT_MESSAGE_REACTIONS;
         Client::builder(token, intents)
             .type_map(data)
-            .framework(fw)
+            .framework(composed)
             .event_handler(handler)
             .await
             .unwrap()
@@ -274,6 +313,18 @@ async fn setup_framework(token: &str) -> StandardFramework {
     #[cfg(feature = "codeforces")]
     let fw = fw.group(&youmubot_cf::CODEFORCES_GROUP);
     fw
+}
+
+// Poise command to register
+#[poise::command(
+    prefix_command,
+    rename = "register",
+    required_permissions = "MANAGE_GUILD"
+)]
+async fn poise_register(ctx: CmdContext<'_, Env>) -> Result<()> {
+    // TODO: make this work for guild owners too
+    poise::builtins::register_application_commands_buttons(ctx).await?;
+    Ok(())
 }
 
 // Hooks!
