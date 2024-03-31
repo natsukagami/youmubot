@@ -450,7 +450,7 @@ mod reaction_watcher {
             let mut msg = channel
                 .send_message(
                     &ctx,
-                    CreateMessage::new().content("Youmu is setting up the message..."),
+                    CreateMessage::new().content("Arona is setting up the message..."),
                 )
                 .await?;
             self.setup(&mut msg, ctx, guild, title, roles).await

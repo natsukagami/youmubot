@@ -78,7 +78,7 @@ pub async fn paginate_reply(
     timeout: std::time::Duration,
 ) -> Result<()> {
     let message = reply_to
-        .reply(&ctx, "Youmu is loading the first page...")
+        .reply(&ctx, "Arona is loading the first page...")
         .await?;
     paginate_with_first_message(pager, ctx, message, timeout).await
 }
@@ -94,7 +94,7 @@ pub async fn paginate(
     let message = channel
         .send_message(
             &ctx,
-            CreateMessage::new().content("Youmu is loading the first page..."),
+            CreateMessage::new().content("Arona is loading the first page..."),
         )
         .await?;
     paginate_with_first_message(pager, ctx, message, timeout).await

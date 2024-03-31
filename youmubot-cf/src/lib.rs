@@ -107,7 +107,7 @@ pub async fn profile(ctx: &Context, m: &Message, mut args: Args) -> CommandResul
 }
 
 #[command]
-#[description = "Link your Codeforces account to the Discord account, to enjoy Youmu's tracking capabilities."]
+#[description = "Link your Codeforces account to the Discord account, to enjoy Arona's tracking capabilities."]
 #[usage = "[handle]"]
 #[num_args(1)]
 pub async fn save(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {

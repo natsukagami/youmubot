@@ -81,7 +81,7 @@ async fn roll(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[command]
 #[description = r#"👈 Pick a choice from the available list of choices. 
 You may prefix the first choice with `?` to make it a question!
-If no choices are given, Youmu defaults to `Yes!` and `No!`"#]
+If no choices are given, Arona defaults to `Yes!` and `No!`"#]
 #[usage = "[?question]/[choice #1]/[choice #2]/..."]
 #[example = "?What for dinner/Pizza/Hamburger"]
 async fn pick(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
@@ -125,7 +125,7 @@ async fn pick(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
-                    .push("Youmu picks 👉")
+                    .push("Arona picks 👉")
                     .push_bold_safe(choice)
                     .push("👈!")
                     .build(),
@@ -138,7 +138,7 @@ async fn pick(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
                 MessageBuilder::new()
                     .push("you asked ")
                     .push_bold_safe(s)
-                    .push(", and Youmu picks 👉")
+                    .push(", and Arona picks 👉")
                     .push_bold_safe(choice)
                     .push("👈!")
                     .build(),
@@ -174,7 +174,7 @@ async fn name(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     // Rule out a couple of cases
     if user_id == ctx.http.get_current_user().await?.id {
         // This is my own user_id
-        msg.reply(&ctx, "😠 My name is **Youmu Konpaku**!").await?;
+        msg.reply(&ctx, "😠 My name is **Arona**!").await?;
         return Ok(());
     }
 

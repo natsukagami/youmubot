@@ -21,7 +21,7 @@ struct Admin;
 #[command]
 #[aliases("cleanall")]
 #[required_permissions(MANAGE_MESSAGES)]
-#[description = "Clean at most X latest messages from the current channel (only clean Youmu's messages in DMs). Defaults to 10."]
+#[description = "Clean at most X latest messages from the current channel (only clean Arona's messages in DMs). Defaults to 10."]
 #[usage = "clean 50"]
 #[min_args(0)]
 #[max_args(1)]

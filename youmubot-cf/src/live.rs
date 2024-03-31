@@ -119,7 +119,7 @@ pub async fn watch_contest(
         channel
                 .send_message(
                     ctx,
-                    CreateMessage::new().content(format!("Contest **{}** found, but has not started yet. Youmu will start watching as soon as it begins! (which is in about {})", contest.name, start_time.format("<t:%s:R>")))
+                    CreateMessage::new().content(format!("Contest **{}** found, but has not started yet. Arona will start watching as soon as it begins! (which is in about {})", contest.name, start_time.format("<t:%s:R>")))
                 )
                 .await?;
         tokio::time::sleep(
@@ -133,7 +133,7 @@ pub async fn watch_contest(
     let mut msg = channel
         .send_message(
             &ctx,
-            CreateMessage::new().content("Youmu is building the member list..."),
+            CreateMessage::new().content("Arona is building the member list..."),
         )
         .await?;
 
@@ -167,7 +167,7 @@ pub async fn watch_contest(
     msg.edit(
         &ctx,
         EditMessage::new().content(format!(
-            "Youmu is watching contest **{}**, with the following members: {}",
+            "Arona is watching contest **{}**, with the following members: {}",
             contest.name,
             member_results
                 .values()

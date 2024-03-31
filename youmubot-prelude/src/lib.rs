@@ -74,7 +74,7 @@ pub mod prelude_commands {
     use crate::announcer::ANNOUNCERCOMMANDS_GROUP;
 
     #[group("Prelude")]
-    #[description = "All the commands that makes the base of Youmu"]
+    #[description = "All the commands that makes the base of Arona"]
     #[commands(ping)]
     #[sub_groups(AnnouncerCommands)]
     pub struct Prelude;
