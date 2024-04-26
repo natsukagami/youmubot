@@ -1803,7 +1803,7 @@ checksum = "be9e281b71d3797817a1e6615dd8fb081dd61359b4c41d08792cc7c3c1c13b4e"
 [[package]]
 name = "rosu-v2"
 version = "0.8.0"
-source = "git+https://github.com/natsukagami/rosu-v2?rev=6f6731cb2f0d235b006ab375dd94b446dde894ac#6f6731cb2f0d235b006ab375dd94b446dde894ac"
+source = "git+https://github.com/MaxOhn/rosu-v2?rev=bab40491023b4c08f64cb1660e8d0e11db4e3c90#bab40491023b4c08f64cb1660e8d0e11db4e3c90"
 dependencies = [
  "bytes",
  "dashmap",

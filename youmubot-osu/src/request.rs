@@ -207,9 +207,8 @@ pub mod builders {
             };
             let now = time::OffsetDateTime::now_utc()
                 - time::Duration::DAY * self.event_days.unwrap_or(31);
-            let mut events =
-                handle_not_found(client.rosu.recent_events(user.user_id).limit(50).await)?
-                    .unwrap_or(vec![]);
+            let mut events = handle_not_found(client.rosu.recent_activity(user.user_id).await)?
+                .unwrap_or(vec![]);
             events.retain(|e| (now <= e.created_at));
             let stats = user.statistics.take().unwrap();
             Ok(Some(models::User::from_rosu(user, stats, events)))

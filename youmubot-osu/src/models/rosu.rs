@@ -76,7 +76,7 @@ impl User {
     pub(crate) fn from_rosu(
         user: rosu::user::UserExtended,
         stats: rosu::user::UserStatistics,
-        events: Vec<rosu::recent_event::RecentEvent>,
+        events: Vec<rosu::event::Event>,
     ) -> Self {
         Self {
             id: user.user_id as u64,
@@ -105,8 +105,8 @@ impl User {
     }
 }
 
-impl From<rosu::recent_event::RecentEvent> for UserEvent {
-    fn from(value: rosu::recent_event::RecentEvent) -> Self {
+impl From<rosu::event::Event> for UserEvent {
+    fn from(value: rosu::event::Event) -> Self {
         Self(value)
     }
 }

@@ -430,7 +430,7 @@ impl Beatmap {
 }
 
 #[derive(Clone, Debug)]
-pub struct UserEvent(pub rosu_v2::model::recent_event::RecentEvent);
+pub struct UserEvent(pub rosu_v2::model::event::Event);
 
 /// Represents a "achieved rank #x on beatmap" event.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -445,7 +445,7 @@ impl UserEvent {
     /// Try to parse the event into a "rank" event.
     pub fn to_event_rank(&self) -> Option<UserEventRank> {
         match &self.0.event_type {
-            rosu_v2::model::recent_event::EventType::Rank {
+            rosu_v2::model::event::EventType::Rank {
                 grade: _,
                 rank,
                 mode,
