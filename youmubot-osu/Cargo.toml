@@ -16,7 +16,7 @@ osuparse = { git = "https://github.com/eltrufas/osuparse", rev = "ad8f6e5e7771e7
 regex = "1.5.6"
 reqwest = "0.11.10"
 rosu-pp = "0.9.1"
-rosu-v2 = { git = "https://github.com/MaxOhn/rosu-v2", rev = "bab40491023b4c08f64cb1660e8d0e11db4e3c90" }
+rosu-v2 = { git = "https://github.com/MaxOhn/rosu-v2", rev = "d2cd3ff8417e66890f0cd8ca38bc34717a9629dd" }
 time = "0.3"
 serde = { version = "1.0.137", features = ["derive"] }
 serenity = "0.12"
