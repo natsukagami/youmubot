@@ -252,7 +252,10 @@ impl<'a> CollectedScore<'a> {
                 f.user(UserID::ID(user.id)).mode(event.mode)
             })
             .await?;
-        let score = match scores.into_iter().next() {
+        let score = match scores
+            .into_iter()
+            .find(|s| (s.date - event.date).abs() < chrono::TimeDelta::seconds(5))
+        {
             Some(v) => v,
             None => return Err(Error::msg("cannot get score for map...")),
         };
