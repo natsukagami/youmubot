@@ -4,6 +4,7 @@ use crate::{
     models::{Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
 };
 use serenity::{
+    all::CreateAttachment,
     builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter},
     utils::MessageBuilder,
 };
@@ -63,7 +64,7 @@ pub fn beatmap_offline_embed(
     b: &'_ crate::discord::oppai_cache::BeatmapContent,
     m: Mode,
     mods: Mods,
-) -> Result<CreateEmbed> {
+) -> Result<(CreateEmbed, Vec<CreateAttachment>)> {
     let bm = b.content.clone();
     let metadata = b.metadata.clone();
     let (info, pp) = b.get_possible_pp_with(m, mods)?;
@@ -107,29 +108,37 @@ pub fn beatmap_offline_embed(
         total_length,
     }
     .apply_mods(mods, info.stars);
-    Ok(
-        CreateEmbed::new()
-            .title(beatmap_title(
-                &metadata.artist,
-                &metadata.title,
-                &metadata.version,
-                mods,
-            ))
-            .author({
-                CreateEmbedAuthor::new(&metadata.creator)
-                    .url(format!("https://osu.ppy.sh/users/{}", metadata.creator))
-            })
-            .color(0xffb6c1)
-            .field(
-                "Calculated pp",
-                format!(
-                    "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
-                    pp[0], pp[1], pp[2], pp[3]
-                ),
-                false,
-            )
-            .field("Information", diff.format_info(m, mods, None), false), // .description(beatmap_description(b))
-    )
+    let mut embed = CreateEmbed::new()
+        .title(beatmap_title(
+            &metadata.artist,
+            &metadata.title,
+            &metadata.version,
+            mods,
+        ))
+        .author({
+            CreateEmbedAuthor::new(&metadata.creator)
+                .url(format!("https://osu.ppy.sh/users/{}", metadata.creator))
+        })
+        .color(0xffb6c1)
+        .field(
+            "Calculated pp",
+            format!(
+                "95%: **{:.2}**pp, 98%: **{:.2}**pp, 99%: **{:.2}**pp, 100%: **{:.2}**pp",
+                pp[0], pp[1], pp[2], pp[3]
+            ),
+            false,
+        )
+        .field("Information", diff.format_info(m, mods, None), false);
+    let mut attachments = Vec::new();
+    if let Some(bg) = &b.beatmap_background {
+        embed = embed.thumbnail(format!("attachment://{}", bg.filename));
+        attachments.push(CreateAttachment::bytes(
+            bg.content.clone().into_vec(),
+            bg.filename.clone(),
+        ));
+    }
+
+    Ok((embed, attachments))
 }
 
 // Some helper functions here
