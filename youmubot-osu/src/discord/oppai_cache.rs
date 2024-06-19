@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Arc;
 
-use osuparse::MetadataSection;
-use rosu_pp::any::DifficultyAttributes;
+use rosu_map::Beatmap as BeatmapMetadata;
 use rosu_pp::Beatmap;
 
 use youmubot_db_sql::{models::osu as models, Pool};
@@ -13,8 +13,18 @@ use crate::{models::Mode, mods::Mods};
 /// the information collected from a download/Oppai request.
 #[derive(Debug)]
 pub struct BeatmapContent {
-    pub metadata: MetadataSection,
+    pub metadata: BeatmapMetadata,
     pub content: Arc<Beatmap>,
+
+    /// Beatmap background, if provided as part of an .osz
+    pub beatmap_background: Option<Arc<BeatmapBackground>>,
+}
+
+/// Beatmap background, if provided as part of an .osz
+#[derive(Debug)]
+pub struct BeatmapBackground {
+    pub filename: String,
+    pub content: Box<[u8]>,
 }
 
 /// the output of "one" oppai run.
@@ -23,16 +33,6 @@ pub struct BeatmapInfo {
     pub objects: usize,
     pub max_combo: usize,
     pub stars: f64,
-}
-
-impl BeatmapInfo {
-    fn extract(beatmap: &Beatmap, attrs: DifficultyAttributes) -> Self {
-        BeatmapInfo {
-            objects: beatmap.hit_objects.len(),
-            max_combo: attrs.max_combo() as usize,
-            stars: attrs.stars(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -148,14 +148,14 @@ impl BeatmapCache {
         Ok(())
     }
 
-    fn parse_beatmap(content: impl AsRef<str>) -> Result<BeatmapContent> {
+    fn parse_beatmap(content: impl AsRef<[u8]>) -> Result<BeatmapContent> {
         let content = content.as_ref();
-        let metadata = osuparse::parse_beatmap(content)
-            .map_err(|e| Error::msg(format!("Cannot parse metadata: {:?}", e)))?
-            .metadata;
+        let metadata = BeatmapMetadata::from_bytes(content)
+            .map_err(|e| Error::msg(format!("Cannot parse metadata: {:?}", e)))?;
         Ok(BeatmapContent {
             metadata,
-            content: Arc::new(Beatmap::from_bytes(content.as_bytes())?),
+            content: Arc::new(Beatmap::from_bytes(content)?),
+            beatmap_background: None,
         })
     }
 
@@ -176,7 +176,8 @@ impl BeatmapCache {
 
         let mut osz = zip::read::ZipArchive::new(std::io::Cursor::new(osz.as_ref()))?;
         let osu_files = osz.file_names().map(|v| v.to_owned()).collect::<Vec<_>>();
-        let osu_files = osu_files
+        let mut backgrounds: HashMap<String, Option<Arc<BeatmapBackground>>> = HashMap::new();
+        let mut osu_files = osu_files
             .into_iter()
             .filter(|n| n.ends_with(".osu"))
             .filter_map(|v| {
@@ -186,11 +187,27 @@ impl BeatmapCache {
                 {
                     return None;
                 };
-                let mut content = String::new();
-                v.read_to_string(&mut content).pls_ok()?;
+                let mut content = Vec::<u8>::new();
+                v.read_to_end(&mut content).pls_ok()?;
                 Self::parse_beatmap(content).pls_ok()
             })
             .collect::<Vec<_>>();
+        for beatmap in &mut osu_files {
+            if beatmap.metadata.background_file != "" {
+                let bg = backgrounds
+                    .entry(beatmap.metadata.background_file.clone())
+                    .or_insert_with(|| {
+                        let mut file = osz.by_name(&beatmap.metadata.background_file).ok()?;
+                        let mut content = Vec::new();
+                        file.read_to_end(&mut content).ok()?;
+                        Some(Arc::new(BeatmapBackground {
+                            filename: beatmap.metadata.background_file.clone(),
+                            content: content.into_boxed_slice(),
+                        }))
+                    });
+                beatmap.beatmap_background = bg.clone();
+            }
+        }
         Ok(osu_files)
     }
 
@@ -199,7 +216,7 @@ impl BeatmapCache {
     pub async fn download_beatmap_from_url(
         &self,
         url: impl reqwest::IntoUrl,
-    ) -> Result<(BeatmapContent, String)> {
+    ) -> Result<(BeatmapContent, Vec<u8>)> {
         let content = self
             .client
             .borrow()
@@ -207,10 +224,10 @@ impl BeatmapCache {
             .get(url)
             .send()
             .await?
-            .text()
+            .bytes()
             .await?;
         let bm = Self::parse_beatmap(&content)?;
-        Ok((bm, content))
+        Ok((bm, content.to_vec()))
     }
 
     async fn download_beatmap(&self, id: u64) -> Result<BeatmapContent> {
@@ -221,7 +238,7 @@ impl BeatmapCache {
         let mut bc = models::CachedBeatmapContent {
             beatmap_id: id as i64,
             cached_at: chrono::Utc::now(),
-            content: content.into_bytes(),
+            content,
         };
         bc.store(&self.pool).await?;
         Ok(bm)
@@ -230,7 +247,7 @@ impl BeatmapCache {
     async fn get_beatmap_db(&self, id: u64) -> Result<Option<BeatmapContent>> {
         models::CachedBeatmapContent::by_id(id as i64, &self.pool)
             .await?
-            .map(|v| Self::parse_beatmap(String::from_utf8(v.content)?))
+            .map(|v| Self::parse_beatmap(v.content))
             .transpose()
     }
 
