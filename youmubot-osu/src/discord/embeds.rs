@@ -70,11 +70,24 @@ pub fn beatmap_offline_embed(
 
     let total_length = if !bm.hit_objects.is_empty() {
         Duration::from_millis(
-            (bm.hit_objects.last().unwrap().end_time() - bm.hit_objects.first().unwrap().start_time)
+            (bm.hit_objects.last().unwrap().start_time - bm.hit_objects.first().unwrap().start_time)
                 as u64,
         )
     } else {
         Duration::from_secs(0)
+    };
+
+    let (circles, sliders, spinners) = {
+        let (mut circles, mut sliders, mut spinners) = (0u64, 0u64, 0u64);
+        for obj in bm.hit_objects.iter() {
+            match obj.kind {
+                rosu_pp::model::hit_object::HitObjectKind::Circle => circles += 1,
+                rosu_pp::model::hit_object::HitObjectKind::Slider(_) => sliders += 1,
+                rosu_pp::model::hit_object::HitObjectKind::Spinner(_) => spinners += 1,
+                rosu_pp::model::hit_object::HitObjectKind::Hold(_) => sliders += 1,
+            }
+        }
+        (circles, sliders, spinners)
     };
 
     let diff = Difficulty {
@@ -85,9 +98,9 @@ pub fn beatmap_offline_embed(
         od: bm.od as f64,
         ar: bm.ar as f64,
         hp: bm.hp as f64,
-        count_normal: bm.n_circles as u64,
-        count_slider: bm.n_sliders as u64,
-        count_spinner: bm.n_spinners as u64,
+        count_normal: circles,
+        count_slider: sliders,
+        count_spinner: spinners,
         max_combo: Some(info.max_combo as u64),
         bpm: bm.bpm(),
         drain_length: total_length, // It's hard to calculate so maybe just skip...
