@@ -16,7 +16,7 @@
     (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        craneLib = inputs.crane.lib.${system};
+        craneLib = inputs.crane.mkLib pkgs;
       in
       rec {
         packages.youmubot = pkgs.callPackage ./package.nix { inherit craneLib; };
@@ -35,7 +35,7 @@
           {
             inputsFrom = [ packages.youmubot ];
 
-            buildInputs = with pkgs; [ rustc rustfmt clippy sqlx-cli ];
+            buildInputs = with pkgs; [ rustc rustfmt clippy sqlx-cli rust-analyzer ];
 
             nativeBuildInputs = nixpkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
               pkg-config
