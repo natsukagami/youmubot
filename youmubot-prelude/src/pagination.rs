@@ -52,6 +52,70 @@ pub trait Paginate: Send + Sized {
     fn is_empty(&self) -> Option<bool> {
         self.len().map(|v| v == 0)
     }
+
+    /// Add a page count to the pagination.
+    fn with_page_count(self, page_count: usize) -> impl Paginate {
+        WithPageCount {
+            inner: self,
+            page_count,
+        }
+    }
+}
+
+pub fn paginate_from_fn(
+    pager: impl for<'m> FnMut(
+            u8,
+            &'m Context,
+            &'m mut Message,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
+        + Send,
+) -> impl Paginate {
+    pager
+}
+
+struct WithPageCount<Inner> {
+    inner: Inner,
+    page_count: usize,
+}
+
+#[async_trait::async_trait]
+impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
+    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool> {
+        if page as usize >= self.page_count {
+            return Ok(false);
+        }
+        self.inner.render(page, ctx, m).await
+    }
+    async fn prerender(&mut self, ctx: &Context, m: &mut Message) -> Result<()> {
+        self.inner.prerender(ctx, m).await
+    }
+
+    async fn handle_reaction(
+        &mut self,
+        page: u8,
+        ctx: &Context,
+        message: &mut Message,
+        reaction: &Reaction,
+    ) -> Result<Option<u8>> {
+        // handle normal reactions first, then fallback to the inner one
+        let new_page = handle_pagination_reaction(page, self, ctx, message, reaction).await?;
+
+        if new_page != page {
+            Ok(Some(new_page))
+        } else {
+            self.inner
+                .handle_reaction(page, ctx, message, reaction)
+                .await
+        }
+    }
+
+    fn len(&self) -> Option<usize> {
+        Some(self.page_count)
+    }
+
+    fn is_empty(&self) -> Option<bool> {
+        Some(self.page_count == 0)
+    }
 }
 
 #[async_trait::async_trait]
@@ -183,36 +247,6 @@ async fn paginate_with_first_message(
     }
 
     res
-}
-
-/// Same as `paginate`, but for function inputs, especially anonymous functions.
-pub async fn paginate_fn(
-    pager: impl for<'m> FnMut(
-            u8,
-            &'m Context,
-            &'m mut Message,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
-        + Send,
-    ctx: &Context,
-    channel: ChannelId,
-    timeout: std::time::Duration,
-) -> Result<()> {
-    paginate(pager, ctx, channel, timeout).await
-}
-
-/// Same as `paginate_reply`, but for function inputs, especially anonymous functions.
-pub async fn paginate_reply_fn(
-    pager: impl for<'m> FnMut(
-            u8,
-            &'m Context,
-            &'m mut Message,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
-        + Send,
-    ctx: &Context,
-    reply_to: &Message,
-    timeout: std::time::Duration,
-) -> Result<()> {
-    paginate_reply(pager, ctx, reply_to, timeout).await
 }
 
 // Handle the reaction and return a new page number.

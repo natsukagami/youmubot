@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use codeforces::Contest;
+use pagination::paginate_from_fn;
 use serenity::{
     builder::{CreateMessage, EditMessage},
     framework::standard::{
@@ -178,8 +179,8 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
     let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
     let last_updated = ranks.iter().map(|(_, cfu)| cfu.last_update).min().unwrap();
 
-    paginate_reply_fn(
-        move |page, ctx, msg| {
+    paginate_reply(
+        paginate_from_fn(move |page, ctx, msg| {
             use Align::*;
             let ranks = ranks.clone();
             Box::pin(async move {
@@ -224,7 +225,8 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                 msg.edit(ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
-        },
+        })
+        .with_page_count(total_pages),
         ctx,
         m,
         std::time::Duration::from_secs(60),
@@ -315,8 +317,8 @@ pub(crate) async fn contest_rank_table(
     }
     let ranks = Arc::new(ranks);
 
-    paginate_reply_fn(
-        move |page, ctx, msg| {
+    paginate_reply(
+        paginate_from_fn(move |page, ctx, msg| {
             let contest = contest.clone();
             let problems = problems.clone();
             let ranks = ranks.clone();
@@ -390,7 +392,8 @@ pub(crate) async fn contest_rank_table(
                 msg.edit(ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
-        },
+        })
+        .with_page_count(total_pages),
         ctx,
         reply_to,
         Duration::from_secs(60),

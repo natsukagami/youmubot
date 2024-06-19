@@ -101,12 +101,14 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         return Ok(());
     }
 
+    const ITEMS_PER_PAGE: usize = 10;
     let users = Arc::new(users);
     let last_update = last_update.unwrap();
-    paginate_reply_fn(
-        move |page: u8, ctx: &Context, m: &mut Message| {
+    let total_len = users.len();
+    let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+    paginate_reply(
+        paginate_from_fn(move |page: u8, ctx: &Context, m: &mut Message| {
             use Align::*;
-            const ITEMS_PER_PAGE: usize = 10;
             let users = users.clone();
             Box::pin(async move {
                 let start = (page as usize) * ITEMS_PER_PAGE;
@@ -114,7 +116,6 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 if start >= end {
                     return Ok(false);
                 }
-                let total_len = users.len();
                 let users = &users[start..end];
                 let table = if matches!(mode, RankQuery::Mode(Mode::Std) | RankQuery::MapLength) {
                     const HEADERS: [&'static str; 5] =
@@ -167,14 +168,15 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     .push_line(format!(
                         "Page **{}**/**{}**. Last updated: {}",
                         page + 1,
-                        (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
+                        total_pages,
                         last_update.format("<t:%s:R>"),
                     ))
                     .build();
                 m.edit(ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
-        },
+        })
+        .with_page_count(total_pages),
         ctx,
         m,
         std::time::Duration::from_secs(60),
@@ -337,15 +339,17 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
     }
     let has_lazer_score = scores.iter().any(|(_, _, v)| v.score.is_none());
 
-    paginate_reply_fn(
-        move |page: u8, ctx: &Context, m: &mut Message| {
-            const ITEMS_PER_PAGE: usize = 5;
+    const ITEMS_PER_PAGE: usize = 5;
+    let total_len = scores.len();
+    let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+
+    paginate_reply(
+        paginate_from_fn(move |page: u8, ctx: &Context, m: &mut Message| {
             let start = (page as usize) * ITEMS_PER_PAGE;
             let end = (start + ITEMS_PER_PAGE).min(scores.len());
             if start >= end {
                 return Box::pin(future::ready(Ok(false)));
             }
-            let total_len = scores.len();
             let scores = scores[start..end].to_vec();
             let bm = (bm.0.clone(), bm.1);
             Box::pin(async move {
@@ -392,7 +396,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
                     .push_line(format!(
                         "Page **{}**/**{}**. Not seeing your scores? Run `osu check` to update.",
                         page + 1,
-                        (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE,
+                        total_pages,
                     ))
                     .push(
                         if let crate::models::ApprovalStatus::Ranked(_) = bm.0.approval {
@@ -408,7 +412,8 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
                 m.edit(&ctx, EditMessage::new().content(content)).await?;
                 Ok(true)
             })
-        },
+        })
+        .with_page_count(total_pages),
         ctx,
         msg,
         std::time::Duration::from_secs(60),
