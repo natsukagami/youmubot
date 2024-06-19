@@ -1,15 +1,22 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use futures_util::stream::FuturesOrdered;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use pagination::paginate_from_fn;
 use regex::Regex;
-use serenity::all::EditMessage;
-use serenity::{builder::CreateMessage, model::channel::Message, utils::MessageBuilder};
+use serenity::{
+    all::{EditMessage, EMBED_MAX_COUNT},
+    builder::CreateMessage,
+    model::channel::Message,
+    utils::MessageBuilder,
+};
 
 use youmubot_prelude::*;
 
-use crate::discord::OsuEnv;
+use crate::discord::embeds::score_embed;
+use crate::discord::{BeatmapWithMode, OsuEnv};
 use crate::{
     discord::oppai_cache::BeatmapInfoWithPP,
     models::{Beatmap, Mode, Mods},
@@ -18,6 +25,7 @@ use crate::{
 use super::embeds::beatmap_embed;
 
 lazy_static! {
+    // Beatmap(set) hooks
     pub(crate) static ref OLD_LINK_REGEX: Regex = Regex::new(
         r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>\d))?(?:\+(?P<mods>[A-Z]+))?"
     ).unwrap();
@@ -27,8 +35,81 @@ lazy_static! {
     pub(crate) static ref SHORT_LINK_REGEX: Regex = Regex::new(
         r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>[A-Z]+))?)"
     ).unwrap();
+
+    // Score hook
+    pub(crate) static ref SCORE_LINK_REGEX: Regex = Regex::new(
+        r"(?:https?://)?osu\.ppy\.sh/scores/(?P<score_id>\d+)"
+    ).unwrap();
 }
 
+/// React to /scores/{id} links.
+pub fn score_hook<'a>(
+    ctx: &'a Context,
+    msg: &'a Message,
+) -> std::pin::Pin<Box<dyn future::Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        if msg.author.bot {
+            return Ok(());
+        }
+
+        let env = {
+            let data = ctx.data.read().await;
+            data.get::<OsuEnv>().unwrap().clone()
+        };
+
+        let scores = SCORE_LINK_REGEX
+            .captures_iter(&msg.content)
+            .filter_map(|caps| caps.name("score_id"))
+            .filter_map(|score_id| score_id.as_str().parse::<u64>().ok())
+            .map(|id| env.client.score(id))
+            .collect::<FuturesOrdered<_>>()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .filter_map(|score| score.pls_ok().flatten());
+
+        let embed_chunks = scores
+            .map(|score| async move {
+                let env = {
+                    let data = ctx.data.read().await;
+                    data.get::<OsuEnv>().unwrap().clone()
+                };
+                let bm = env
+                    .beatmaps
+                    .get_beatmap(score.beatmap_id, score.mode)
+                    .await?;
+                let content = env.oppai.get_beatmap(score.beatmap_id).await?;
+                let header = env.client.user_header(score.user_id).await?.unwrap();
+                Ok(score_embed(&score, &BeatmapWithMode(bm, score.mode), &content, header).build())
+                    as Result<_>
+            })
+            .collect::<FuturesOrdered<_>>()
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .filter_map(|v| v.pls_ok())
+            .chunks(EMBED_MAX_COUNT)
+            .into_iter()
+            .map(|chunk| chunk.collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        for embeds in embed_chunks {
+            msg.channel_id
+                .send_message(
+                    &ctx,
+                    CreateMessage::new()
+                        .reference_message(msg)
+                        .content("Here are the scores mentioned in the message!")
+                        .embeds(embeds),
+                )
+                .await
+                .pls_ok();
+        }
+        Ok(())
+    })
+}
+
+/// React to .osz and .osu uploads.
 pub fn dot_osu_hook<'a>(
     ctx: &'a Context,
     msg: &'a Message,

@@ -2,6 +2,7 @@ use super::BeatmapWithMode;
 use crate::{
     discord::oppai_cache::{Accuracy, BeatmapContent, BeatmapInfo, BeatmapInfoWithPP},
     models::{Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
+    UserHeader,
 };
 use serenity::{
     all::CreateAttachment,
@@ -243,7 +244,7 @@ pub(crate) struct ScoreEmbedBuilder<'a> {
     s: &'a Score,
     bm: &'a BeatmapWithMode,
     content: &'a BeatmapContent,
-    u: &'a User,
+    u: UserHeader,
     top_record: Option<u8>,
     world_record: Option<u16>,
     footer: Option<String>,
@@ -268,13 +269,13 @@ pub(crate) fn score_embed<'a>(
     s: &'a Score,
     bm: &'a BeatmapWithMode,
     content: &'a BeatmapContent,
-    u: &'a User,
+    u: impl Into<UserHeader>,
 ) -> ScoreEmbedBuilder<'a> {
     ScoreEmbedBuilder {
         s,
         bm,
         content,
-        u,
+        u: u.into(),
         top_record: None,
         world_record: None,
         footer: None,
@@ -288,7 +289,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
         let b = &self.bm.0;
         let s = self.s;
         let content = self.content;
-        let u = self.u;
+        let u = &self.u;
         let accuracy = s.accuracy(mode);
         let info = content.get_info_with(mode, s.mods).ok();
         let stars = info
