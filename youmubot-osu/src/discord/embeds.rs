@@ -343,19 +343,20 @@ impl<'a> ScoreEmbedBuilder<'a> {
         } else {
             pp.map(|v| v.1)
         };
-        let pp_gained = s.pp.map(|full_pp| {
-            self.top_record
-                .map(|top| {
-                    let after_pp = u.pp.unwrap();
-                    let effective_pp = full_pp * (0.95f64).powi(top as i32 - 1);
-                    let before_pp = after_pp - effective_pp;
-                    format!(
-                        "**pp gained**: **{:.2}**pp (+**{:.2}**pp | {:.2}pp \\➡️ {:.2}pp)",
-                        full_pp, effective_pp, before_pp, after_pp
-                    )
-                })
-                .unwrap_or_else(|| format!("**pp gained**: **{:.2}**pp", full_pp))
-        });
+        let pp_gained = {
+            let effective_pp = s.effective_pp.or_else(|| {
+                s.pp.zip(self.top_record)
+                    .map(|(pp, top)| pp * (0.95f64).powi(top as i32 - 1))
+            });
+            match (s.pp, effective_pp) {
+                (Some(pp), Some(epp)) => Some(format!(
+                    "**pp gained**: **{:.2}**pp (**+{:.2}**pp)",
+                    pp, epp
+                )),
+                (Some(pp), None) => Some(format!("**pp gained**: **{:.2}**pp", pp)),
+                _ => None,
+            }
+        };
         let score_line = pp
             .map(|pp| format!("{} | {}", &score_line, pp))
             .unwrap_or(score_line);
@@ -370,6 +371,8 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .unwrap_or_else(|| "".to_owned());
         let world_record = self
             .world_record
+            .map(|v| v as u32)
+            .or(s.global_rank)
             .map(|v| format!(" | #{} on Global Rankings!", v))
             .unwrap_or_else(|| "".to_owned());
         let diff = b.difficulty.apply_mods(s.mods, stars);
