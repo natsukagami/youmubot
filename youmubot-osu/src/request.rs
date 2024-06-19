@@ -1,55 +1,9 @@
 use crate::models::{Mode, Mods};
 use crate::Client;
-use chrono::{DateTime, Utc};
 use rosu_v2::error::OsuError;
 use youmubot_prelude::*;
 
-trait ToQuery {
-    fn to_query(&self) -> Vec<(&'static str, String)>;
-}
-
-impl<T: ToQuery> ToQuery for Option<T> {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        match self {
-            Some(ref v) => v.to_query(),
-            None => vec![],
-        }
-    }
-}
-
-impl ToQuery for Mods {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        vec![("mods", format!("{}", self.bits()))]
-    }
-}
-
-impl ToQuery for Mode {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        vec![("m", (*self as u8).to_string())]
-    }
-}
-
-impl ToQuery for (Mode, bool) {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        vec![
-            ("m", (self.0 as u8).to_string()),
-            ("a", (self.1 as u8).to_string()),
-        ]
-    }
-}
-
-impl ToQuery for (&'static str, String) {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        vec![(self.0, self.1.clone())]
-    }
-}
-
-impl ToQuery for (&'static str, DateTime<Utc>) {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        vec![(self.0, format!("{}", self.1.format("%Y-%m-%d")))]
-    }
-}
-
+#[derive(Clone, Debug)]
 pub enum UserID {
     Username(String),
     ID(u64),
@@ -74,30 +28,10 @@ impl UserID {
     }
 }
 
-impl ToQuery for UserID {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        use UserID::*;
-        match self {
-            Username(ref s) => vec![("u", s.clone()), ("type", "string".to_owned())],
-            ID(u) => vec![("u", u.to_string()), ("type", "id".to_owned())],
-        }
-    }
-}
 pub enum BeatmapRequestKind {
     Beatmap(u64),
     Beatmapset(u64),
     BeatmapHash(String),
-}
-
-impl ToQuery for BeatmapRequestKind {
-    fn to_query(&self) -> Vec<(&'static str, String)> {
-        use BeatmapRequestKind::*;
-        match self {
-            Beatmap(b) => vec![("b", b.to_string())],
-            Beatmapset(s) => vec![("s", s.to_string())],
-            BeatmapHash(ref h) => vec![("h", h.clone())],
-        }
-    }
 }
 
 fn handle_not_found<T>(v: Result<T, OsuError>) -> Result<Option<T>, OsuError> {

@@ -461,6 +461,13 @@ impl UserEvent {
 }
 
 #[derive(Clone, Debug)]
+pub struct UserHeader {
+    pub id: u64,
+    pub username: String,
+    pub country: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct User {
     pub id: u64,
     pub username: String,
@@ -495,6 +502,36 @@ impl User {
 
     pub fn avatar_url(&self) -> String {
         format!("https://a.ppy.sh/{}", self.id)
+    }
+}
+
+impl UserHeader {
+    pub fn link(&self) -> String {
+        format!("https://osu.ppy.sh/users/{}", self.id)
+    }
+
+    pub fn avatar_url(&self) -> String {
+        format!("https://a.ppy.sh/{}", self.id)
+    }
+}
+
+impl<'a> From<&'a User> for UserHeader {
+    fn from(u: &'a User) -> Self {
+        Self {
+            id: u.id,
+            username: u.username.clone(),
+            country: u.country.clone(),
+        }
+    }
+}
+
+impl From<User> for UserHeader {
+    fn from(u: User) -> Self {
+        Self {
+            id: u.id,
+            username: u.username,
+            country: u.country,
+        }
     }
 }
 
@@ -547,6 +584,7 @@ pub struct Score {
     pub normalized_score: u32,
     pub pp: Option<f64>,
     pub rank: Rank,
+    pub mode: Mode,
     pub mods: Mods, // Later
 
     pub count_300: u64,
