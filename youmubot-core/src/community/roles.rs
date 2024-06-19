@@ -43,8 +43,8 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
             const ROLES_PER_PAGE: usize = 8;
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
-            paginate_reply_fn(
-                |page, ctx, msg| {
+            paginate_reply(
+                paginate_from_fn(|page, ctx, msg| {
                     let roles = roles.clone();
                     Box::pin(async move {
                         let page = page as usize;
@@ -80,7 +80,8 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
                         msg.edit(ctx, EditMessage::new().content(content)).await?;
                         Ok(true)
                     })
-                },
+                })
+                .with_page_count(pages),
                 ctx,
                 m,
                 std::time::Duration::from_secs(60 * 10),

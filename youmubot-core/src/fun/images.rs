@@ -65,8 +65,8 @@ async fn message_command(
         return Ok(());
     }
     let images = std::sync::Arc::new(images);
-    paginate_reply_fn(
-        move |page, ctx, msg: &mut Message| {
+    paginate_reply(
+        paginate_from_fn(|page, ctx, msg: &mut Message| {
             let images = images.clone();
             Box::pin(async move {
                 let page = page as usize;
@@ -87,7 +87,8 @@ async fn message_command(
                     .map_err(|e| e.into())
                 }
             })
-        },
+        })
+        .with_page_count(images.len()),
         ctx,
         msg,
         std::time::Duration::from_secs(120),
