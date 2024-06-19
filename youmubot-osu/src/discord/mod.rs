@@ -16,7 +16,7 @@ use serenity::{
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
 use hook::SHORT_LINK_REGEX;
-pub use hook::{dot_osu_hook, hook};
+pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
 use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::{stream::FuturesUnordered, *};
@@ -44,7 +44,7 @@ mod server_rank;
 pub(crate) struct OsuClient;
 
 impl TypeMapKey for OsuClient {
-    type Value = Arc<OsuHttpClient>;
+    type Value = Arc<crate::Client>;
 }
 
 /// The environment for osu! app commands.
@@ -56,7 +56,7 @@ pub struct OsuEnv {
     pub(crate) last_beatmaps: OsuLastBeatmap,
     pub(crate) user_bests: OsuUserBests,
     // clients
-    pub(crate) client: Arc<OsuHttpClient>,
+    pub(crate) client: Arc<crate::Client>,
     pub(crate) oppai: BeatmapCache,
     pub(crate) beatmaps: BeatmapMetaCache,
 }
