@@ -80,7 +80,7 @@ jobs:
               with:
                   toolchain: stable
                   components: clippy
-            - uses: cachix/cachix-action@v12
+            - uses: cachix/cachix-action@v15
               with:
                 name: natsukagami
                 # If you chose API tokens for write access OR if you have a private cache
