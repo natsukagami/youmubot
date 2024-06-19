@@ -2,11 +2,8 @@ use std::io::Read;
 use std::sync::Arc;
 
 use osuparse::MetadataSection;
-use rosu_pp::catch::CatchDifficultyAttributes;
-use rosu_pp::mania::ManiaDifficultyAttributes;
-use rosu_pp::osu::OsuDifficultyAttributes;
-use rosu_pp::taiko::TaikoDifficultyAttributes;
-use rosu_pp::{AttributeProvider, Beatmap, CatchPP, DifficultyAttributes, ManiaPP, OsuPP, TaikoPP};
+use rosu_pp::any::DifficultyAttributes;
+use rosu_pp::Beatmap;
 
 use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
@@ -32,7 +29,7 @@ impl BeatmapInfo {
     fn extract(beatmap: &Beatmap, attrs: DifficultyAttributes) -> Self {
         BeatmapInfo {
             objects: beatmap.hit_objects.len(),
-            max_combo: attrs.max_combo(),
+            max_combo: attrs.max_combo() as usize,
             stars: attrs.stars(),
         }
     }
@@ -70,206 +67,6 @@ impl Accuracy {
 /// Beatmap Info with attached 95/98/99/100% FC pp.
 pub type BeatmapInfoWithPP = (BeatmapInfo, [f64; 4]);
 
-trait PPCalc<'a>: Sized {
-    type Attrs: rosu_pp::AttributeProvider + Clone;
-
-    fn new(beatmap: &'a Beatmap) -> Self;
-    fn mods(self, mods: u32) -> Self;
-    fn attributes(self, attrs: Self::Attrs) -> Self;
-
-    /* For pp calculation */
-    fn combo(self, combo: usize) -> Self;
-    fn accuracy(self, accuracy: f64) -> Self;
-    fn misses(self, misses: usize) -> Self;
-    fn get_pp(self) -> f64;
-
-    /* For difficulty calculation */
-    fn get_attrs(self) -> Self::Attrs;
-
-    fn combo_opt(self, combo: Option<usize>) -> Self {
-        match combo {
-            Some(c) => self.combo(c),
-            None => self,
-        }
-    }
-    fn accuracy_from(self, accuracy: Accuracy) -> Self {
-        self.misses(accuracy.misses()).accuracy(accuracy.into())
-    }
-
-    fn map_attributes(beatmap: &'a Beatmap, mods: Mods) -> Self::Attrs {
-        Self::new(beatmap).mods(mods.bits() as u32).get_attrs()
-    }
-    fn map_pp(beatmap: &'a Beatmap, mods: Mods, combo: Option<usize>, accuracy: Accuracy) -> f64 {
-        Self::new(beatmap)
-            .mods(mods.bits() as u32)
-            .combo_opt(combo)
-            .accuracy_from(accuracy)
-            .get_pp()
-    }
-    fn map_info(beatmap: &'a Beatmap, mods: Mods) -> BeatmapInfo {
-        let attrs = Self::map_attributes(beatmap, mods).attributes();
-        BeatmapInfo::extract(beatmap, attrs)
-    }
-
-    fn map_info_with_pp(beatmap: &'a Beatmap, mods: Mods) -> BeatmapInfoWithPP {
-        let attrs = Self::map_attributes(beatmap, mods);
-        let nw = || {
-            Self::new(beatmap)
-                .mods(mods.bits() as u32)
-                .attributes(attrs.clone())
-        };
-        let pps = [
-            nw().accuracy_from(Accuracy::ByValue(95.0, 0)).get_pp(),
-            nw().accuracy_from(Accuracy::ByValue(98.0, 0)).get_pp(),
-            nw().accuracy_from(Accuracy::ByValue(99.0, 0)).get_pp(),
-            nw().accuracy_from(Accuracy::ByValue(100.0, 0)).get_pp(),
-        ];
-        let info = BeatmapInfo::extract(beatmap, attrs.attributes());
-        (info, pps)
-    }
-}
-
-impl<'a> PPCalc<'a> for OsuPP<'a> {
-    type Attrs = OsuDifficultyAttributes;
-
-    fn new(beatmap: &'a Beatmap) -> Self {
-        Self::new(beatmap)
-    }
-    fn mods(self, mods: u32) -> Self {
-        self.mods(mods)
-    }
-
-    fn attributes(self, attrs: Self::Attrs) -> Self {
-        self.attributes(attrs)
-    }
-
-    fn combo(self, combo: usize) -> Self {
-        self.combo(combo)
-    }
-
-    fn accuracy(self, accuracy: f64) -> Self {
-        self.accuracy(accuracy)
-    }
-
-    fn misses(self, misses: usize) -> Self {
-        self.n_misses(misses)
-    }
-
-    fn get_pp(self) -> f64 {
-        self.calculate().pp()
-    }
-
-    fn get_attrs(self) -> Self::Attrs {
-        self.calculate().difficulty
-    }
-}
-
-impl<'a> PPCalc<'a> for TaikoPP<'a> {
-    type Attrs = TaikoDifficultyAttributes;
-
-    fn new(beatmap: &'a Beatmap) -> Self {
-        Self::new(beatmap)
-    }
-    fn mods(self, mods: u32) -> Self {
-        self.mods(mods)
-    }
-
-    fn attributes(self, attrs: Self::Attrs) -> Self {
-        self.attributes(attrs)
-    }
-
-    fn combo(self, combo: usize) -> Self {
-        self.combo(combo)
-    }
-
-    fn accuracy(self, accuracy: f64) -> Self {
-        self.accuracy(accuracy)
-    }
-
-    fn misses(self, misses: usize) -> Self {
-        self.n_misses(misses)
-    }
-
-    fn get_pp(self) -> f64 {
-        self.calculate().pp()
-    }
-
-    fn get_attrs(self) -> Self::Attrs {
-        self.calculate().difficulty
-    }
-}
-
-impl<'a> PPCalc<'a> for CatchPP<'a> {
-    type Attrs = CatchDifficultyAttributes;
-
-    fn new(beatmap: &'a Beatmap) -> Self {
-        Self::new(beatmap)
-    }
-    fn mods(self, mods: u32) -> Self {
-        self.mods(mods)
-    }
-
-    fn attributes(self, attrs: Self::Attrs) -> Self {
-        self.attributes(attrs)
-    }
-
-    fn combo(self, combo: usize) -> Self {
-        self.combo(combo)
-    }
-
-    fn accuracy(self, accuracy: f64) -> Self {
-        self.accuracy(accuracy)
-    }
-
-    fn misses(self, misses: usize) -> Self {
-        self.misses(misses)
-    }
-
-    fn get_pp(self) -> f64 {
-        self.calculate().pp()
-    }
-
-    fn get_attrs(self) -> Self::Attrs {
-        self.calculate().difficulty
-    }
-}
-
-impl<'a> PPCalc<'a> for ManiaPP<'a> {
-    type Attrs = ManiaDifficultyAttributes;
-
-    fn new(beatmap: &'a Beatmap) -> Self {
-        Self::new(beatmap)
-    }
-    fn mods(self, mods: u32) -> Self {
-        self.mods(mods)
-    }
-
-    fn attributes(self, attrs: Self::Attrs) -> Self {
-        self.attributes(attrs)
-    }
-
-    fn combo(self, _combo: usize) -> Self {
-        // Mania doesn't seem to care about combo?
-        self
-    }
-
-    fn accuracy(self, accuracy: f64) -> Self {
-        self.accuracy(accuracy)
-    }
-
-    fn misses(self, misses: usize) -> Self {
-        self.n_misses(misses)
-    }
-
-    fn get_pp(self) -> f64 {
-        self.calculate().pp()
-    }
-
-    fn get_attrs(self) -> Self::Attrs {
-        self.calculate().difficulty
-    }
-}
-
 impl BeatmapContent {
     /// Get pp given the combo and accuracy.
     pub fn get_pp_from(
@@ -279,34 +76,55 @@ impl BeatmapContent {
         accuracy: Accuracy,
         mods: Mods,
     ) -> Result<f64> {
-        let bm = self.content.as_ref();
-        Ok(match mode {
-            Mode::Std => OsuPP::map_pp(bm, mods, combo, accuracy),
-            Mode::Taiko => TaikoPP::map_pp(bm, mods, combo, accuracy),
-            Mode::Catch => CatchPP::map_pp(bm, mods, combo, accuracy),
-            Mode::Mania => ManiaPP::map_pp(bm, mods, combo, accuracy),
-        })
+        let mut perf = self
+            .content
+            .performance()
+            .mode_or_ignore(mode.into())
+            .accuracy(accuracy.into())
+            .misses(accuracy.misses() as u32)
+            .mods(mods.bits() as u32);
+        if let Some(combo) = combo {
+            perf = perf.combo(combo as u32);
+        }
+        let attrs = perf.calculate();
+        Ok(attrs.pp())
     }
 
     /// Get info given mods.
     pub fn get_info_with(&self, mode: Mode, mods: Mods) -> Result<BeatmapInfo> {
-        let bm = self.content.as_ref();
-        Ok(match mode {
-            Mode::Std => OsuPP::map_info(bm, mods),
-            Mode::Taiko => TaikoPP::map_info(bm, mods),
-            Mode::Catch => CatchPP::map_info(bm, mods),
-            Mode::Mania => ManiaPP::map_info(bm, mods),
+        let attrs = self
+            .content
+            .performance()
+            .mode_or_ignore(mode.into())
+            .mods(mods.bits() as u32)
+            .calculate();
+        Ok(BeatmapInfo {
+            objects: self.content.hit_objects.len(),
+            max_combo: attrs.max_combo() as usize,
+            stars: attrs.stars(),
         })
     }
 
     pub fn get_possible_pp_with(&self, mode: Mode, mods: Mods) -> Result<BeatmapInfoWithPP> {
-        let bm = self.content.as_ref();
-        Ok(match mode {
-            Mode::Std => OsuPP::map_info_with_pp(bm, mods),
-            Mode::Taiko => TaikoPP::map_info_with_pp(bm, mods),
-            Mode::Catch => CatchPP::map_info_with_pp(bm, mods),
-            Mode::Mania => ManiaPP::map_info_with_pp(bm, mods),
-        })
+        let pp: [f64; 4] = [
+            self.get_pp_from(mode, None, Accuracy::ByValue(95.0, 0), mods)?,
+            self.get_pp_from(mode, None, Accuracy::ByValue(98.0, 0), mods)?,
+            self.get_pp_from(mode, None, Accuracy::ByValue(99.0, 0), mods)?,
+            self.get_pp_from(mode, None, Accuracy::ByValue(100.0, 0), mods)?,
+        ];
+        Ok((self.get_info_with(mode, mods)?, pp))
+    }
+}
+
+impl From<Mode> for rosu_pp::model::mode::GameMode {
+    fn from(value: Mode) -> Self {
+        use rosu_pp::model::mode::GameMode;
+        match value {
+            Mode::Std => GameMode::Osu,
+            Mode::Taiko => GameMode::Taiko,
+            Mode::Catch => GameMode::Catch,
+            Mode::Mania => GameMode::Mania,
+        }
     }
 }
 
@@ -337,7 +155,7 @@ impl BeatmapCache {
             .metadata;
         Ok(BeatmapContent {
             metadata,
-            content: Arc::new(Beatmap::parse(content.as_bytes())?),
+            content: Arc::new(Beatmap::from_bytes(content.as_bytes())?),
         })
     }
 

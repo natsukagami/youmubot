@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use rosu_pp::GameMode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -271,17 +270,6 @@ impl From<u8> for Mode {
             2 => Self::Catch,
             3 => Self::Mania,
             _ => panic!("Unknown mode {}", n),
-        }
-    }
-}
-
-impl From<Mode> for GameMode {
-    fn from(n: Mode) -> Self {
-        match n {
-            Mode::Std => GameMode::Osu,
-            Mode::Taiko => GameMode::Taiko,
-            Mode::Catch => GameMode::Catch,
-            Mode::Mania => GameMode::Mania,
         }
     }
 }
