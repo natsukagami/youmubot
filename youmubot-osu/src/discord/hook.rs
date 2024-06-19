@@ -2,15 +2,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use futures_util::stream::FuturesOrdered;
-use itertools::Itertools;
 use lazy_static::lazy_static;
 use pagination::paginate_from_fn;
 use regex::Regex;
 use serenity::{
-    all::{EditMessage, EMBED_MAX_COUNT},
-    builder::CreateMessage,
-    model::channel::Message,
-    utils::MessageBuilder,
+    all::EditMessage, builder::CreateMessage, model::channel::Message, utils::MessageBuilder,
 };
 
 use youmubot_prelude::*;
@@ -68,7 +64,7 @@ pub fn score_hook<'a>(
             .into_iter()
             .filter_map(|score| score.pls_ok().flatten());
 
-        let embed_chunks = scores
+        let embeds = scores
             .map(|score| async move {
                 let env = {
                     let data = ctx.data.read().await;
@@ -78,33 +74,44 @@ pub fn score_hook<'a>(
                     .beatmaps
                     .get_beatmap(score.beatmap_id, score.mode)
                     .await?;
+                let mode = score.mode;
                 let content = env.oppai.get_beatmap(score.beatmap_id).await?;
                 let header = env.client.user_header(score.user_id).await?.unwrap();
-                Ok(score_embed(&score, &BeatmapWithMode(bm, score.mode), &content, header).build())
-                    as Result<_>
+                Ok((score, BeatmapWithMode(bm, mode), content, header))
             })
             .collect::<FuturesOrdered<_>>()
             .collect::<Vec<_>>()
             .await
             .into_iter()
-            .filter_map(|v| v.pls_ok())
-            .chunks(EMBED_MAX_COUNT)
-            .into_iter()
-            .map(|chunk| chunk.collect::<Vec<_>>())
+            .filter_map(|v: Result<_>| v.pls_ok())
             .collect::<Vec<_>>();
 
-        for embeds in embed_chunks {
+        let len = embeds.len();
+        for (i, (s, b, c, h)) in embeds.into_iter().enumerate() {
             msg.channel_id
                 .send_message(
                     &ctx,
                     CreateMessage::new()
                         .reference_message(msg)
-                        .content("Here are the scores mentioned in the message!")
-                        .embeds(embeds),
+                        .content(if len == 1 {
+                            "Here is the score mentioned in the message!".into()
+                        } else {
+                            format!(
+                                "Here is the score mentioned in the message! (**{}/{}**)",
+                                i + 1,
+                                len
+                            )
+                        })
+                        .embed(score_embed(&s, &b, &c, h).build()),
                 )
                 .await
                 .pls_ok();
+            env.last_beatmaps
+                .save(msg.channel_id, &b.0, b.1)
+                .await
+                .pls_ok();
         }
+
         Ok(())
     })
 }
