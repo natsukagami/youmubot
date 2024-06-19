@@ -101,16 +101,45 @@ pub fn dot_osu_hook<'a>(
         osu_embeds.extend(osz_embeds);
 
         if !osu_embeds.is_empty() {
-            msg.channel_id
-                .send_message(
+            let embed_len = osu_embeds.len();
+            if embed_len == 1 {
+                let (embed, attachments) = osu_embeds.into_iter().next().unwrap();
+                msg.channel_id
+                    .send_message(
+                        ctx,
+                        CreateMessage::new()
+                            .reference_message(msg)
+                            .embed(embed)
+                            .add_files(attachments)
+                            .content("Attached beatmap".to_owned()),
+                    )
+                    .await
+                    .pls_ok();
+            } else {
+                let osu_embeds = Arc::new(osu_embeds);
+                paginate_reply(
+                    paginate_from_fn(|page, ctx, msg| {
+                        let osu_embeds = osu_embeds.clone();
+                        Box::pin(async move {
+                            let (embed, attachments) = &osu_embeds[page as usize];
+                            let mut edit = EditMessage::new()
+                                .content(format!("Attached beatmaps ({}/{})", page + 1, embed_len))
+                                .embed(embed.clone());
+                            for att in attachments {
+                                edit = edit.new_attachment(att.clone());
+                            }
+                            msg.edit(&ctx, edit).await?;
+                            Ok(true)
+                        })
+                    })
+                    .with_page_count(embed_len),
                     ctx,
-                    CreateMessage::new()
-                        .reference_message(msg)
-                        .content(format!("{} attached beatmaps found", osu_embeds.len()))
-                        .add_embeds(osu_embeds),
+                    msg,
+                    std::time::Duration::from_secs(180),
                 )
                 .await
-                .ok();
+                .pls_ok();
+            }
         }
 
         Ok(())
