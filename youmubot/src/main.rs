@@ -128,6 +128,7 @@ async fn main() {
     {
         handler.push_hook(youmubot_osu::discord::hook);
         handler.push_hook(youmubot_osu::discord::dot_osu_hook);
+        handler.push_hook(youmubot_osu::discord::score_hook);
     }
     #[cfg(feature = "codeforces")]
     handler.push_hook(youmubot_cf::InfoHook);
