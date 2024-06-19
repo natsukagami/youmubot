@@ -558,43 +558,17 @@ pub struct Score {
     pub max_combo: u64,
     pub perfect: bool,
 
+    // Some APIv2 stats
+    pub server_accuracy: f64,
+    pub global_rank: Option<u32>,
+    pub effective_pp: Option<f64>,
+
     pub lazer_build_id: Option<u32>,
 }
 
 impl Score {
     /// Given the play's mode, calculate the score's accuracy.
-    pub fn accuracy(&self, mode: Mode) -> f64 {
-        100.0
-            * match mode {
-                Mode::Std => {
-                    (6 * self.count_300 + 2 * self.count_100 + self.count_50) as f64
-                        / (6.0
-                            * (self.count_300 + self.count_100 + self.count_50 + self.count_miss)
-                                as f64)
-                }
-                Mode::Taiko => {
-                    (2 * self.count_300 + self.count_100) as f64
-                        / 2.0
-                        / (self.count_300 + self.count_100 + self.count_miss) as f64
-                }
-                Mode::Catch => {
-                    (self.count_300 + self.count_100) as f64
-                        / (self.count_300 + self.count_100 + self.count_miss + self.count_katu/* # of droplet misses */)
-                            as f64
-                }
-                Mode::Mania => {
-                    ((self.count_geki /* MAX */ + self.count_300) * 6
-                        + self.count_katu /* 200 */ * 4
-                        + self.count_100 * 2
-                        + self.count_50) as f64
-                        / 6.0
-                        / (self.count_geki
-                            + self.count_300
-                            + self.count_katu
-                            + self.count_100
-                            + self.count_50
-                            + self.count_miss) as f64
-                }
-            }
+    pub fn accuracy(&self, _mode: Mode) -> f64 {
+        self.server_accuracy
     }
 }

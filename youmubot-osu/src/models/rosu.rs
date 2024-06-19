@@ -124,6 +124,9 @@ impl From<rosu::score::Score> for Score {
             normalized_score: s.score,
             pp: s.pp.map(|v| v as f64),
             rank: if s.passed { s.grade.into() } else { Rank::F },
+            server_accuracy: s.accuracy as f64,
+            global_rank: s.rank_global,
+            effective_pp: s.weight.map(|w| w.pp as f64),
             mods: s
                 .mods
                 .iter()
