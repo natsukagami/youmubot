@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use futures_util::lock::Mutex;
 use models::*;
 use request::builders::*;
 use request::*;
@@ -14,6 +16,8 @@ pub mod request;
 #[derive(Clone)]
 pub struct Client {
     rosu: Arc<rosu_v2::Osu>,
+
+    user_header_cache: Arc<Mutex<HashMap<u64, Option<UserHeader>>>>,
 }
 
 pub fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::Error> {
@@ -36,6 +40,7 @@ impl Client {
             .await?;
         Ok(Client {
             rosu: Arc::new(rosu),
+            user_header_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -54,9 +59,26 @@ impl Client {
         user: UserID,
         f: impl FnOnce(&mut UserRequestBuilder) -> &mut UserRequestBuilder,
     ) -> Result<Option<User>, Error> {
-        let mut r = UserRequestBuilder::new(user);
+        let mut r = UserRequestBuilder::new(user.clone());
         f(&mut r);
-        r.build(self).await
+        let u = r.build(self).await?;
+        if let UserID::ID(id) = user {
+            self.user_header_cache
+                .lock()
+                .await
+                .insert(id, u.clone().map(|v| v.into()));
+        }
+        Ok(u)
+    }
+
+    /// Fetch the user header.
+    pub async fn user_header(&self, id: u64) -> Result<Option<UserHeader>, Error> {
+        Ok(
+            match self.user_header_cache.lock().await.get(&id).cloned() {
+                Some(v) => v,
+                None => self.user(UserID::ID(id), |f| f).await?.map(|v| v.into()),
+            },
+        )
     }
 
     pub async fn scores(

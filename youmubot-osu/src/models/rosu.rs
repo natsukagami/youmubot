@@ -127,6 +127,7 @@ impl From<rosu::score::Score> for Score {
             server_accuracy: s.accuracy as f64,
             global_rank: s.rank_global,
             effective_pp: s.weight.map(|w| w.pp as f64),
+            mode: s.mode.into(),
             mods: s
                 .mods
                 .iter()
