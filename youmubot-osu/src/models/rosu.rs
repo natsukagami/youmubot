@@ -1,6 +1,9 @@
-use rosu_v2::model::{
-    self as rosu,
-    mods::{GameModIntermode, GameModsIntermode},
+use rosu_v2::{
+    model::{
+        self as rosu,
+        mods::{GameModIntermode, GameModsIntermode},
+    },
+    prelude::Acronym,
 };
 
 use super::*;
@@ -330,112 +333,92 @@ impl From<rosu::mods::GameModsIntermode> for Mods {
 
 impl From<rosu::mods::GameMods> for Mods {
     fn from(value: rosu::mods::GameMods) -> Self {
+        let unknown = rosu::mods::GameModIntermode::Unknown(rosu::mods::UnknownMod::default());
         value
             .iter()
             .cloned()
-            .filter_map(|m| match m {
+            .map(|m| match m {
                 rosu::mods::GameMod::HalfTimeOsu(ht)
                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::DaycoreOsu(dc)
                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
-                rosu::mods::GameMod::DaycoreOsu(_) => {
-                    Some(rosu::mods::GameMod::HalfTimeOsu(rosu::mods::HalfTimeOsu {
-                        speed_change: None,
-                        adjust_pitch: Some(true),
-                    }))
-                }
+                rosu::mods::GameMod::DaycoreOsu(_) => rosu::mods::GameModIntermode::HalfTime,
                 rosu::mods::GameMod::DoubleTimeOsu(dt)
                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::NightcoreOsu(nc)
                     if nc.speed_change.is_some_and(|v| v != 1.5) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::HalfTimeTaiko(ht)
                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::DaycoreTaiko(dc)
                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
-                rosu::mods::GameMod::DaycoreTaiko(_) => Some(rosu::mods::GameMod::HalfTimeTaiko(
-                    rosu::mods::HalfTimeTaiko {
-                        speed_change: None,
-                        adjust_pitch: Some(true),
-                    },
-                )),
+                rosu::mods::GameMod::DaycoreTaiko(_) => rosu::mods::GameModIntermode::HalfTime,
                 rosu::mods::GameMod::DoubleTimeTaiko(dt)
                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::NightcoreTaiko(nc)
                     if nc.speed_change.is_some_and(|v| v != 1.5) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::HalfTimeCatch(ht)
                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::DaycoreCatch(dc)
                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
-                rosu::mods::GameMod::DaycoreCatch(_) => Some(rosu::mods::GameMod::HalfTimeCatch(
-                    rosu::mods::HalfTimeCatch {
-                        speed_change: None,
-                        adjust_pitch: Some(true),
-                    },
-                )),
+                rosu::mods::GameMod::DaycoreCatch(_) => rosu::mods::GameModIntermode::HalfTime,
                 rosu::mods::GameMod::DoubleTimeCatch(dt)
                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::NightcoreCatch(nc)
                     if nc.speed_change.is_some_and(|v| v != 1.5) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::HalfTimeMania(ht)
                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
                 rosu::mods::GameMod::DaycoreMania(dc)
                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
                 {
-                    None
+                    unknown
                 }
-                rosu::mods::GameMod::DaycoreMania(_) => Some(rosu::mods::GameMod::HalfTimeMania(
-                    rosu::mods::HalfTimeMania {
-                        speed_change: None,
-                        adjust_pitch: Some(true),
-                    },
-                )),
+                rosu::mods::GameMod::DaycoreMania(_) => rosu::mods::GameModIntermode::HalfTime,
                 rosu::mods::GameMod::DoubleTimeMania(dt)
                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
                 {
-                    None
+                    unknown
                 }
-                _ => Some(m),
+                _ => m.intermode(),
             })
-            .map(|v| v.intermode())
             .collect::<GameModsIntermode>()
             .into()
     }
