@@ -372,7 +372,7 @@ impl BeatmapSite {
                 format!("https://osu.ppy.sh/beatmapsets/{}/download", beatmapset)
             }
             BeatmapSite::Beatconnect => format!("https://beatconnect.io/b/{}", beatmapset),
-            BeatmapSite::Chimu => format!("https://chimu.moe/d/{}", beatmapset),
+            BeatmapSite::Chimu => format!("https://catboy.best/d/{}", beatmapset),
             BeatmapSite::OsuDirect => format!("osu://s/{}", beatmapset),
         }
     }
