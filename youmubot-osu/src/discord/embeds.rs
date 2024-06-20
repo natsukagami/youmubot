@@ -29,12 +29,13 @@ fn beatmap_description(b: &Beatmap) -> String {
     MessageBuilder::new()
         .push_bold_line(b.approval.to_string())
         .push({
-            let link = b.download_link(false);
+            let link = b.download_link(crate::BeatmapSite::Bancho);
             format!(
-                "Download: [[Link]]({}) [[No Video]]({}?noVideo=1) [[Bloodcat]]({})",
+                "Download: [[Link]]({}) [[No Video]]({}?noVideo=1) [[BeatConnect]]({}) [[Chimu]]({})",
                 link,
                 link,
-                b.download_link(true),
+                b.download_link(crate::BeatmapSite::Beatconnect),
+                b.download_link(crate::BeatmapSite::Chimu),
             )
         })
         .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))

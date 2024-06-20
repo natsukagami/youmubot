@@ -141,10 +141,11 @@ impl Difficulty {
                 original_beatmap
                     .map(|original_beatmap| {
                         format!(
-                            "[[Link]]({}) [[DL]]({}) [[Alt]]({}) (`{}`)",
+                            "[[Link]]({}) [[DL]]({}) [[BC]]({}) [[Chimu]]({}) (`{}`)",
                             original_beatmap.link(),
-                            original_beatmap.download_link(false),
-                            original_beatmap.download_link(true),
+                            original_beatmap.download_link(BeatmapSite::Bancho),
+                            original_beatmap.download_link(BeatmapSite::Beatconnect),
+                            original_beatmap.download_link(BeatmapSite::Chimu),
                             original_beatmap.short_link(Some(mode), Some(mods))
                         )
                     })
@@ -356,6 +357,25 @@ pub struct Beatmap {
 
 const NEW_MODE_NAMES: [&str; 4] = ["osu", "taiko", "fruits", "mania"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BeatmapSite {
+    Bancho,
+    Beatconnect,
+    Chimu,
+}
+
+impl BeatmapSite {
+    pub fn download_link(self, beatmapset: u64) -> String {
+        match self {
+            BeatmapSite::Bancho => {
+                format!("https://osu.ppy.sh/beatmapsets/{}/download", beatmapset)
+            }
+            BeatmapSite::Beatconnect => format!("https://beatconnect.io/b/{}", beatmapset),
+            BeatmapSite::Chimu => format!("https://chimu.moe/d/{}", beatmapset),
+        }
+    }
+}
+
 impl Beatmap {
     pub fn beatmapset_link(&self) -> String {
         format!(
@@ -372,16 +392,9 @@ impl Beatmap {
         )
     }
 
-    /// Returns a direct download link. If `bloodcat` is true, return the bloodcat download link.
-    pub fn download_link(&self, bloodcat: bool) -> String {
-        if bloodcat {
-            format!("https://bloodcat.com/osu/s/{}", self.beatmapset_id)
-        } else {
-            format!(
-                "https://osu.ppy.sh/beatmapsets/{}/download",
-                self.beatmapset_id
-            )
-        }
+    /// Returns a direct download link. If `beatconnect` is true, return the beatconnect download link.
+    pub fn download_link(&self, site: BeatmapSite) -> String {
+        site.download_link(self.beatmapset_id)
     }
 
     /// Returns a direct link to the download (if you have supporter!)
