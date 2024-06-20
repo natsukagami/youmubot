@@ -73,12 +73,13 @@ impl Client {
 
     /// Fetch the user header.
     pub async fn user_header(&self, id: u64) -> Result<Option<UserHeader>, Error> {
-        Ok(
-            match self.user_header_cache.lock().await.get(&id).cloned() {
+        Ok({
+            let v = self.user_header_cache.lock().await.get(&id).cloned();
+            match v {
                 Some(v) => v,
                 None => self.user(UserID::ID(id), |f| f).await?.map(|v| v.into()),
-            },
-        )
+            }
+        })
     }
 
     pub async fn scores(

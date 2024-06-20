@@ -197,6 +197,7 @@ pub async fn mania(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     get_user(ctx, &env, msg, args, Mode::Mania).await
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct BeatmapWithMode(pub Beatmap, pub Mode);
 
 impl BeatmapWithMode {
