@@ -123,7 +123,7 @@ impl std::str::FromStr for Mods {
                 "AT" => res |= Mods::AT,
                 "SO" => res |= Mods::SO,
                 "AP" => res |= Mods::AP,
-                "PF" => res |= Mods::PF,
+                "PF" => res |= Mods::PF | Mods::SD,
                 "1K" => res |= Mods::KEY1,
                 "2K" => res |= Mods::KEY2,
                 "3K" => res |= Mods::KEY3,
