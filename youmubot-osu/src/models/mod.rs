@@ -609,4 +609,20 @@ impl Score {
     pub fn accuracy(&self, _mode: Mode) -> f64 {
         self.server_accuracy
     }
+
+    /// Gets the link to the score, if it exists.
+    pub fn link(&self) -> Option<String> {
+        self.id
+            .map(|id| format!("https://osu.ppy.sh/scores/{}", id))
+    }
+
+    /// Gets the link to the replay, if it exists.
+    pub fn replay_download_link(&self) -> Option<String> {
+        let id = self.id?;
+        if self.replay_available {
+            Some(format!("https://osu.ppy.sh/scores/{}/download", id))
+        } else {
+            None
+        }
+    }
 }

@@ -9,7 +9,7 @@ use serenity::{
     builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter},
     utils::MessageBuilder,
 };
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 use youmubot_prelude::*;
 
 /// Writes a number grouped in groups of 3.
@@ -411,9 +411,15 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     .build(),
             )
             .description(format!(
-                r#"**Played**: {}
+                r#"**Played**: {} {} {}
 {}"#,
                 s.date.format("<t:%s:R>"),
+                s.link()
+                    .map(|s| format!("[Score]({})", s).into())
+                    .unwrap_or(Cow::from("")),
+                s.replay_download_link()
+                    .map(|s| format!("[Replay]({})", s).into())
+                    .unwrap_or(Cow::from("")),
                 pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
             ))
             .thumbnail(b.thumbnail_url())

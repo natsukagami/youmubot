@@ -1,9 +1,6 @@
-use rosu_v2::{
-    model::{
-        self as rosu,
-        mods::{GameModIntermode, GameModsIntermode},
-    },
-    prelude::Acronym,
+use rosu_v2::model::{
+    self as rosu,
+    mods::{GameModIntermode, GameModsIntermode},
 };
 
 use super::*;
