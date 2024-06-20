@@ -141,7 +141,7 @@ impl Difficulty {
                 original_beatmap
                     .map(|original_beatmap| {
                         format!(
-                            "[[Link]]({}) [[DL]]({}) [[BC]]({}) [[Chimu]]({}) (`{}`)",
+                            "[[Link]]({}) [[DL]]({}) [[B]({})|[C]({})] (`{}`)",
                             original_beatmap.link(),
                             original_beatmap.download_link(BeatmapSite::Bancho),
                             original_beatmap.download_link(BeatmapSite::Beatconnect),
@@ -362,6 +362,7 @@ pub enum BeatmapSite {
     Bancho,
     Beatconnect,
     Chimu,
+    OsuDirect,
 }
 
 impl BeatmapSite {
@@ -372,6 +373,7 @@ impl BeatmapSite {
             }
             BeatmapSite::Beatconnect => format!("https://beatconnect.io/b/{}", beatmapset),
             BeatmapSite::Chimu => format!("https://chimu.moe/d/{}", beatmapset),
+            BeatmapSite::OsuDirect => format!("osu://s/{}", beatmapset),
         }
     }
 }

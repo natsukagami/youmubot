@@ -416,10 +416,10 @@ impl<'a> ScoreEmbedBuilder<'a> {
 {}"#,
                 s.date.format("<t:%s:R>"),
                 s.link()
-                    .map(|s| format!("[Score]({})", s).into())
+                    .map(|s| format!("[[Score]]({})", s).into())
                     .unwrap_or(Cow::from("")),
                 s.replay_download_link()
-                    .map(|s| format!("[Replay]({})", s).into())
+                    .map(|s| format!("[[Replay]]({})", s).into())
                     .unwrap_or(Cow::from("")),
                 pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
             ))
