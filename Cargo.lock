@@ -1804,7 +1804,7 @@ dependencies = [
 [[package]]
 name = "rosu-v2"
 version = "0.8.0"
-source = "git+https://github.com/MaxOhn/rosu-v2?branch=lazer#4fb91316a00f78c322fc43a71b25ab6b4d080b16"
+source = "git+https://github.com/MaxOhn/rosu-v2?branch=lazer#184a4f40ad17678fe53ada16fb0307ba9e6f7ad8"
 dependencies = [
  "bytes",
  "dashmap",
