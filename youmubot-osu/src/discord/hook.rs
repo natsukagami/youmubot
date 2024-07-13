@@ -17,6 +17,7 @@ use crate::{
 };
 
 use super::embeds::beatmap_embed;
+use super::interaction::{beatmap_components, score_components};
 use super::link_parser::*;
 
 /// React to /scores/{id} links.
@@ -83,7 +84,8 @@ pub fn score_hook<'a>(
                                 len
                             )
                         })
-                        .embed(score_embed(&s, &b, &c, h).build()),
+                        .embed(score_embed(&s, &b, &c, h).build())
+                        .components(vec![score_components()]),
                 )
                 .await
                 .pls_ok();
@@ -301,6 +303,7 @@ async fn handle_beatmap<'a, 'b>(
                     mods,
                     info,
                 ))
+                .components(vec![beatmap_components()])
                 .reference_message(reply_to),
         )
         .await?;

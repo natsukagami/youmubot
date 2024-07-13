@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use futures_util::join;
+use interaction::{beatmap_components, score_components};
 use rand::seq::IteratorRandom;
 use serenity::{
     builder::{CreateMessage, EditMessage},
@@ -36,6 +37,7 @@ mod db;
 pub(crate) mod display;
 pub(crate) mod embeds;
 mod hook;
+pub mod interaction;
 mod link_parser;
 pub(crate) mod oppai_cache;
 mod server_rank;
@@ -201,6 +203,10 @@ pub async fn mania(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 pub(crate) struct BeatmapWithMode(pub Beatmap, pub Mode);
 
 impl BeatmapWithMode {
+    pub fn short_link(&self, mods: Mods) -> String {
+        self.0.short_link(Some(self.1), Some(mods))
+    }
+
     fn mode(&self) -> Mode {
         self.1
     }
@@ -221,7 +227,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let osu_client = &env.client;
 
     let user = args.single::<String>()?;
-    let u = match osu_client.user(UserID::from_string(user), |f| f).await? {
+    let u = match osu_client.user(&UserID::from_string(user), |f| f).await? {
         Some(u) => u,
         None => {
             msg.reply(&ctx, "user not found...").await?;
@@ -288,7 +294,9 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     reply
         .edit(
             &ctx,
-            EditMessage::new().embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, info)),
+            EditMessage::new()
+                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, info))
+                .components(vec![beatmap_components()]),
         )
         .await?;
     let reaction = reply.react(&ctx, '👌').await?;
@@ -343,7 +351,7 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
 
     let username = args.quoted().trimmed().single::<String>()?;
     let user: Option<User> = osu_client
-        .user(UserID::from_string(username.clone()), |f| f)
+        .user(&UserID::from_string(username.clone()), |f| f)
         .await?;
     match user {
         Some(u) => {
@@ -370,7 +378,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
             .into_iter()
             .map(|mode| async move {
                 env.client
-                    .user(UserID::ID(user.id), |f| f.mode(mode))
+                    .user(&UserID::ID(user.id), |f| f.mode(mode))
                     .await
                     .unwrap_or_else(|err| {
                         eprintln!("{}", err);
@@ -431,12 +439,12 @@ impl FromStr for ModeArg {
 async fn to_user_id_query(
     s: Option<UsernameArg>,
     env: &OsuEnv,
-    msg: &Message,
+    author: serenity::all::UserId,
 ) -> Result<UserID, Error> {
     let id = match s {
         Some(UsernameArg::Raw(s)) => return Ok(UserID::from_string(s)),
         Some(UsernameArg::Tagged(r)) => r,
-        None => msg.author.id,
+        None => author,
     };
 
     env.saved_users
@@ -481,14 +489,14 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let user = to_user_id_query(
         args.quoted().trimmed().single::<UsernameArg>().ok(),
         &env,
-        msg,
+        msg.author.id,
     )
     .await?;
 
     let osu_client = &env.client;
 
     let user = osu_client
-        .user(user, |f| f.mode(mode))
+        .user(&user, |f| f.mode(mode))
         .await?
         .ok_or_else(|| Error::msg("User not found"))?;
     match nth {
@@ -512,6 +520,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                     CreateMessage::new()
                         .content("Here is the play that you requested".to_string())
                         .embed(score_embed(&recent_play, &beatmap_mode, &content, &user).build())
+                        .components(vec![score_components()])
                         .reference_message(msg),
                 )
                 .await?;
@@ -523,7 +532,13 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             let plays = osu_client
                 .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))
                 .await?;
-            style.display_scores(plays, mode, ctx, msg).await?;
+            let reply = msg
+                .reply(
+                    ctx,
+                    format!("Here are the recent plays by `{}`!", user.username),
+                )
+                .await?;
+            style.display_scores(plays, mode, ctx, reply).await?;
         }
     }
     Ok(())
@@ -626,6 +641,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     CreateMessage::new()
                         .content("Here is the beatmap you requested!")
                         .embed(beatmap_embed(&b, m, mods, info))
+                        .components(vec![beatmap_components()])
                         .reference_message(msg),
                 )
                 .await?;
@@ -656,29 +672,51 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             return Ok(());
         }
     };
-
+    let mode = bm.1;
     let mods = args.find::<Mods>().ok().unwrap_or_default();
-    let b = &bm.0;
-    let m = bm.1;
     let style = args
         .single::<ScoreListStyle>()
         .unwrap_or(ScoreListStyle::Grid);
     let username_arg = args.single::<UsernameArg>().ok();
-    let user_id = match username_arg.as_ref() {
-        Some(UsernameArg::Tagged(v)) => Some(*v),
-        None => Some(msg.author.id),
-        _ => None,
-    };
-    let user = to_user_id_query(username_arg, &env, msg).await?;
+    let user = to_user_id_query(username_arg, &env, msg.author.id).await?;
 
-    let osu_client = env.client;
+    let scores = do_check(&env, &bm, mods, &user).await?;
+
+    if scores.is_empty() {
+        msg.reply(&ctx, "No scores found").await?;
+        return Ok(());
+    }
+    let reply = msg
+        .reply(
+            &ctx,
+            format!(
+                "Here are the scores by `{}` on `{}`!",
+                &user,
+                bm.short_link(mods)
+            ),
+        )
+        .await?;
+    style.display_scores(scores, mode, ctx, reply).await?;
+
+    Ok(())
+}
+
+pub(crate) async fn do_check(
+    env: &OsuEnv,
+    bm: &BeatmapWithMode,
+    mods: Mods,
+    user: &UserID,
+) -> Result<Vec<Score>> {
+    let BeatmapWithMode(b, m) = bm;
+
+    let osu_client = &env.client;
 
     let user = osu_client
         .user(user, |f| f)
         .await?
         .ok_or_else(|| Error::msg("User not found"))?;
     let mut scores = osu_client
-        .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
+        .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(*m))
         .await?
         .into_iter()
         .filter(|s| s.mods.contains(mods))
@@ -688,23 +726,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             .partial_cmp(&a.pp.unwrap_or(-1.0))
             .unwrap()
     });
-
-    if scores.is_empty() {
-        msg.reply(&ctx, "No scores found").await?;
-        return Ok(());
-    }
-
-    if let Some(user_id) = user_id {
-        // Save to database
-        env.user_bests
-            .save(user_id, m, scores.clone())
-            .await
-            .pls_ok();
-    }
-
-    style.display_scores(scores, m, ctx, msg).await?;
-
-    Ok(())
+    Ok(scores)
 }
 
 #[command]
@@ -722,10 +744,10 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .map(|ModeArg(t)| t)
         .unwrap_or(Mode::Std);
 
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg).await?;
+    let user_id = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg.author.id).await?;
     let osu_client = &env.client;
     let user = osu_client
-        .user(user, |f| f.mode(mode))
+        .user(&user_id, |f| f.mode(mode))
         .await?
         .ok_or_else(|| Error::msg("User not found"))?;
 
@@ -757,6 +779,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                                 .top_record(rank)
                                 .build(),
                         )
+                        .components(vec![score_components()])
                 })
                 .await?;
 
@@ -767,7 +790,10 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let plays = osu_client
                 .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
                 .await?;
-            style.display_scores(plays, mode, ctx, msg).await?;
+            let reply = msg
+                .reply(&ctx, format!("Here are the top plays by `{}`!", user_id))
+                .await?;
+            style.display_scores(plays, mode, ctx, reply).await?;
         }
     }
     Ok(())
@@ -796,10 +822,10 @@ async fn get_user(
     mut args: Args,
     mode: Mode,
 ) -> CommandResult {
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg).await?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg.author.id).await?;
     let osu_client = &env.client;
     let meta_cache = &env.beatmaps;
-    let user = osu_client.user(user, |f| f.mode(mode)).await?;
+    let user = osu_client.user(&user, |f| f.mode(mode)).await?;
 
     match user {
         Some(u) => {

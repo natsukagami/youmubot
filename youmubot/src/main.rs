@@ -1,5 +1,7 @@
 use dotenv::var;
+use hook::InteractionHook;
 use serenity::{
+    all::{CreateInteractionResponseMessage, Interaction},
     framework::standard::{
         macros::hook, BucketBuilder, CommandResult, Configuration, DispatchError, StandardFramework,
     },
@@ -19,6 +21,7 @@ mod compose_framework;
 
 struct Handler {
     hooks: Vec<RwLock<Box<dyn Hook>>>,
+    interaction_hooks: Vec<RwLock<Box<dyn InteractionHook>>>,
     ready_hooks: Vec<fn(&Context) -> CommandResult>,
 }
 
@@ -26,6 +29,7 @@ impl Handler {
     fn new() -> Handler {
         Handler {
             hooks: vec![],
+            interaction_hooks: vec![],
             ready_hooks: vec![],
         }
     }
@@ -36,6 +40,10 @@ impl Handler {
 
     fn push_ready_hook(&mut self, f: fn(&Context) -> CommandResult) {
         self.ready_hooks.push(f);
+    }
+
+    fn push_interaction_hook<T: InteractionHook + 'static>(&mut self, f: T) {
+        self.interaction_hooks.push(RwLock::new(Box::new(f)));
     }
 }
 
@@ -99,6 +107,36 @@ impl EventHandler for Handler {
             f(&ctx).pls_ok();
         }
     }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        let ctx = &ctx;
+        let interaction = &interaction;
+        self.interaction_hooks
+            .iter()
+            .map(|hook| {
+                hook.write()
+                    .then(|mut h| async move { h.call(&ctx, &interaction).await })
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .for_each(|v| async move {
+                if let Err(e) = v {
+                    let response = serenity::all::CreateInteractionResponse::Message(
+                        CreateInteractionResponseMessage::new()
+                            .ephemeral(true)
+                            .content(format!("Interaction failed: {}", e)),
+                    );
+                    match interaction {
+                        Interaction::Command(c) => c.create_response(ctx, response).await.pls_ok(),
+                        Interaction::Component(c) => {
+                            c.create_response(ctx, response).await.pls_ok()
+                        }
+                        Interaction::Modal(c) => c.create_response(ctx, response).await.pls_ok(),
+                        _ => None,
+                    };
+                }
+            })
+            .await;
+    }
 }
 
 /// Returns whether the user has "MANAGE_MESSAGES" permission in the channel.
@@ -129,6 +167,7 @@ async fn main() {
         handler.push_hook(youmubot_osu::discord::hook);
         handler.push_hook(youmubot_osu::discord::dot_osu_hook);
         handler.push_hook(youmubot_osu::discord::score_hook);
+        handler.push_interaction_hook(youmubot_osu::discord::interaction::handle_check_button)
     }
     #[cfg(feature = "codeforces")]
     handler.push_hook(youmubot_cf::InfoHook);

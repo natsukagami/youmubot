@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::models::{Mode, Mods};
 use crate::Client;
 use rosu_v2::error::OsuError;
@@ -7,6 +9,15 @@ use youmubot_prelude::*;
 pub enum UserID {
     Username(String),
     ID(u64),
+}
+
+impl fmt::Display for UserID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UserID::Username(u) => u.fmt(f),
+            UserID::ID(id) => id.fmt(f),
+        }
+    }
 }
 
 impl From<UserID> for rosu_v2::prelude::UserId {

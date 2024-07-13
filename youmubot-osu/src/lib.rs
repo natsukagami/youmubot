@@ -56,7 +56,7 @@ impl Client {
 
     pub async fn user(
         &self,
-        user: UserID,
+        user: &UserID,
         f: impl FnOnce(&mut UserRequestBuilder) -> &mut UserRequestBuilder,
     ) -> Result<Option<User>, Error> {
         let mut r = UserRequestBuilder::new(user.clone());
@@ -66,7 +66,7 @@ impl Client {
             self.user_header_cache
                 .lock()
                 .await
-                .insert(id, u.clone().map(|v| v.into()));
+                .insert(*id, u.clone().map(|v| v.into()));
         }
         Ok(u)
     }
@@ -77,7 +77,7 @@ impl Client {
             let v = self.user_header_cache.lock().await.get(&id).cloned();
             match v {
                 Some(v) => v,
-                None => self.user(UserID::ID(id), |f| f).await?.map(|v| v.into()),
+                None => self.user(&UserID::ID(id), |f| f).await?.map(|v| v.into()),
             }
         })
     }

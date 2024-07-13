@@ -23,6 +23,7 @@ use crate::{
 };
 
 use super::db::{OsuSavedUsers, OsuUser};
+use super::interaction::score_components;
 use super::{calculate_weighted_map_length, OsuEnv};
 use super::{embeds::score_embed, BeatmapWithMode};
 
@@ -133,7 +134,7 @@ impl Announcer {
             let scores = self.scan_user(osu_user, mode).await?;
             let user = self
                 .client
-                .user(UserID::ID(osu_user.id), |f| {
+                .user(&UserID::ID(osu_user.id), |f| {
                     f.mode(mode)
                         .event_days(days_since_last_update.min(31) as u8)
                 })
@@ -339,7 +340,8 @@ impl<'a> CollectedScore<'a> {
                             ScoreType::WorldRecord(rank) => b.world_record(rank),
                         }
                         .build()
-                    }),
+                    })
+                    .components(vec![score_components()]),
             )
             .await?;
 

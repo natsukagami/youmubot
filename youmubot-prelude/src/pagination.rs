@@ -164,7 +164,8 @@ pub async fn paginate(
     paginate_with_first_message(pager, ctx, message, timeout).await
 }
 
-async fn paginate_with_first_message(
+/// Paginate with the first message already created.
+pub async fn paginate_with_first_message(
     mut pager: impl Paginate,
     ctx: &Context,
     mut message: Message,

@@ -327,12 +327,21 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
     }
 
     if let ScoreListStyle::Grid = style {
+        let reply = msg
+            .reply(
+                &ctx,
+                format!(
+                    "Here are the top scores on beatmap `{}` of this server!",
+                    bm.short_link(Mods::NOMOD)
+                ),
+            )
+            .await?;
         style
             .display_scores(
                 scores.into_iter().map(|(_, _, a)| a).collect(),
                 mode,
                 ctx,
-                msg,
+                reply,
             )
             .await?;
         return Ok(());

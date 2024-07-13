@@ -2,7 +2,7 @@ pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
 mod scores {
-    use serenity::{framework::standard::CommandResult, model::channel::Message};
+    use serenity::model::channel::Message;
 
     use youmubot_prelude::*;
 
@@ -39,8 +39,8 @@ mod scores {
             scores: Vec<Score>,
             mode: Mode,
             ctx: &'a Context,
-            m: &'a Message,
-        ) -> CommandResult {
+            m: Message,
+        ) -> Result<()> {
             match self {
                 ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
                 ScoreListStyle::Grid => grid::display_scores_grid(scores, mode, ctx, m).await,
@@ -48,12 +48,14 @@ mod scores {
         }
     }
 
-    pub mod grid {
+    mod grid {
+        use pagination::paginate_with_first_message;
         use serenity::builder::EditMessage;
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use serenity::model::channel::Message;
 
         use youmubot_prelude::*;
 
+        use crate::discord::interaction::score_components;
         use crate::discord::{cache::save_beatmap, BeatmapWithMode, OsuEnv};
         use crate::models::{Mode, Score};
 
@@ -61,17 +63,18 @@ mod scores {
             scores: Vec<Score>,
             mode: Mode,
             ctx: &'a Context,
-            m: &'a Message,
-        ) -> CommandResult {
+            mut on: Message,
+        ) -> Result<()> {
             if scores.is_empty() {
-                m.reply(&ctx, "No plays found").await?;
+                on.edit(&ctx, EditMessage::new().content("No plays found"))
+                    .await?;
                 return Ok(());
             }
 
-            paginate_reply(
+            paginate_with_first_message(
                 Paginate { scores, mode },
                 ctx,
-                m,
+                on,
                 std::time::Duration::from_secs(60),
             )
             .await?;
@@ -97,17 +100,19 @@ mod scores {
                 let bm = BeatmapWithMode(beatmap, mode);
                 let user = env
                     .client
-                    .user(crate::request::UserID::ID(score.user_id), |f| f)
+                    .user(&crate::request::UserID::ID(score.user_id), |f| f)
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
 
                 msg.edit(
                     ctx,
-                    EditMessage::new().embed({
-                        crate::discord::embeds::score_embed(score, &bm, &content, &user)
-                            .footer(format!("Page {}/{}", page + 1, self.scores.len()))
-                            .build()
-                    }),
+                    EditMessage::new()
+                        .embed({
+                            crate::discord::embeds::score_embed(score, &bm, &content, &user)
+                                .footer(format!("Page {}/{}", page + 1, self.scores.len()))
+                                .build()
+                        })
+                        .components(vec![score_components()]),
                 )
                 .await?;
                 save_beatmap(&env, msg.channel_id, &bm).await?;
@@ -126,8 +131,9 @@ mod scores {
     pub mod table {
         use std::borrow::Cow;
 
+        use pagination::paginate_with_first_message;
         use serenity::builder::EditMessage;
-        use serenity::{framework::standard::CommandResult, model::channel::Message};
+        use serenity::model::channel::Message;
 
         use youmubot_prelude::table_format::Align::{Left, Right};
         use youmubot_prelude::table_format::{table_formatting, Align};
@@ -141,17 +147,18 @@ mod scores {
             scores: Vec<Score>,
             mode: Mode,
             ctx: &'a Context,
-            m: &'a Message,
-        ) -> CommandResult {
+            mut on: Message,
+        ) -> Result<()> {
             if scores.is_empty() {
-                m.reply(&ctx, "No plays found").await?;
+                on.edit(&ctx, EditMessage::new().content("No plays found"))
+                    .await?;
                 return Ok(());
             }
 
-            paginate_reply(
+            paginate_with_first_message(
                 Paginate { scores, mode },
                 ctx,
-                m,
+                on,
                 std::time::Duration::from_secs(60),
             )
             .await?;
@@ -332,7 +339,7 @@ mod beatmapset {
 
     use youmubot_prelude::*;
 
-    use crate::discord::OsuEnv;
+    use crate::discord::{interaction::beatmap_components, OsuEnv};
     use crate::{
         discord::{cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapWithMode},
         models::{Beatmap, Mode, Mods},
@@ -439,7 +446,8 @@ mod beatmapset {
                                    SHOW_ALL_EMOTE,
                                ))
                            })
-                   ),
+                   )
+                   .components(vec![beatmap_components()]),
             )
                 .await?;
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
