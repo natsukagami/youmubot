@@ -1,14 +1,12 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use futures_util::stream::FuturesOrdered;
-use lazy_static::lazy_static;
 use pagination::paginate_from_fn;
-use regex::Regex;
 use serenity::{
     all::EditMessage, builder::CreateMessage, model::channel::Message, utils::MessageBuilder,
 };
 
+use stream::Stream;
 use youmubot_prelude::*;
 
 use crate::discord::embeds::score_embed;
@@ -19,24 +17,7 @@ use crate::{
 };
 
 use super::embeds::beatmap_embed;
-
-lazy_static! {
-    // Beatmap(set) hooks
-    pub(crate) static ref OLD_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>\d))?(?:\+(?P<mods>[A-Z]+))?"
-    ).unwrap();
-    pub(crate) static ref NEW_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:\+(?P<mods>[A-Z]+))?"
-    ).unwrap();
-    pub(crate) static ref SHORT_LINK_REGEX: Regex = Regex::new(
-        r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>[A-Z]+))?)"
-    ).unwrap();
-
-    // Score hook
-    pub(crate) static ref SCORE_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/scores/(?P<score_id>\d+)"
-    ).unwrap();
-}
+use super::link_parser::*;
 
 /// React to /scores/{id} links.
 pub fn score_hook<'a>(
@@ -242,12 +223,29 @@ pub fn hook<'a>(
         if msg.author.bot {
             return Ok(());
         }
-        let (old_links, new_links, short_links) = (
-            handle_old_links(ctx, &msg.content),
-            handle_new_links(ctx, &msg.content),
-            handle_short_links(ctx, msg, &msg.content),
+        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+        let (old_links, new_links) = (
+            parse_old_links(&env, &msg.content),
+            parse_new_links(&env, &msg.content),
         );
-        stream::select(old_links, stream::select(new_links, short_links))
+        let to_join: Box<dyn Stream<Item = _> + Unpin + Send> = {
+            let use_short_link = if let Some(guild_id) = msg.guild_id {
+                announcer::announcer_of(ctx, crate::discord::announcer::ANNOUNCER_KEY, guild_id)
+                    .await?
+                    == Some(msg.channel_id)
+            } else {
+                false
+            };
+            if use_short_link {
+                Box::new(stream::select(
+                    old_links,
+                    stream::select(new_links, parse_short_links(&env, &msg.content)),
+                ))
+            } else {
+                Box::new(stream::select(old_links, new_links))
+            }
+        };
+        to_join
             .then(|l| async move {
                 match l.embed {
                     EmbedType::Beatmap(b, info, mods) => {
@@ -275,225 +273,6 @@ pub fn hook<'a>(
 
         Ok(())
     })
-}
-
-enum EmbedType {
-    Beatmap(Box<Beatmap>, BeatmapInfoWithPP, Mods),
-    Beatmapset(Vec<Beatmap>),
-}
-
-struct ToPrint<'a> {
-    embed: EmbedType,
-    link: &'a str,
-    mode: Option<Mode>,
-}
-
-fn handle_old_links<'a>(
-    ctx: &'a Context,
-    content: &'a str,
-) -> impl stream::Stream<Item = ToPrint<'a>> + 'a {
-    OLD_LINK_REGEX
-        .captures_iter(content)
-        .map(move |capture| async move {
-            let data = ctx.data.read().await;
-            let env = data.get::<OsuEnv>().unwrap();
-            let req_type = capture.name("link_type").unwrap().as_str();
-            let mode = capture
-                .name("mode")
-                .map(|v| v.as_str().parse())
-                .transpose()?
-                .and_then(|v| {
-                    Some(match v {
-                        0 => Mode::Std,
-                        1 => Mode::Taiko,
-                        2 => Mode::Catch,
-                        3 => Mode::Mania,
-                        _ => return None,
-                    })
-                });
-            let beatmaps = match req_type {
-                "b" => vec![match mode {
-                    Some(mode) => {
-                        env.beatmaps
-                            .get_beatmap(capture["id"].parse()?, mode)
-                            .await?
-                    }
-                    None => {
-                        env.beatmaps
-                            .get_beatmap_default(capture["id"].parse()?)
-                            .await?
-                    }
-                }],
-                "s" => env.beatmaps.get_beatmapset(capture["id"].parse()?).await?,
-                _ => unreachable!(),
-            };
-            if beatmaps.is_empty() {
-                return Ok(None);
-            }
-            let r: Result<_> = Ok(match req_type {
-                "b" => {
-                    let b = Box::new(beatmaps.into_iter().next().unwrap());
-                    // collect beatmap info
-                    let mods = capture
-                        .name("mods")
-                        .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
-                        .unwrap_or(Mods::NOMOD);
-                    let info = {
-                        let mode = mode.unwrap_or(b.mode);
-                        env.oppai
-                            .get_beatmap(b.beatmap_id)
-                            .await
-                            .and_then(|b| b.get_possible_pp_with(mode, mods))?
-                    };
-                    Some(ToPrint {
-                        embed: EmbedType::Beatmap(b, info, mods),
-                        link: capture.get(0).unwrap().as_str(),
-                        mode,
-                    })
-                }
-                "s" => Some(ToPrint {
-                    embed: EmbedType::Beatmapset(beatmaps),
-                    link: capture.get(0).unwrap().as_str(),
-                    mode,
-                }),
-                _ => None,
-            });
-            r
-        })
-        .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| {
-            future::ready(v.unwrap_or_else(|e| {
-                eprintln!("{}", e);
-                None
-            }))
-        })
-}
-
-fn handle_new_links<'a>(
-    ctx: &'a Context,
-    content: &'a str,
-) -> impl stream::Stream<Item = ToPrint<'a>> + 'a {
-    NEW_LINK_REGEX
-        .captures_iter(content)
-        .map(|capture| async move {
-            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-            let mode = capture
-                .name("mode")
-                .and_then(|v| Mode::parse_from_new_site(v.as_str()));
-            let link = capture.get(0).unwrap().as_str();
-            let beatmaps = match capture.name("beatmap_id") {
-                Some(ref v) => vec![match mode {
-                    Some(mode) => env.beatmaps.get_beatmap(v.as_str().parse()?, mode).await?,
-                    None => {
-                        env.beatmaps
-                            .get_beatmap_default(v.as_str().parse()?)
-                            .await?
-                    }
-                }],
-                None => {
-                    env.beatmaps
-                        .get_beatmapset(capture.name("set_id").unwrap().as_str().parse()?)
-                        .await?
-                }
-            };
-            if beatmaps.is_empty() {
-                return Ok(None);
-            }
-            let r: Result<_> = Ok(match capture.name("beatmap_id") {
-                Some(_) => {
-                    let beatmap = Box::new(beatmaps.into_iter().next().unwrap());
-                    // collect beatmap info
-                    let mods = capture
-                        .name("mods")
-                        .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
-                        .unwrap_or(Mods::NOMOD);
-                    let info = {
-                        let mode = mode.unwrap_or(beatmap.mode);
-                        env.oppai
-                            .get_beatmap(beatmap.beatmap_id)
-                            .await
-                            .and_then(|b| b.get_possible_pp_with(mode, mods))?
-                    };
-                    Some(ToPrint {
-                        embed: EmbedType::Beatmap(beatmap, info, mods),
-                        link,
-                        mode,
-                    })
-                }
-                None => Some(ToPrint {
-                    embed: EmbedType::Beatmapset(beatmaps),
-                    link,
-                    mode,
-                }),
-            });
-            r
-        })
-        .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| {
-            future::ready(match v {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{}", e);
-                    None
-                }
-            })
-        })
-}
-
-fn handle_short_links<'a>(
-    ctx: &'a Context,
-    msg: &'a Message,
-    content: &'a str,
-) -> impl stream::Stream<Item = ToPrint<'a>> + 'a {
-    SHORT_LINK_REGEX
-        .captures_iter(content)
-        .map(|capture| async move {
-            if let Some(guild_id) = msg.guild_id {
-                if announcer::announcer_of(ctx, crate::discord::announcer::ANNOUNCER_KEY, guild_id)
-                    .await?
-                    != Some(msg.channel_id)
-                {
-                    // Disable if we are not in the server's announcer channel
-                    return Err(Error::msg("not in server announcer channel"));
-                }
-            }
-            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-            let mode = capture
-                .name("mode")
-                .and_then(|v| Mode::parse_from_new_site(v.as_str()));
-            let id: u64 = capture.name("id").unwrap().as_str().parse()?;
-            let beatmap = match mode {
-                Some(mode) => env.beatmaps.get_beatmap(id, mode).await,
-                None => env.beatmaps.get_beatmap_default(id).await,
-            }?;
-            let mods = capture
-                .name("mods")
-                .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
-                .unwrap_or(Mods::NOMOD);
-            let info = {
-                let mode = mode.unwrap_or(beatmap.mode);
-                env.oppai
-                    .get_beatmap(beatmap.beatmap_id)
-                    .await
-                    .and_then(|b| b.get_possible_pp_with(mode, mods))?
-            };
-            let r: Result<_> = Ok(ToPrint {
-                embed: EmbedType::Beatmap(Box::new(beatmap), info, mods),
-                link: capture.name("main").unwrap().as_str(),
-                mode,
-            });
-            r
-        })
-        .collect::<stream::FuturesUnordered<_>>()
-        .filter_map(|v| {
-            future::ready(match v {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    eprintln!("{}", e);
-                    None
-                }
-            })
-        })
 }
 
 async fn handle_beatmap<'a, 'b>(

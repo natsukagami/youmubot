@@ -15,7 +15,6 @@ use serenity::{
 
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
 use embeds::{beatmap_embed, score_embed, user_embed};
-use hook::SHORT_LINK_REGEX;
 pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
 use youmubot_prelude::announcer::AnnouncerHandler;
@@ -37,6 +36,7 @@ mod db;
 pub(crate) mod display;
 pub(crate) mod embeds;
 mod hook;
+mod link_parser;
 pub(crate) mod oppai_cache;
 mod server_rank;
 
@@ -548,43 +548,34 @@ pub(crate) async fn load_beatmap(
     env: &OsuEnv,
     msg: &Message,
 ) -> Option<(BeatmapWithMode, Option<Mods>)> {
+    use link_parser::{parse_short_links, EmbedType};
     if let Some(replied) = &msg.referenced_message {
-        // Try to look for a mention of the replied message.
-        let beatmap_id = SHORT_LINK_REGEX.captures(&replied.content).or_else(|| {
-            replied.embeds.iter().find_map(|e| {
-                e.description
-                    .as_ref()
-                    .and_then(|v| SHORT_LINK_REGEX.captures(v))
-                    .or_else(|| {
-                        e.fields
-                            .iter()
-                            .find_map(|f| SHORT_LINK_REGEX.captures(&f.value))
-                    })
-            })
-        });
-        if let Some(caps) = beatmap_id {
-            let id: u64 = caps.name("id").unwrap().as_str().parse().unwrap();
-            let mode = caps
-                .name("mode")
-                .and_then(|m| Mode::parse_from_new_site(m.as_str()));
-            let mods = caps
-                .name("mods")
-                .and_then(|m| m.as_str().parse::<Mods>().ok());
-            let osu_client = &env.client;
-            let bms = osu_client
-                .beatmaps(BeatmapRequestKind::Beatmap(id), |f| f.maybe_mode(mode))
-                .await
-                .ok()
-                .and_then(|v| v.into_iter().next());
-            if let Some(beatmap) = bms {
-                let bm_mode = beatmap.mode;
-                let bm = BeatmapWithMode(beatmap, mode.unwrap_or(bm_mode));
-                // Store the beatmap in history
-                cache::save_beatmap(&env, msg.channel_id, &bm)
-                    .await
-                    .pls_ok();
-
-                return Some((bm, mods));
+        async fn try_content(
+            env: &OsuEnv,
+            content: &str,
+        ) -> Option<(BeatmapWithMode, Option<Mods>)> {
+            let tp = parse_short_links(env, content).next().await?;
+            match tp.embed {
+                EmbedType::Beatmap(b, _, mods) => {
+                    let mode = tp.mode.unwrap_or(b.mode);
+                    Some((BeatmapWithMode(*b, mode), Some(mods)))
+                }
+                _ => None,
+            }
+        }
+        if let Some(v) = try_content(env, &replied.content).await {
+            return Some(v);
+        }
+        for embed in &replied.embeds {
+            if let Some(desc) = &embed.description {
+                if let Some(v) = try_content(env, desc).await {
+                    return Some(v);
+                }
+            }
+            for field in &embed.fields {
+                if let Some(v) = try_content(env, &field.value).await {
+                    return Some(v);
+                }
             }
         }
     }
