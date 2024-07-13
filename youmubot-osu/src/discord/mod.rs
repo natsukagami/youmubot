@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{borrow::Borrow, str::FromStr, sync::Arc};
 
 use futures_util::join;
 use interaction::{beatmap_components, score_components};
@@ -561,10 +561,11 @@ impl FromStr for OptBeatmapSet {
 /// Load the mentioned beatmap from the given message.
 pub(crate) async fn load_beatmap(
     env: &OsuEnv,
-    msg: &Message,
+    channel_id: serenity::all::ChannelId,
+    referenced: Option<&impl Borrow<Message>>,
 ) -> Option<(BeatmapWithMode, Option<Mods>)> {
     use link_parser::{parse_short_links, EmbedType};
-    if let Some(replied) = &msg.referenced_message {
+    if let Some(replied) = referenced {
         async fn try_content(
             env: &OsuEnv,
             content: &str,
@@ -578,27 +579,24 @@ pub(crate) async fn load_beatmap(
                 _ => None,
             }
         }
-        if let Some(v) = try_content(env, &replied.content).await {
-            return Some(v);
-        }
-        for embed in &replied.embeds {
-            if let Some(desc) = &embed.description {
-                if let Some(v) = try_content(env, desc).await {
-                    return Some(v);
-                }
-            }
+        for embed in &replied.borrow().embeds {
             for field in &embed.fields {
                 if let Some(v) = try_content(env, &field.value).await {
                     return Some(v);
                 }
             }
+            if let Some(desc) = &embed.description {
+                if let Some(v) = try_content(env, desc).await {
+                    return Some(v);
+                }
+            }
+        }
+        if let Some(v) = try_content(env, &replied.borrow().content).await {
+            return Some(v);
         }
     }
 
-    let b = cache::get_beatmap(&env, msg.channel_id)
-        .await
-        .ok()
-        .flatten();
+    let b = cache::get_beatmap(&env, channel_id).await.ok().flatten();
     b.map(|b| (b, None))
 }
 
@@ -611,14 +609,14 @@ pub(crate) async fn load_beatmap(
 pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-    let b = load_beatmap(&env, msg).await;
+    let b = load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await;
     let beatmapset = args.find::<OptBeatmapSet>().is_ok();
 
     match b {
-        Some((BeatmapWithMode(b, m), mods_def)) => {
+        Some((bm, mods_def)) => {
             let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
             if beatmapset {
-                let beatmapset = env.beatmaps.get_beatmapset(b.beatmapset_id).await?;
+                let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
                 display::display_beatmapset(
                     ctx,
                     beatmapset,
@@ -632,19 +630,21 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             }
             let info = env
                 .oppai
-                .get_beatmap(b.beatmap_id)
+                .get_beatmap(bm.0.beatmap_id)
                 .await?
-                .get_possible_pp_with(m, mods)?;
+                .get_possible_pp_with(bm.1, mods)?;
             msg.channel_id
                 .send_message(
                     &ctx,
                     CreateMessage::new()
                         .content("Here is the beatmap you requested!")
-                        .embed(beatmap_embed(&b, m, mods, info))
+                        .embed(beatmap_embed(&bm.0, bm.1, mods, info))
                         .components(vec![beatmap_components()])
                         .reference_message(msg),
                 )
                 .await?;
+            // Save the beatmap...
+            cache::save_beatmap(&env, msg.channel_id, &bm).await?;
         }
         None => {
             msg.reply(&ctx, "No beatmap was queried on this channel.")
@@ -662,7 +662,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[max_args(3)]
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let bm = load_beatmap(&env, msg).await;
+    let bm = load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await;
 
     let bm = match bm {
         Some((bm, _)) => bm,
