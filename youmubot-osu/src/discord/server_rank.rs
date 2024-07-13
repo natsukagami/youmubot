@@ -222,17 +222,18 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
 
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-    let (bm, _) = match super::load_beatmap(&env, msg).await {
-        Some((bm, mods_def)) => {
-            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
-            (bm, mods)
-        }
-        None => {
-            msg.reply(&ctx, "No beatmap queried on this channel.")
-                .await?;
-            return Ok(());
-        }
-    };
+    let (bm, _) =
+        match super::load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await {
+            Some((bm, mods_def)) => {
+                let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
+                (bm, mods)
+            }
+            None => {
+                msg.reply(&ctx, "No beatmap queried on this channel.")
+                    .await?;
+                return Ok(());
+            }
+        };
 
     let osu_client = env.client.clone();
 
