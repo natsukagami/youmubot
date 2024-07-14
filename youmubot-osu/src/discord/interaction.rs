@@ -41,7 +41,7 @@ pub fn beatmap_components(guild_id: Option<GuildId>) -> CreateActionRow {
 /// Creates a new check button.
 pub fn check_button() -> CreateButton {
     CreateButton::new(BTN_CHECK)
-        .label("Check")
+        .label("Me")
         .emoji('🔎')
         .style(serenity::all::ButtonStyle::Success)
 }
