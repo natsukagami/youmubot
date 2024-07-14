@@ -341,7 +341,7 @@ impl<'a> CollectedScore<'a> {
                         }
                         .build()
                     })
-                    .components(vec![score_components()]),
+                    .components(vec![score_components(Some(guild))]),
             )
             .await?;
 

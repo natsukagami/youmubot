@@ -2,7 +2,7 @@ pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
 mod scores {
-    use serenity::model::channel::Message;
+    use serenity::{all::GuildId, model::channel::Message};
 
     use youmubot_prelude::*;
 
@@ -39,17 +39,21 @@ mod scores {
             scores: Vec<Score>,
             mode: Mode,
             ctx: &'a Context,
+            guild_id: Option<GuildId>,
             m: Message,
         ) -> Result<()> {
             match self {
                 ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
-                ScoreListStyle::Grid => grid::display_scores_grid(scores, mode, ctx, m).await,
+                ScoreListStyle::Grid => {
+                    grid::display_scores_grid(scores, mode, ctx, guild_id, m).await
+                }
             }
         }
     }
 
     mod grid {
         use pagination::paginate_with_first_message;
+        use serenity::all::GuildId;
         use serenity::builder::EditMessage;
         use serenity::model::channel::Message;
 
@@ -63,6 +67,7 @@ mod scores {
             scores: Vec<Score>,
             mode: Mode,
             ctx: &'a Context,
+            guild_id: Option<GuildId>,
             mut on: Message,
         ) -> Result<()> {
             if scores.is_empty() {
@@ -72,7 +77,11 @@ mod scores {
             }
 
             paginate_with_first_message(
-                Paginate { scores, mode },
+                Paginate {
+                    scores,
+                    guild_id,
+                    mode,
+                },
                 ctx,
                 on,
                 std::time::Duration::from_secs(60),
@@ -83,6 +92,7 @@ mod scores {
 
         pub struct Paginate {
             scores: Vec<Score>,
+            guild_id: Option<GuildId>,
             mode: Mode,
         }
 
@@ -112,7 +122,7 @@ mod scores {
                                 .footer(format!("Page {}/{}", page + 1, self.scores.len()))
                                 .build()
                         })
-                        .components(vec![score_components()]),
+                        .components(vec![score_components(self.guild_id)]),
                 )
                 .await?;
                 save_beatmap(&env, msg.channel_id, &bm).await?;
@@ -331,10 +341,9 @@ mod scores {
 
 mod beatmapset {
     use serenity::{
-        all::Reaction,
+        all::{GuildId, Reaction},
         builder::{CreateEmbedFooter, EditMessage},
-        model::channel::Message,
-        model::channel::ReactionType,
+        model::channel::{Message, ReactionType},
     };
 
     use youmubot_prelude::*;
@@ -353,6 +362,7 @@ mod beatmapset {
         mode: Option<Mode>,
         mods: Option<Mods>,
         reply_to: &Message,
+        guild_id: Option<GuildId>,
         message: impl AsRef<str>,
     ) -> Result<bool> {
         let mods = mods.unwrap_or(Mods::NOMOD);
@@ -366,6 +376,7 @@ mod beatmapset {
             maps: beatmapset,
             mode,
             mods,
+            guild_id,
             message: message.as_ref().to_owned(),
         };
 
@@ -385,6 +396,7 @@ mod beatmapset {
         mode: Option<Mode>,
         mods: Mods,
         message: String,
+        guild_id: Option<GuildId>,
     }
 
     impl Paginate {
@@ -447,7 +459,7 @@ mod beatmapset {
                                ))
                            })
                    )
-                   .components(vec![beatmap_components()]),
+                   .components(vec![beatmap_components(self.guild_id)]),
             )
                 .await?;
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();

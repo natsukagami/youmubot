@@ -1,6 +1,8 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
+use pagination::paginate_with_first_message;
 use serenity::{
+    all::GuildId,
     builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
@@ -15,9 +17,10 @@ use youmubot_prelude::{
 };
 
 use crate::{
-    discord::{display::ScoreListStyle, oppai_cache::Accuracy},
+    discord::{display::ScoreListStyle, oppai_cache::Accuracy, BeatmapWithMode},
     models::{Mode, Mods},
     request::UserID,
+    Score,
 };
 
 use super::{ModeArg, OsuEnv};
@@ -187,7 +190,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OrderBy {
+pub enum OrderBy {
     PP,
     Score,
 }
@@ -219,141 +222,170 @@ impl FromStr for OrderBy {
 pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let order = args.single::<OrderBy>().unwrap_or_default();
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
-
-    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-
-    let (bm, _) =
-        match super::load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await {
-            Some((bm, mods_def)) => {
-                let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
-                (bm, mods)
-            }
-            None => {
-                msg.reply(&ctx, "No beatmap queried on this channel.")
-                    .await?;
-                return Ok(());
-            }
-        };
-
-    let osu_client = env.client.clone();
-
-    // Get oppai map.
-    let mode = bm.1;
-    let oppai = env.oppai;
-    let oppai_map = oppai.get_beatmap(bm.0.beatmap_id).await?;
-
     let guild = msg.guild_id.expect("Guild-only command");
-    let scores = {
-        const NO_SCORES: &str = "No scores have been recorded for this beatmap.";
-        // Signal that we are running.
-        let running_reaction = msg.react(&ctx, '⌛').await?;
-
-        let osu_users = env
-            .saved_users
-            .all()
-            .await?
-            .into_iter()
-            .map(|v| (v.user_id, v))
-            .collect::<HashMap<_, _>>();
-        let mut scores = env
-            .prelude
-            .members
-            .query_members(&ctx, guild)
-            .await?
-            .iter()
-            .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m.distinct(), ou.id)))
-            .map(|(mem, osu_id)| {
-                osu_client
-                    .scores(bm.0.beatmap_id, move |f| {
-                        f.user(UserID::ID(osu_id)).mode(bm.1)
-                    })
-                    .map(|r| Some((mem, r.ok()?)))
-            })
-            .collect::<FuturesUnordered<_>>()
-            .filter_map(future::ready)
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .flat_map(|(mem, scores)| {
-                let mem = Arc::new(mem);
-                scores
-                    .into_iter()
-                    .filter_map(|score| {
-                        let pp = score.pp.map(|v| (true, v)).or_else(|| {
-                            oppai_map
-                                .get_pp_from(
-                                    mode,
-                                    Some(score.max_combo as usize),
-                                    Accuracy::ByCount(
-                                        score.count_300,
-                                        score.count_100,
-                                        score.count_50,
-                                        score.count_miss,
-                                    ),
-                                    score.mods,
-                                )
-                                .ok()
-                                .map(|v| (false, v))
-                        })?;
-                        Some((pp, mem.clone(), score))
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        running_reaction.delete(&ctx).await?;
-
-        if scores.is_empty() {
-            msg.reply(&ctx, NO_SCORES).await?;
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+    let bm = match super::load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await
+    {
+        Some((bm, _)) => bm,
+        None => {
+            msg.reply(&ctx, "No beatmap queried on this channel.")
+                .await?;
             return Ok(());
         }
-        match order {
-            OrderBy::PP => scores.sort_by(|(a, _, _), (b, _, _)| {
-                b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
-            }),
-            OrderBy::Score => {
-                scores.sort_by(|(_, _, a), (_, _, b)| b.normalized_score.cmp(&a.normalized_score))
-            }
-        };
-        scores
+    };
+
+    let scores = {
+        let reaction = msg.react(ctx, '⌛').await?;
+        let s = get_leaderboard(&ctx, &env, &bm, order, guild).await?;
+        reaction.delete(&ctx).await?;
+        s
     };
 
     if scores.is_empty() {
-        msg.reply(
-            &ctx,
-            "No scores have been recorded for this beatmap. Run `osu check` to scan for yours!",
-        )
-        .await?;
+        msg.reply(&ctx, "No scores have been recorded for this beatmap.")
+            .await?;
         return Ok(());
     }
 
-    if let ScoreListStyle::Grid = style {
-        let reply = msg
-            .reply(
-                &ctx,
-                format!(
-                    "Here are the top scores on beatmap `{}` of this server!",
-                    bm.short_link(Mods::NOMOD)
-                ),
-            )
-            .await?;
-        style
-            .display_scores(
-                scores.into_iter().map(|(_, _, a)| a).collect(),
-                mode,
-                ctx,
-                reply,
-            )
-            .await?;
-        return Ok(());
+    match style {
+        ScoreListStyle::Table => {
+            let reply = msg
+                .reply(
+                    &ctx,
+                    format!(
+                        "⌛ Loading top scores on beatmap `{}`...",
+                        bm.short_link(Mods::NOMOD)
+                    ),
+                )
+                .await?;
+            display_rankings_table(&ctx, reply, scores, &bm, order).await?;
+        }
+        ScoreListStyle::Grid => {
+            let reply = msg
+                .reply(
+                    &ctx,
+                    format!(
+                        "Here are the top scores on beatmap `{}` of this server!",
+                        bm.short_link(Mods::NOMOD)
+                    ),
+                )
+                .await?;
+            style
+                .display_scores(
+                    scores.into_iter().map(|s| s.score).collect(),
+                    bm.1,
+                    ctx,
+                    Some(guild),
+                    reply,
+                )
+                .await?;
+        }
     }
-    let has_lazer_score = scores.iter().any(|(_, _, v)| v.score.is_none());
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Ranking {
+    pub pp: f64,        // calculated pp or score pp
+    pub official: bool, // official = pp is from bancho
+    pub member: Arc<String>,
+    pub score: Score,
+}
+
+pub async fn get_leaderboard(
+    ctx: &Context,
+    env: &OsuEnv,
+    bm: &BeatmapWithMode,
+    order: OrderBy,
+    guild: GuildId,
+) -> Result<Vec<Ranking>> {
+    let BeatmapWithMode(beatmap, mode) = bm;
+    let oppai_map = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
+    let osu_users = env
+        .saved_users
+        .all()
+        .await?
+        .into_iter()
+        .map(|v| (v.user_id, v))
+        .collect::<HashMap<_, _>>();
+    let mut scores = env
+        .prelude
+        .members
+        .query_members(&ctx, guild)
+        .await?
+        .iter()
+        .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m.distinct(), ou.id)))
+        .map(|(mem, osu_id)| {
+            env.client
+                .scores(bm.0.beatmap_id, move |f| {
+                    f.user(UserID::ID(osu_id)).mode(bm.1)
+                })
+                .map(|r| Some((mem, r.ok()?)))
+        })
+        .collect::<FuturesUnordered<_>>()
+        .filter_map(future::ready)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .flat_map(|(mem, scores)| {
+            let mem = Arc::new(mem);
+            scores
+                .into_iter()
+                .filter_map(|score| {
+                    let pp = score.pp.map(|v| (true, v)).or_else(|| {
+                        oppai_map
+                            .get_pp_from(
+                                *mode,
+                                Some(score.max_combo as usize),
+                                Accuracy::ByCount(
+                                    score.count_300,
+                                    score.count_100,
+                                    score.count_50,
+                                    score.count_miss,
+                                ),
+                                score.mods,
+                            )
+                            .ok()
+                            .map(|v| (false, v))
+                    })?;
+                    Some(Ranking {
+                        pp: pp.1,
+                        official: pp.0,
+                        member: mem.clone(),
+                        score,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    match order {
+        OrderBy::PP => scores.sort_by(|a, b| {
+            (b.official, b.pp)
+                .partial_cmp(&(a.official, a.pp))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        OrderBy::Score => {
+            scores.sort_by(|a, b| b.score.normalized_score.cmp(&a.score.normalized_score))
+        }
+    };
+    Ok(scores)
+}
+
+pub async fn display_rankings_table(
+    ctx: &Context,
+    to: Message,
+    scores: Vec<Ranking>,
+    bm: &BeatmapWithMode,
+    order: OrderBy,
+) -> Result<()> {
+    let has_lazer_score = scores.iter().any(|v| v.score.score.is_none());
 
     const ITEMS_PER_PAGE: usize = 5;
     let total_len = scores.len();
     let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
 
-    paginate_reply(
+    paginate_with_first_message(
         paginate_from_fn(move |page: u8, ctx: &Context, m: &mut Message| {
             let start = (page as usize) * ITEMS_PER_PAGE;
             let end = (start + ITEMS_PER_PAGE).min(scores.len());
@@ -372,29 +404,39 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
                 let score_arr = scores
                     .iter()
                     .enumerate()
-                    .map(|(id, ((official, pp), member, score))| {
-                        [
-                            format!("{}", 1 + id + start),
-                            match order {
-                                OrderBy::PP => {
-                                    format!("{:.2}{}", pp, if *official { "" } else { "[?]" })
-                                }
-                                OrderBy::Score => {
-                                    crate::discord::embeds::grouped_number(if has_lazer_score {
-                                        score.normalized_score as u64
-                                    } else {
-                                        score.score.unwrap()
-                                    })
-                                }
+                    .map(
+                        |(
+                            id,
+                            Ranking {
+                                pp,
+                                official,
+                                member,
+                                score,
                             },
-                            score.mods.to_string(),
-                            score.rank.to_string(),
-                            format!("{:.2}%", score.accuracy(bm.1)),
-                            format!("{}x", score.max_combo),
-                            format!("{}", score.count_miss),
-                            member.to_string(),
-                        ]
-                    })
+                        )| {
+                            [
+                                format!("{}", 1 + id + start),
+                                match order {
+                                    OrderBy::PP => {
+                                        format!("{:.2}{}", pp, if *official { "" } else { "[?]" })
+                                    }
+                                    OrderBy::Score => {
+                                        crate::discord::embeds::grouped_number(if has_lazer_score {
+                                            score.normalized_score as u64
+                                        } else {
+                                            score.score.unwrap()
+                                        })
+                                    }
+                                },
+                                score.mods.to_string(),
+                                score.rank.to_string(),
+                                format!("{:.2}%", score.accuracy(bm.1)),
+                                format!("{}x", score.max_combo),
+                                format!("{}", score.count_miss),
+                                member.to_string(),
+                            ]
+                        },
+                    )
                     .collect::<Vec<_>>();
 
                 let score_table = match order {
@@ -425,10 +467,9 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
         })
         .with_page_count(total_pages),
         ctx,
-        msg,
+        to,
         std::time::Duration::from_secs(60),
     )
     .await?;
-
     Ok(())
 }

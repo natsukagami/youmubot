@@ -85,7 +85,7 @@ pub fn score_hook<'a>(
                             )
                         })
                         .embed(score_embed(&s, &b, &c, h).build())
-                        .components(vec![score_components()]),
+                        .components(vec![score_components(msg.guild_id)]),
                 )
                 .await
                 .pls_ok();
@@ -303,7 +303,7 @@ async fn handle_beatmap<'a, 'b>(
                     mods,
                     info,
                 ))
-                .components(vec![beatmap_components()])
+                .components(vec![beatmap_components(reply_to.guild_id)])
                 .reference_message(reply_to),
         )
         .await?;
@@ -323,6 +323,7 @@ async fn handle_beatmapset<'a, 'b>(
         mode,
         None,
         reply_to,
+        reply_to.guild_id,
         format!("Beatmapset information for `{}`", link),
     )
     .await

@@ -296,7 +296,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             &ctx,
             EditMessage::new()
                 .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, info))
-                .components(vec![beatmap_components()]),
+                .components(vec![beatmap_components(msg.guild_id)]),
         )
         .await?;
     let reaction = reply.react(&ctx, '👌').await?;
@@ -520,7 +520,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                     CreateMessage::new()
                         .content("Here is the play that you requested".to_string())
                         .embed(score_embed(&recent_play, &beatmap_mode, &content, &user).build())
-                        .components(vec![score_components()])
+                        .components(vec![score_components(msg.guild_id)])
                         .reference_message(msg),
                 )
                 .await?;
@@ -538,7 +538,9 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                     format!("Here are the recent plays by `{}`!", user.username),
                 )
                 .await?;
-            style.display_scores(plays, mode, ctx, reply).await?;
+            style
+                .display_scores(plays, mode, ctx, reply.guild_id, reply)
+                .await?;
         }
     }
     Ok(())
@@ -623,6 +625,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     None,
                     Some(mods),
                     msg,
+                    msg.guild_id,
                     "Here is the beatmapset you requested!",
                 )
                 .await?;
@@ -639,7 +642,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     CreateMessage::new()
                         .content("Here is the beatmap you requested!")
                         .embed(beatmap_embed(&bm.0, bm.1, mods, info))
-                        .components(vec![beatmap_components()])
+                        .components(vec![beatmap_components(msg.guild_id)])
                         .reference_message(msg),
                 )
                 .await?;
@@ -696,7 +699,9 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             ),
         )
         .await?;
-    style.display_scores(scores, mode, ctx, reply).await?;
+    style
+        .display_scores(scores, mode, ctx, msg.guild_id, reply)
+        .await?;
 
     Ok(())
 }
@@ -779,7 +784,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                                 .top_record(rank)
                                 .build(),
                         )
-                        .components(vec![score_components()])
+                        .components(vec![score_components(msg.guild_id)])
                 })
                 .await?;
 
@@ -793,7 +798,9 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let reply = msg
                 .reply(&ctx, format!("Here are the top plays by `{}`!", user_id))
                 .await?;
-            style.display_scores(plays, mode, ctx, reply).await?;
+            style
+                .display_scores(plays, mode, ctx, msg.guild_id, reply)
+                .await?;
         }
     }
     Ok(())
