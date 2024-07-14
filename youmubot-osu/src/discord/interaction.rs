@@ -61,23 +61,45 @@ pub fn handle_check_button<'a>(
             }
             _ => return Ok(()),
         };
-        let (msg, author) = (&*comp.message, comp.user.id);
+        let msg = &*comp.message;
 
         let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
         let (bm, _) = super::load_beatmap(&env, comp.channel_id, Some(msg))
             .await
             .unwrap();
-        let user_id = super::to_user_id_query(None, &env, author).await?;
+        let user = match env.saved_users.by_user_id(comp.user.id).await? {
+            Some(u) => u,
+            None => {
+                comp.create_response(&ctx, CreateInteractionResponse::Message(CreateInteractionResponseMessage::new().content("You don't have a saved account yet! Save your osu! account by `y2!osu save <your-osu-username>`.").ephemeral(true))).await?;
+                return Ok(());
+            }
+        };
 
-        let scores = super::do_check(&env, &bm, Mods::NOMOD, &user_id).await?;
+        let scores = super::do_check(&env, &bm, Mods::NOMOD, &crate::UserID::ID(user.id)).await?;
+        if scores.is_empty() {
+            comp.create_response(
+                &ctx,
+                CreateInteractionResponse::Message(
+                    CreateInteractionResponseMessage::new().content(format!(
+                        "No plays found for [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`.",
+                        user.username,
+                        user.id,
+                        bm.short_link(Mods::NOMOD)
+                    )),
+                ),
+            )
+            .await?;
+            return Ok(());
+        }
 
         let reply = {
             comp.create_response(
                 &ctx,
                 serenity::all::CreateInteractionResponse::Message(
                     CreateInteractionResponseMessage::new().content(format!(
-                        "Here are the scores by `{}` on `{}`!",
-                        &user_id,
+                        "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`!",
+                        user.username,
+                        user.id,
                         bm.short_link(Mods::NOMOD)
                     )),
                 ),
@@ -120,29 +142,29 @@ pub fn handle_last_button<'a>(
 
         let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-        let (BeatmapWithMode(b, m), mods_def) =
-            super::load_beatmap(&env, comp.channel_id, Some(msg))
-                .await
-                .unwrap();
+        let (bm, mods_def) = super::load_beatmap(&env, comp.channel_id, Some(msg))
+            .await
+            .unwrap();
+        let BeatmapWithMode(b, m) = &bm;
 
         let mods = mods_def.unwrap_or(Mods::NOMOD);
         let info = env
             .oppai
             .get_beatmap(b.beatmap_id)
             .await?
-            .get_possible_pp_with(m, mods)?;
+            .get_possible_pp_with(*m, mods)?;
         comp.create_response(
             &ctx,
             serenity::all::CreateInteractionResponse::Message(
                 CreateInteractionResponseMessage::new()
-                    .content("Here is the beatmap you requested!")
-                    .embed(beatmap_embed(&b, m, mods, info))
+                    .content(format!("Information for beatmap `{}`", bm.short_link(mods)))
+                    .embed(beatmap_embed(b, *m, mods, info))
                     .components(vec![beatmap_components(comp.guild_id)]),
             ),
         )
         .await?;
         // Save the beatmap...
-        super::cache::save_beatmap(&env, msg.channel_id, &BeatmapWithMode(b, m)).await?;
+        super::cache::save_beatmap(&env, msg.channel_id, &bm).await?;
 
         Ok(())
     })
@@ -191,8 +213,9 @@ pub fn handle_lb_button<'a>(
         if scores.is_empty() {
             comp.create_followup(
                 &ctx,
-                CreateInteractionResponseFollowup::new()
-                    .content("No scores have been recorded for this beatmap."),
+                CreateInteractionResponseFollowup::new().content(
+                    "No scores have been recorded for this beatmap from anyone in this server.",
+                ),
             )
             .await?;
             return Ok(());

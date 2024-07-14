@@ -450,7 +450,7 @@ async fn to_user_id_query(
     env.saved_users
         .by_user_id(id)
         .await?
-        .map(|u| UserID::ID(u.id))
+        .map(|u| UserID::Username(u.username.to_string()))
         .ok_or_else(|| Error::msg("No saved account found"))
 }
 
