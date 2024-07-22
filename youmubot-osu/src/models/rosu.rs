@@ -330,7 +330,8 @@ impl From<rosu::mods::GameModsIntermode> for Mods {
 
 impl From<rosu::mods::GameMods> for Mods {
     fn from(value: rosu::mods::GameMods) -> Self {
-        let unknown = rosu::mods::GameModIntermode::Unknown(rosu::mods::UnknownMod::default());
+        let unknown =
+            rosu::mods::GameModIntermode::Unknown(rosu_v2::prelude::UnknownMod::default());
         value
             .iter()
             .cloned()
