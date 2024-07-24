@@ -14,7 +14,7 @@ use serenity::{
     utils::MessageBuilder,
 };
 
-use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserBests};
+use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
@@ -56,7 +56,6 @@ pub struct OsuEnv {
     // databases
     pub(crate) saved_users: OsuSavedUsers,
     pub(crate) last_beatmaps: OsuLastBeatmap,
-    pub(crate) user_bests: OsuUserBests,
     // clients
     pub(crate) client: Arc<crate::Client>,
     pub(crate) oppai: BeatmapCache,
@@ -91,7 +90,6 @@ pub async fn setup(
     // Databases
     let saved_users = OsuSavedUsers::new(prelude.sql.clone());
     let last_beatmaps = OsuLastBeatmap::new(prelude.sql.clone());
-    let user_bests = OsuUserBests::new(prelude.sql.clone());
 
     // API client
     let osu_client = Arc::new(
@@ -118,7 +116,6 @@ pub async fn setup(
     // Legacy data
     data.insert::<OsuLastBeatmap>(last_beatmaps.clone());
     data.insert::<OsuSavedUsers>(saved_users.clone());
-    data.insert::<OsuUserBests>(user_bests.clone());
     data.insert::<OsuClient>(osu_client.clone());
     data.insert::<BeatmapCache>(oppai_cache.clone());
     data.insert::<BeatmapMetaCache>(beatmap_cache.clone());
@@ -127,7 +124,6 @@ pub async fn setup(
         prelude,
         saved_users,
         last_beatmaps,
-        user_bests,
         client: osu_client,
         oppai: oppai_cache,
         beatmaps: beatmap_cache,

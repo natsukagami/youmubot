@@ -7,7 +7,7 @@ use serenity::model::id::{ChannelId, UserId};
 use youmubot_db_sql::{models::osu as models, models::osu_user as model, Pool};
 use youmubot_prelude::*;
 
-use crate::models::{Beatmap, Mode, Score};
+use crate::models::{Beatmap, Mode};
 
 /// Save the user IDs.
 #[derive(Debug, Clone)]
@@ -97,46 +97,6 @@ impl OsuLastBeatmap {
             mode: mode as u8,
         };
         b.store(&self.0).await?;
-        Ok(())
-    }
-}
-
-/// Save each channel's last requested beatmap.
-#[derive(Debug, Clone)]
-pub struct OsuUserBests(Pool);
-
-impl TypeMapKey for OsuUserBests {
-    type Value = OsuUserBests;
-}
-
-impl OsuUserBests {
-    pub fn new(pool: Pool) -> Self {
-        Self(pool)
-    }
-}
-
-impl OsuUserBests {
-    pub async fn save(
-        &self,
-        user: impl Into<UserId>,
-        mode: Mode,
-        scores: impl IntoIterator<Item = Score>,
-    ) -> Result<()> {
-        let user = user.into();
-        scores
-            .into_iter()
-            .map(|score| models::UserBestScore {
-                user_id: user.get() as i64,
-                beatmap_id: score.beatmap_id as i64,
-                mode: mode as u8,
-                mods: score.mods.bits() as i64,
-                cached_at: Utc::now(),
-                score: bincode::serialize(&score).unwrap(),
-            })
-            .map(|mut us| async move { us.store(&self.0).await })
-            .collect::<stream::FuturesUnordered<_>>()
-            .try_collect::<()>()
-            .await?;
         Ok(())
     }
 }
