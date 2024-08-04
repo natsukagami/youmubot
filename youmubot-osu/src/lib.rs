@@ -123,7 +123,7 @@ impl Client {
         let s = match self.rosu.score(score_id).await {
             Ok(v) => v,
             Err(rosu_v2::error::OsuError::NotFound) => return Ok(None),
-            e @ _ => e?,
+            e => e?,
         };
         Ok(Some(s.into()))
     }

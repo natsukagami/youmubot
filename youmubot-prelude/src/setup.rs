@@ -39,11 +39,11 @@ pub async fn setup_prelude(
     // Set up the SQL client.
     data.insert::<crate::SQLClient>(sql_pool.clone());
 
-    let env = Env {
+    
+
+    Env {
         http: http_client,
         sql: sql_pool,
         members: member_cache,
-    };
-
-    env
+    }
 }

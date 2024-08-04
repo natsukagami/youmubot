@@ -298,7 +298,7 @@ mod scores {
                     })
                     .collect::<Vec<_>>();
 
-                const SCORE_HEADERS: [&'static str; 6] =
+                const SCORE_HEADERS: [&str; 6] =
                     ["#", "PP", "Acc", "Ranks", "Mods", "Beatmap"];
                 const SCORE_ALIGNS: [Align; 6] = [Right, Right, Right, Right, Right, Left];
 
@@ -310,7 +310,7 @@ mod scores {
                     .map(|(id, ((play, beatmap), (rank, pp)))| {
                         [
                             format!("{}", id + start + 1),
-                            format!("{}", pp),
+                            pp.to_string(),
                             format!("{:.2}%", play.accuracy(self.mode)),
                             format!("{}", rank),
                             play.mods.to_string(),

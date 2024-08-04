@@ -203,7 +203,7 @@ impl Announcer {
         let (user, top_scores) = try_join!(user, top_scores)?;
         let mut user = user.unwrap();
         // if top scores exist, user would too
-        let events = std::mem::replace(&mut user.events, vec![])
+        let events = std::mem::take(&mut user.events)
             .into_iter()
             .filter_map(|v| v.to_event_rank())
             .filter(|s| Self::is_announceable_date(s.date, last_update, now))
@@ -344,7 +344,7 @@ impl<'a> CollectedScore<'a> {
             )
             .await?;
 
-        save_beatmap(&env, channel, bm).await.pls_ok();
+        save_beatmap(env, channel, bm).await.pls_ok();
         Ok(m)
     }
 }

@@ -225,7 +225,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                         table_formatting(&headers, &ALIGNS, table)
                     }
                     RankQuery::PP => {
-                        const HEADERS: [&'static str; 6] =
+                        const HEADERS: [&str; 6] =
                             ["#", "pp", "Map length", "Map age", "Username", "Member"];
                         const ALIGNS: [Align; 6] = [Right, Right, Right, Right, Left, Left];
 
@@ -250,7 +250,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                         table_formatting(&HEADERS, &ALIGNS, table)
                     }
                     RankQuery::TotalPP => {
-                        const HEADERS: [&'static str; 4] = ["#", "Total pp", "Username", "Member"];
+                        const HEADERS: [&str; 4] = ["#", "Total pp", "Username", "Member"];
                         const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
 
                         let table = users
@@ -338,7 +338,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
 
     let scores = {
         let reaction = msg.react(ctx, '⌛').await?;
-        let s = get_leaderboard(&ctx, &env, &bm, order, guild).await?;
+        let s = get_leaderboard(ctx, &env, &bm, order, guild).await?;
         reaction.delete(&ctx).await?;
         s
     };
@@ -360,7 +360,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
                     ),
                 )
                 .await?;
-            display_rankings_table(&ctx, reply, scores, &bm, order).await?;
+            display_rankings_table(ctx, reply, scores, &bm, order).await?;
         }
         ScoreListStyle::Grid => {
             let reply = msg
@@ -497,9 +497,9 @@ pub async fn display_rankings_table(
             let scores = scores[start..end].to_vec();
             let bm = (bm.0.clone(), bm.1);
             Box::pin(async move {
-                const SCORE_HEADERS: [&'static str; 8] =
+                const SCORE_HEADERS: [&str; 8] =
                     ["#", "Score", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
-                const PP_HEADERS: [&'static str; 8] =
+                const PP_HEADERS: [&str; 8] =
                     ["#", "PP", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
                 const ALIGNS: [Align; 8] = [Right, Right, Right, Right, Right, Right, Right, Left];
 

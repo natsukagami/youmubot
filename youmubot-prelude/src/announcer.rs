@@ -77,7 +77,7 @@ impl MemberToChannels {
     /// Gets the channel list of an user related to that channel.
     pub async fn channels_of(
         &self,
-        http: impl CacheHttp + Clone + Sync,
+        http: impl CacheHttp + Clone,
         u: impl Into<UserId>,
     ) -> Vec<ChannelId> {
         let u: UserId = u.into();
@@ -105,6 +105,12 @@ pub struct AnnouncerHandler {
 }
 
 /// Announcer-managing related.
+impl Default for AnnouncerHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AnnouncerHandler {
     /// Create a new instance of the handler.
     pub fn new() -> Self {
@@ -119,7 +125,7 @@ impl AnnouncerHandler {
     pub fn add(
         &mut self,
         key: &'static str,
-        announcer: impl Announcer + Send + Sync + 'static,
+        announcer: impl Announcer + Sync + 'static,
     ) -> &mut Self {
         if self
             .announcers
@@ -136,12 +142,12 @@ impl AnnouncerHandler {
     }
 
     pub fn run(self, client: &Client) -> AnnouncerRunner {
-        let runner = AnnouncerRunner {
+        
+        AnnouncerRunner {
             cache_http: CacheAndHttp::from_client(client),
             data: client.data.clone(),
             announcers: self.announcers,
-        };
-        runner
+        }
     }
 }
 

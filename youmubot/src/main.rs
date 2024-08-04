@@ -115,7 +115,7 @@ impl EventHandler for Handler {
             .iter()
             .map(|hook| {
                 hook.write()
-                    .then(|mut h| async move { h.call(&ctx, &interaction).await })
+                    .then(|mut h| async move { h.call(ctx, interaction).await })
             })
             .collect::<stream::FuturesUnordered<_>>()
             .for_each(|v| async move {

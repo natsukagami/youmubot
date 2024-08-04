@@ -28,7 +28,7 @@ impl Framework for ComposedFramework {
     }
     async fn init(&mut self, client: &Client) {
         for f in self.frameworks.iter_mut() {
-            f.init(&client).await
+            f.init(client).await
         }
     }
 }

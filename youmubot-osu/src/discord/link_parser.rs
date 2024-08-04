@@ -49,7 +49,7 @@ pub fn parse_old_links<'a>(
                 .name("mode")
                 .map(|v| v.as_str().parse::<u8>())
                 .transpose()?
-                .map(|v| Mode::from(v));
+                .map(Mode::from);
             let embed = match req_type {
                 "b" => {
                     // collect beatmap info
@@ -57,9 +57,9 @@ pub fn parse_old_links<'a>(
                         .name("mods")
                         .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                         .unwrap_or(Mods::NOMOD);
-                    EmbedType::from_beatmap_id(&env, capture["id"].parse()?, mode, mods).await
+                    EmbedType::from_beatmap_id(env, capture["id"].parse()?, mode, mods).await
                 }
-                "s" => EmbedType::from_beatmapset_id(&env, capture["id"].parse()?).await,
+                "s" => EmbedType::from_beatmapset_id(env, capture["id"].parse()?).await,
                 _ => unreachable!(),
             }?;
             Ok(ToPrint {
@@ -92,11 +92,11 @@ pub fn parse_new_links<'a>(
                         .name("mods")
                         .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                         .unwrap_or(Mods::NOMOD);
-                    EmbedType::from_beatmap_id(&env, beatmap_id, mode, mods).await
+                    EmbedType::from_beatmap_id(env, beatmap_id, mode, mods).await
                 }
                 None => {
                     EmbedType::from_beatmapset_id(
-                        &env,
+                        env,
                         capture.name("set_id").unwrap().as_str().parse()?,
                     )
                     .await
@@ -124,7 +124,7 @@ pub fn parse_short_links<'a>(
                 .name("mods")
                 .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
                 .unwrap_or(Mods::NOMOD);
-            let embed = EmbedType::from_beatmap_id(&env, id, mode, mods).await?;
+            let embed = EmbedType::from_beatmap_id(env, id, mode, mods).await?;
             Ok(ToPrint { embed, link, mode })
         })
         .collect::<stream::FuturesUnordered<_>>()

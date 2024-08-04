@@ -192,7 +192,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                 }
                 let ranks = &ranks[start..end];
 
-                const HEADERS: [&'static str; 4] = ["Rank", "Rating", "Handle", "Username"];
+                const HEADERS: [&str; 4] = ["Rank", "Rating", "Handle", "Username"];
                 const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
 
                 let ranks_arr = ranks
@@ -354,11 +354,11 @@ pub(crate) async fn contest_rank_table(
                             if result.points > 0.0 {
                                 p_results.push(format!("{}", result.points));
                             } else if result.best_submission_time_seconds.is_some() {
-                                p_results.push(format!("{}", "?"));
+                                p_results.push("?".to_string());
                             } else if result.rejected_attempt_count > 0 {
                                 p_results.push(format!("-{}", result.rejected_attempt_count));
                             } else {
-                                p_results.push(format!("{}", "----"));
+                                p_results.push("----".to_string());
                             }
                         }
 

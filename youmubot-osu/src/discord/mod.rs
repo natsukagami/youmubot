@@ -386,7 +386,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
                     .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
                     .await
                     .pls_ok()
-                    .unwrap_or_else(|| vec![]);
+                    .unwrap_or_else(std::vec::Vec::new);
 
                 (
                     calculate_weighted_map_length(&scores, &env.beatmaps, mode)
@@ -413,7 +413,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
                 })
         })
         .collect::<stream::FuturesOrdered<_>>()
-        .filter_map(|v| future::ready(v))
+        .filter_map(future::ready)
         .collect::<Map<_, _>>()
         .await;
 
@@ -605,7 +605,7 @@ pub(crate) async fn load_beatmap(
         }
     }
 
-    let b = cache::get_beatmap(&env, channel_id).await.ok().flatten();
+    let b = cache::get_beatmap(env, channel_id).await.ok().flatten();
     b.map(|b| (b, None))
 }
 
@@ -836,7 +836,7 @@ async fn get_user(
     mut args: Args,
     mode: Mode,
 ) -> CommandResult {
-    let user = to_user_id_query(args.single::<UsernameArg>().ok(), &env, msg.author.id).await?;
+    let user = to_user_id_query(args.single::<UsernameArg>().ok(), env, msg.author.id).await?;
     let osu_client = &env.client;
     let meta_cache = &env.beatmaps;
     let user = osu_client.user(&user, |f| f.mode(mode)).await?;

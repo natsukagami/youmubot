@@ -16,9 +16,9 @@ use super::{
     BeatmapWithMode, OsuEnv,
 };
 
-pub(super) const BTN_CHECK: &'static str = "youmubot_osu_btn_check";
-pub(super) const BTN_LB: &'static str = "youmubot_osu_btn_lb";
-pub(super) const BTN_LAST: &'static str = "youmubot_osu_btn_last";
+pub(super) const BTN_CHECK: &str = "youmubot_osu_btn_check";
+pub(super) const BTN_LB: &str = "youmubot_osu_btn_lb";
+pub(super) const BTN_LAST: &str = "youmubot_osu_btn_last";
 
 /// Create an action row for score pages.
 pub fn score_components(guild_id: Option<GuildId>) -> CreateActionRow {
@@ -208,7 +208,7 @@ pub fn handle_lb_button<'a>(
             CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new()),
         )
         .await?;
-        let scores = get_leaderboard(&ctx, &env, &bm, order, guild).await?;
+        let scores = get_leaderboard(ctx, &env, &bm, order, guild).await?;
 
         if scores.is_empty() {
             comp.create_followup(
@@ -230,7 +230,7 @@ pub fn handle_lb_button<'a>(
                 )),
             )
             .await?;
-        display_rankings_table(&ctx, reply, scores, &bm, order).await?;
+        display_rankings_table(ctx, reply, scores, &bm, order).await?;
         Ok(())
     })
 }

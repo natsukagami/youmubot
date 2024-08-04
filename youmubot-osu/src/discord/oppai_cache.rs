@@ -193,7 +193,7 @@ impl BeatmapCache {
             })
             .collect::<Vec<_>>();
         for beatmap in &mut osu_files {
-            if beatmap.metadata.background_file != "" {
+            if !beatmap.metadata.background_file.is_empty() {
                 let bg = backgrounds
                     .entry(beatmap.metadata.background_file.clone())
                     .or_insert_with(|| {
@@ -205,7 +205,7 @@ impl BeatmapCache {
                             content: content.into_boxed_slice(),
                         }))
                     });
-                beatmap.beatmap_background = bg.clone();
+                beatmap.beatmap_background.clone_from(bg);
             }
         }
         Ok(osu_files)

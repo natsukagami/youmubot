@@ -56,7 +56,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
 
                         let roles = &roles[start..end];
 
-                        const ROLE_HEADERS: [&'static str; 3] = ["Name", "ID", "Description"];
+                        const ROLE_HEADERS: [&str; 3] = ["Name", "ID", "Description"];
                         const ROLE_ALIGNS: [Align; 3] = [Right, Right, Right];
 
                         let roles_arr = roles
