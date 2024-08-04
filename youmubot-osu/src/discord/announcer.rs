@@ -118,36 +118,37 @@ impl Announcer {
                 last_update: now,
             };
             let last = user.modes.insert(mode, stats);
-            let last_update = last.as_ref().map(|v| v.last_update);
 
             // broadcast
             let mention = user.user_id;
             let broadcast_to = broadcast_to.clone();
             let ctx = ctx.clone();
             let env = env.clone();
-            spawn_future(async move {
-                let top = top
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(_, s)| Self::is_announceable_date(s.date, last_update, now))
-                    .map(|(rank, score)| {
-                        CollectedScore::from_top_score(&u, score, mode, rank as u8)
-                    });
-                let recents = events
-                    .into_iter()
-                    .map(|e| CollectedScore::from_event(&env.client, &u, e))
-                    .collect::<FuturesUnordered<_>>()
-                    .filter_map(|v| future::ready(v.pls_ok()))
-                    .collect::<Vec<_>>()
-                    .await
-                    .into_iter();
-                top.chain(recents)
-                    .map(|v| v.send_message(&ctx, &env, mention, &broadcast_to))
-                    .collect::<FuturesUnordered<_>>()
-                    .filter_map(|v| future::ready(v.pls_ok().map(|_| ())))
-                    .collect::<()>()
-                    .await
-            });
+            if let Some(last) = last {
+                spawn_future(async move {
+                    let top = top
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(_, s)| Self::is_announceable_date(s.date, last.last_update, now))
+                        .map(|(rank, score)| {
+                            CollectedScore::from_top_score(&u, score, mode, rank as u8 + 1)
+                        });
+                    let recents = events
+                        .into_iter()
+                        .map(|e| CollectedScore::from_event(&env.client, &u, e))
+                        .collect::<FuturesUnordered<_>>()
+                        .filter_map(|v| future::ready(v.pls_ok()))
+                        .collect::<Vec<_>>()
+                        .await
+                        .into_iter();
+                    top.chain(recents)
+                        .map(|v| v.send_message(&ctx, &env, mention, &broadcast_to))
+                        .collect::<FuturesUnordered<_>>()
+                        .filter_map(|v| future::ready(v.pls_ok().map(|_| ())))
+                        .collect::<()>()
+                        .await
+                });
+            }
         }
         user.failures = 0;
         user
@@ -155,10 +156,10 @@ impl Announcer {
 
     fn is_announceable_date(
         s: DateTime<Utc>,
-        last_update: Option<DateTime<Utc>>,
+        last_update: impl Into<Option<DateTime<Utc>>>,
         now: DateTime<Utc>,
     ) -> bool {
-        (match last_update {
+        (match last_update.into() {
             Some(lu) => s > lu,
             None => true,
         }) && s <= now
@@ -303,11 +304,17 @@ impl<'a> CollectedScore<'a> {
                 &ctx,
                 CreateMessage::new()
                     .content(match self.kind {
-                        ScoreType::TopRecord(_) => {
-                            format!("New top record from {}!", mention.mention())
+                        ScoreType::TopRecord(rank) => {
+                            if rank <= 25 {
+                                format!("New leaderboard record from {}!", mention.mention())
+                            } else {
+                                format!("New leaderboard record from **{}**!", member.distinct())
+                            }
                         }
                         ScoreType::WorldRecord(rank) => {
-                            if rank <= 100 {
+                            if (self.mode == Mode::Std && rank <= 100)
+                                || (self.mode != Mode::Std && rank <= 50)
+                            {
                                 format!("New leaderboard record from {}!", mention.mention())
                             } else {
                                 format!("New leaderboard record from **{}**!", member.distinct())
