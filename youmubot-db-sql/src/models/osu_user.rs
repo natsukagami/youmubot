@@ -1,5 +1,6 @@
 use super::*;
-use sqlx::{query, query_as, Executor};
+use sqlx::{query, query_as, Executor, Transaction};
+use std::collections::HashMap as Map;
 
 /// An osu user, as represented in the SQL.
 #[derive(Debug, Clone)]
@@ -7,120 +8,219 @@ pub struct OsuUser {
     pub user_id: i64,
     pub username: Option<String>, // should always be there
     pub id: i64,
-    pub last_update: DateTime,
-    pub pp_std: Option<f64>,
-    pub pp_taiko: Option<f64>,
-    pub pp_mania: Option<f64>,
-    pub pp_catch: Option<f64>,
+    pub modes: Map<u8, OsuUserMode>,
     /// Number of consecutive update failures
     pub failures: u8,
+}
 
-    pub std_weighted_map_length: Option<f64>,
+/// Stats for a single user and mode.
+#[derive(Debug, Clone)]
+pub struct OsuUserMode {
+    pub pp: f64,
+    pub map_length: f64,
+    pub map_age: i64,
+    pub last_update: DateTime,
+}
+
+impl OsuUserMode {
+    async fn from_user<'a, E>(id: i64, conn: E) -> Result<Map<u8, Self>>
+    where
+        E: Executor<'a, Database = Database>,
+    {
+        Ok(query!(
+            r#"SELECT
+              mode as "mode: u8",
+              pp,
+              map_length,
+              map_age,
+              last_update as "last_update: DateTime"
+            FROM osu_user_mode_stats
+            WHERE user_id = ?
+            ORDER BY mode ASC"#,
+            id
+        )
+        .fetch_all(conn)
+        .await?
+        .into_iter()
+        .map(|row| {
+            (
+                row.mode,
+                Self {
+                    pp: row.pp,
+                    map_length: row.map_length,
+                    map_age: row.map_age,
+                    last_update: row.last_update,
+                },
+            )
+        })
+        .collect())
+    }
+
+    async fn fetch_all<'a, E>(conn: E) -> Result<Map<i64, Map<u8, Self>>>
+    where
+        E: Executor<'a, Database = Database>,
+    {
+        let mut res: Map<i64, Map<u8, Self>> = Map::new();
+        query!(
+            r#"SELECT
+              user_id as "user_id: i64",
+              mode as "mode: u8",
+              pp,
+              map_length,
+              map_age,
+              last_update as "last_update: DateTime"
+            FROM osu_user_mode_stats
+            ORDER BY user_id ASC, mode ASC"#,
+        )
+        .fetch_all(conn)
+        .await?
+        .into_iter()
+        .for_each(|v| {
+            let modes = res.entry(v.user_id).or_default();
+            modes.insert(
+                v.mode,
+                Self {
+                    pp: v.pp,
+                    map_length: v.map_length,
+                    map_age: v.map_age,
+                    last_update: v.last_update,
+                },
+            );
+        });
+        Ok(res)
+    }
+}
+
+mod raw {
+    #[derive(Debug)]
+    pub struct OsuUser {
+        pub user_id: i64,
+        pub username: Option<String>, // should always be there
+        pub id: i64,
+        pub failures: u8,
+    }
 }
 
 impl OsuUser {
+    fn from_raw(r: raw::OsuUser, modes: Map<u8, OsuUserMode>) -> Self {
+        Self {
+            user_id: r.user_id,
+            username: r.username,
+            id: r.id,
+            modes,
+            failures: r.failures,
+        }
+    }
     /// Query an user by their user id.
-    pub async fn by_user_id<'a, E>(user_id: i64, conn: &'a mut E) -> Result<Option<Self>>
-    where
-        &'a mut E: Executor<'a, Database = Database>,
-    {
-        let u = query_as!(
-            Self,
+    pub async fn by_user_id(user_id: i64, conn: &Pool) -> Result<Option<Self>> {
+        let u = match query_as!(
+            raw::OsuUser,
             r#"SELECT
                 user_id as "user_id: i64",
                 username,
                 id as "id: i64",
-                last_update as "last_update: DateTime",
-                pp_std, pp_taiko, pp_mania, pp_catch,
-                failures as "failures: u8",
-                std_weighted_map_length
+                failures as "failures: u8"
             FROM osu_users WHERE user_id = ?"#,
             user_id
         )
         .fetch_optional(conn)
-        .await?;
-        Ok(u)
+        .await?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+        let modes = OsuUserMode::from_user(u.user_id, conn).await?;
+        Ok(Some(Self::from_raw(u, modes)))
     }
 
     /// Query an user by their osu id.
-    pub async fn by_osu_id<'a, E>(osu_id: i64, conn: &'a mut E) -> Result<Option<Self>>
-    where
-        &'a mut E: Executor<'a, Database = Database>,
-    {
-        let u = query_as!(
-            Self,
+    pub async fn by_osu_id(osu_id: i64, conn: &Pool) -> Result<Option<Self>> {
+        let u = match query_as!(
+            raw::OsuUser,
             r#"SELECT
                 user_id as "user_id: i64",
                 username,
                 id as "id: i64",
-                last_update as "last_update: DateTime",
-                pp_std, pp_taiko, pp_mania, pp_catch,
-                failures as "failures: u8",
-                std_weighted_map_length
+                failures as "failures: u8"
             FROM osu_users WHERE id = ?"#,
             osu_id
         )
         .fetch_optional(conn)
-        .await?;
-        Ok(u)
+        .await?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+        let modes = OsuUserMode::from_user(u.user_id, conn).await?;
+        Ok(Some(Self::from_raw(u, modes)))
     }
 
     /// Query all users.
-    pub fn all<'a, E>(conn: &'a mut E) -> impl Stream<Item = Result<Self>> + 'a
-    where
-        &'a mut E: Executor<'a, Database = Database>,
-    {
-        query_as!(
-            Self,
+    pub async fn all(conn: &Pool) -> Result<Vec<Self>> {
+        // last_update as "last_update: DateTime",
+        let us = query_as!(
+            raw::OsuUser,
             r#"SELECT
                 user_id as "user_id: i64",
                 username,
                 id as "id: i64",
-                last_update as "last_update: DateTime",
-                pp_std, pp_taiko, pp_mania, pp_catch,
-                failures as "failures: u8",
-                std_weighted_map_length
+                failures as "failures: u8"
             FROM osu_users"#,
         )
-        .fetch_many(conn)
-        .filter_map(map_many_result)
+        .fetch_all(conn)
+        .await?;
+        let mut modes = OsuUserMode::fetch_all(conn).await?;
+        Ok(us
+            .into_iter()
+            .map(|u| {
+                let m = modes.remove(&u.user_id).unwrap_or_default();
+                Self::from_raw(u, m)
+            })
+            .collect())
     }
 }
 
 impl OsuUser {
     /// Stores the user.
-    pub async fn store<'a, E>(&self, conn: &'a mut E) -> Result<()>
-    where
-        &'a mut E: Executor<'a, Database = Database>,
-    {
+    pub async fn store<'a>(&self, conn: &mut Transaction<'a, Database>) -> Result<()> {
         query!(
             r#"INSERT
-               INTO osu_users(user_id, username, id, last_update, pp_std, pp_taiko, pp_mania, pp_catch, failures, std_weighted_map_length)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               INTO osu_users(user_id, username, id, failures)
+               VALUES(?, ?, ?, ?)
                ON CONFLICT (user_id) WHERE id = ? DO UPDATE
                SET
-                last_update = excluded.last_update,
                 username = excluded.username,
-                pp_std = excluded.pp_std,
-                pp_taiko = excluded.pp_taiko,
-                pp_mania = excluded.pp_mania,
-                pp_catch = excluded.pp_catch,
-                failures = excluded.failures,
-                std_weighted_map_length = excluded.std_weighted_map_length
+                failures = excluded.failures
             "#,
             self.user_id,
             self.username,
             self.id,
-            self.last_update,
-            self.pp_std,
-            self.pp_taiko,
-            self.pp_mania,
-            self.pp_catch,
             self.failures,
-            self.std_weighted_map_length,
-
             self.user_id,
-        ).execute(conn).await?;
+        )
+        .execute(&mut **conn)
+        .await?;
+        // Store the modes
+        query!(
+            "DELETE FROM osu_user_mode_stats WHERE user_id = ?",
+            self.user_id
+        )
+        .execute(&mut **conn)
+        .await?;
+        for (mode, stats) in &self.modes {
+            let ts = stats.last_update.timestamp();
+            query!(
+                "INSERT INTO osu_user_mode_stats (user_id, mode, pp, map_length, map_age, last_update) VALUES (?, ?, ?, ?, ?, ?)",
+                self.user_id,
+                *mode,
+                stats.pp,
+                stats.map_length,
+                stats.map_age,
+                ts,
+            )
+            .execute(&mut **conn)
+            .await?;
+        }
         Ok(())
     }
 

@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n              mode as \"mode: u8\",\n              pp,\n              map_length,\n              map_age,\n              last_update as \"last_update: DateTime\"\n            FROM osu_user_mode_stats\n            WHERE user_id = ?\n            ORDER BY mode ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "mode: u8",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "pp",
+        "ordinal": 1,
+        "type_info": "Float"
+      },
+      {
+        "name": "map_length",
+        "ordinal": 2,
+        "type_info": "Float"
+      },
+      {
+        "name": "map_age",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "last_update: DateTime",
+        "ordinal": 4,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a247c7a73bdbf1042fdd8363da1f6b51e283c83b1ba7fa17e5cb056b220f7889"
+}
