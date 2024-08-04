@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
+use future::Future;
 use futures_util::try_join;
+use std::pin::Pin;
 use std::sync::Arc;
 use stream::FuturesUnordered;
 
@@ -57,17 +59,11 @@ impl youmubot_prelude::Announcer for Announcer {
         let users = env.saved_users.all().await?;
         users
             .into_iter()
-            .map(
-                |osu_user| {
-                    channels
-                        .channels_of(ctx.clone(), osu_user.user_id)
-                        .then(|chs| self.update_user(ctx.clone(), &env, osu_user, chs))
-                        .then(|new_user| env.saved_users.save(new_user))
-                        .map(|r| {
-                            r.pls_ok();
-                        })
-                }, // self.update_user()
-            )
+            .map(|osu_user| {
+                channels
+                    .channels_of(ctx.clone(), osu_user.user_id)
+                    .then(|chs| self.update_user(ctx.clone(), &env, osu_user, chs))
+            })
             .collect::<stream::FuturesUnordered<_>>()
             .collect::<()>()
             .await;
@@ -82,13 +78,17 @@ impl Announcer {
         env: &OsuEnv,
         mut user: OsuUser,
         broadcast_to: Vec<ChannelId>,
-    ) -> OsuUser {
+    ) {
+        if broadcast_to.is_empty() {
+            return; // Skip update if there are no broadcasting channels
+        }
         if user.failures == MAX_FAILURES {
-            return user;
+            return;
         }
         const MODES: [Mode; 4] = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania];
         let now = chrono::Utc::now();
         let broadcast_to = Arc::new(broadcast_to);
+        let mut to_announce = Vec::<Pin<Box<dyn Future<Output = ()> + Send>>>::new();
         for mode in MODES {
             let (u, top, events) = match self.fetch_user_data(env, now, &user, mode).await {
                 Ok(v) => v,
@@ -125,7 +125,7 @@ impl Announcer {
             let ctx = ctx.clone();
             let env = env.clone();
             if let Some(last) = last {
-                spawn_future(async move {
+                to_announce.push(Box::pin(async move {
                     let top = top
                         .into_iter()
                         .enumerate()
@@ -147,11 +147,18 @@ impl Announcer {
                         .filter_map(|v| future::ready(v.pls_ok().map(|_| ())))
                         .collect::<()>()
                         .await
-                });
+                }));
             }
         }
         user.failures = 0;
-        user
+        let user_id = user.user_id;
+        if let Some(true) = env.saved_users.save(user).await.pls_ok() {
+            to_announce.into_iter().for_each(|v| {
+                spawn_future(v);
+            });
+        } else {
+            eprintln!("[osu] Skipping user {} due to raced update", user_id)
+        }
     }
 
     fn is_announceable_date(
