@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM osu_user_mode_stats WHERE user_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "aa6db751abe51922548d6c040d40ef57cae1cf6338523fd2b801b482164d54fa"
+}

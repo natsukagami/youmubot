@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO osu_user_mode_stats (user_id, mode, pp, map_length, map_age, last_update) VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "f356ab7ef8b7c320d29ad9cce03f66defcfbe67a7c4ccac16dd41508bc2d829d"
+}
