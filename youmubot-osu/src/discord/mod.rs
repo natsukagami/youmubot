@@ -1,5 +1,6 @@
-use std::{borrow::Borrow, str::FromStr, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap as Map, str::FromStr, sync::Arc};
 
+use chrono::Utc;
 use futures_util::join;
 use interaction::{beatmap_components, score_components};
 use rand::seq::IteratorRandom;
@@ -14,7 +15,7 @@ use serenity::{
     utils::MessageBuilder,
 };
 
-use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser};
+use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserMode};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
@@ -108,10 +109,7 @@ pub async fn setup(
     let beatmap_cache = BeatmapMetaCache::new(osu_client.clone(), prelude.sql.clone());
 
     // Announcer
-    announcers.add(
-        announcer::ANNOUNCER_KEY,
-        announcer::Announcer::new(osu_client.clone()),
-    );
+    announcers.add(announcer::ANNOUNCER_KEY, announcer::Announcer::new());
 
     // Legacy data
     data.insert::<OsuLastBeatmap>(last_beatmaps.clone());
@@ -369,49 +367,53 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
 }
 
 async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv) -> Result<()> {
-    let pp_fut = async {
-        [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
-            .into_iter()
-            .map(|mode| async move {
+    let modes = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
+        .into_iter()
+        .map(|mode| async move {
+            let pp = async {
                 env.client
                     .user(&UserID::ID(user.id), |f| f.mode(mode))
                     .await
-                    .unwrap_or_else(|err| {
-                        eprintln!("{}", err);
-                        None
-                    })
+                    .pls_ok()
+                    .unwrap_or(None)
                     .and_then(|u| u.pp)
+            };
+            let map_length = async {
+                let scores = env
+                    .client
+                    .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
+                    .await
+                    .pls_ok()
+                    .unwrap_or_else(|| vec![]);
+
+                calculate_weighted_map_length(&scores, &env.beatmaps, mode)
+                    .await
+                    .pls_ok()
+            };
+            let (pp, map_length) = join!(pp, map_length);
+            pp.zip(map_length).map(|(pp, map_length)| {
+                (
+                    mode,
+                    OsuUserMode {
+                        pp,
+                        map_length,
+                        map_age: 0, // TODO
+                        last_update: Utc::now(),
+                    },
+                )
             })
-            .collect::<stream::FuturesOrdered<_>>()
-            .collect::<Vec<_>>()
-            .await
-    };
-
-    let std_weight_map_length_fut = async {
-        let scores = env
-            .client
-            .user_best(UserID::ID(user.id), |f| f.mode(Mode::Std).limit(100))
-            .await
-            .unwrap_or_else(|err| {
-                eprintln!("{}", err);
-                vec![]
-            });
-
-        calculate_weighted_map_length(&scores, &env.beatmaps, Mode::Std)
-            .await
-            .pls_ok()
-    };
-
-    let (pp, std_weight_map_length) = join!(pp_fut, std_weight_map_length_fut);
+        })
+        .collect::<stream::FuturesOrdered<_>>()
+        .filter_map(|v| future::ready(v))
+        .collect::<Map<_, _>>()
+        .await;
 
     let u = OsuUser {
         user_id: target,
         username: user.username.into(),
         id: user.id,
         failures: 0,
-        last_update: chrono::Utc::now(),
-        pp: pp.try_into().unwrap(),
-        std_weighted_map_length: std_weight_map_length,
+        modes,
     };
     env.saved_users.new_user(u).await?;
     Ok(())

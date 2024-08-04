@@ -1,8 +1,8 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc};
 
 use pagination::paginate_with_first_message;
 use serenity::{
-    all::GuildId,
+    all::{GuildId, Member},
     builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
@@ -17,7 +17,7 @@ use youmubot_prelude::{
 };
 
 use crate::{
-    discord::{display::ScoreListStyle, oppai_cache::Accuracy, BeatmapWithMode},
+    discord::{db::OsuUser, display::ScoreListStyle, oppai_cache::Accuracy, BeatmapWithMode},
     models::{Mode, Mods},
     request::UserID,
     Score,
@@ -25,21 +25,57 @@ use crate::{
 
 use super::{ModeArg, OsuEnv};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum RankQuery {
-    Total,
+    #[default]
+    PP,
+    TotalPP,
     MapLength,
-    Mode(Mode),
+    // MapAge,
+}
+
+impl RankQuery {
+    // fn col_name(&self) -> &'static str {
+    //     match self {
+    //         RankQuery::PP => "pp",
+    //         RankQuery::TotalPP => "Total pp",
+    //         RankQuery::MapLength => "Map length",
+    //     }
+    // }
+    fn extract_row(&self, mode: Mode, ou: &OsuUser) -> Cow<'static, str> {
+        match self {
+            RankQuery::PP => ou
+                .modes
+                .get(&mode)
+                .map(|v| format!("{:.02}", v.pp).into())
+                .unwrap_or_else(|| "-".into()),
+            RankQuery::TotalPP => {
+                format!("{:.02}", ou.modes.values().map(|v| v.pp).sum::<f64>()).into()
+            }
+            RankQuery::MapLength => ou
+                .modes
+                .get(&mode)
+                .map(|v| {
+                    let len = v.map_length;
+                    let trunc_secs = len.floor() as u64;
+                    let minutes = trunc_secs / 60;
+                    let seconds = len - (60 * minutes) as f64;
+                    format!("{}m{:05.2}s", minutes, seconds).into()
+                })
+                .unwrap_or_else(|| "-".into()),
+        }
+    }
 }
 
 impl FromStr for RankQuery {
-    type Err = <ModeArg as FromStr>::Err;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "total" => Ok(RankQuery::Total),
+            "pp" => Ok(RankQuery::PP),
+            "total" | "total-pp" => Ok(RankQuery::TotalPP),
             "map-length" => Ok(RankQuery::MapLength),
-            _ => ModeArg::from_str(s).map(|ModeArg(m)| RankQuery::Mode(m)),
+            _ => Err(format!("not a query: {}", s)),
         }
     }
 }
@@ -51,52 +87,61 @@ impl FromStr for RankQuery {
 #[only_in(guilds)]
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let mode = args
-        .single::<RankQuery>()
-        .unwrap_or(RankQuery::Mode(Mode::Std));
+    let mode = args.find::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
+    let query = args.single::<RankQuery>().unwrap_or_default();
     let guild = m.guild_id.expect("Guild-only command");
 
-    let osu_users = env
+    let mut users = env
         .saved_users
         .all()
         .await?
         .into_iter()
         .map(|v| (v.user_id, v))
         .collect::<HashMap<_, _>>();
-
-    let users = env
+    let mut users = env
         .prelude
         .members
         .query_members(&ctx, guild)
         .await?
         .iter()
-        .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m, ou)))
-        .filter_map(|(member, osu_user)| {
-            let pp = match mode {
-                RankQuery::Total if osu_user.pp.iter().any(|v| v.is_some_and(|v| v > 0.0)) => {
-                    Some(osu_user.pp.iter().map(|v| v.unwrap_or(0.0)).sum())
-                }
-                RankQuery::MapLength => osu_user.pp.get(Mode::Std as usize).and_then(|v| *v),
-                RankQuery::Mode(m) => osu_user.pp.get(m as usize).and_then(|v| *v),
-                _ => None,
-            }?;
-            Some((pp, member.user.name.clone(), osu_user))
+        .filter_map(|m| users.remove(&m.user.id).map(|ou| (m.clone(), ou)))
+        .collect::<Vec<_>>();
+    let last_update = users
+        .iter()
+        .filter_map(|(_, u)| {
+            if query == RankQuery::TotalPP {
+                u.modes.values().map(|v| v.last_update).min()
+            } else {
+                u.modes.get(&mode).map(|v| v.last_update)
+            }
         })
-        .collect::<Vec<_>>();
-    let last_update = users.iter().map(|(_, _, a)| a.last_update).min();
-    let mut users = users
-        .into_iter()
-        .map(|(a, b, u)| (a, (b, u.clone())))
-        .collect::<Vec<_>>();
-    if matches!(mode, RankQuery::MapLength) {
-        users.sort_by(|(_, (_, a)), (_, (_, b))| {
-            (b.std_weighted_map_length)
-                .partial_cmp(&a.std_weighted_map_length)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-    } else {
-        users.sort_by(|(a, _), (b, _)| (*b).partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    }
+        .min();
+    let sort_fn: Box<dyn Fn(&(Member, OsuUser), &(Member, OsuUser)) -> std::cmp::Ordering> =
+        match query {
+            RankQuery::PP => Box::new(|(_, a), (_, b)| {
+                a.modes
+                    .get(&mode)
+                    .map(|v| v.pp)
+                    .partial_cmp(&b.modes.get(&mode).map(|v| v.pp))
+                    .unwrap()
+            }),
+            RankQuery::TotalPP => Box::new(|(_, a), (_, b)| {
+                a.modes
+                    .values()
+                    .map(|v| v.pp)
+                    .sum::<f64>()
+                    .partial_cmp(&b.modes.values().map(|v| v.pp).sum())
+                    .unwrap()
+            }),
+            RankQuery::MapLength => Box::new(|(_, a), (_, b)| {
+                a.modes
+                    .get(&mode)
+                    .map(|v| v.map_length)
+                    .partial_cmp(&b.modes.get(&mode).map(|v| v.map_length))
+                    .unwrap()
+            }),
+        };
+    users.sort_unstable_by(sort_fn);
 
     if users.is_empty() {
         m.reply(&ctx, "No saved users in the current server...")
@@ -120,7 +165,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     return Ok(false);
                 }
                 let users = &users[start..end];
-                let table = if matches!(mode, RankQuery::Mode(Mode::Std) | RankQuery::MapLength) {
+                let table = {
                     const HEADERS: [&'static str; 5] =
                         ["#", "pp", "Map length", "Username", "Member"];
                     const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
@@ -128,39 +173,13 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     let table = users
                         .iter()
                         .enumerate()
-                        .map(|(i, (pp, (mem, ou)))| {
-                            let map_length = match ou.std_weighted_map_length {
-                                Some(len) => {
-                                    let trunc_secs = len.floor() as u64;
-                                    let minutes = trunc_secs / 60;
-                                    let seconds = len - (60 * minutes) as f64;
-                                    format!("{}m{:05.2}s", minutes, seconds)
-                                }
-                                None => "unknown".to_owned(),
-                            };
+                        .map(|(i, (mem, ou))| {
                             [
                                 format!("{}", 1 + i + start),
-                                format!("{:.2}", pp),
-                                map_length,
-                                ou.username.clone().into_owned(),
-                                mem.clone(),
-                            ]
-                        })
-                        .collect::<Vec<_>>();
-                    table_formatting(&HEADERS, &ALIGNS, table)
-                } else {
-                    const HEADERS: [&'static str; 4] = ["#", "pp", "Username", "Member"];
-                    const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
-
-                    let table = users
-                        .iter()
-                        .enumerate()
-                        .map(|(i, (pp, (mem, ou)))| {
-                            [
-                                format!("{}", 1 + i + start),
-                                format!("{:.2}", pp),
-                                ou.username.clone().into_owned(),
-                                mem.clone(),
+                                RankQuery::PP.extract_row(mode, ou).to_string(),
+                                RankQuery::MapLength.extract_row(mode, ou).to_string(),
+                                ou.username.to_string(),
+                                mem.distinct(),
                             ]
                         })
                         .collect::<Vec<_>>();

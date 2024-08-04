@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap as Map;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -29,17 +30,16 @@ impl OsuSavedUsers {
 impl OsuSavedUsers {
     /// Get all users
     pub async fn all(&self) -> Result<Vec<OsuUser>> {
-        let mut conn = self.pool.acquire().await?;
-        model::OsuUser::all(&mut *conn)
-            .map(|v| v.map(OsuUser::from).map_err(Error::from))
-            .try_collect()
-            .await
+        Ok(model::OsuUser::all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|v| v.into())
+            .collect())
     }
 
     /// Get an user by their user_id.
     pub async fn by_user_id(&self, user_id: UserId) -> Result<Option<OsuUser>> {
-        let mut conn = self.pool.acquire().await?;
-        let u = model::OsuUser::by_user_id(user_id.get() as i64, &mut *conn)
+        let u = model::OsuUser::by_user_id(user_id.get() as i64, &self.pool)
             .await?
             .map(OsuUser::from);
         Ok(u)
@@ -47,15 +47,17 @@ impl OsuSavedUsers {
 
     /// Save the given user.
     pub async fn save(&self, u: OsuUser) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
-        Ok(model::OsuUser::from(u).store(&mut *conn).await?)
+        let mut tx = self.pool.begin().await?;
+        model::OsuUser::from(u).store(&mut tx).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     /// Save the given user as a completely new user.
     pub async fn new_user(&self, u: OsuUser) -> Result<()> {
         let mut t = self.pool.begin().await?;
         model::OsuUser::delete(u.user_id.get() as i64, &mut *t).await?;
-        model::OsuUser::from(u).store(&mut *t).await?;
+        model::OsuUser::from(u).store(&mut t).await?;
         t.commit().await?;
         Ok(())
     }
@@ -107,11 +109,17 @@ pub struct OsuUser {
     pub user_id: UserId,
     pub username: Cow<'static, str>,
     pub id: u64,
-    pub last_update: DateTime<Utc>,
-    pub pp: [Option<f64>; 4],
-    pub std_weighted_map_length: Option<f64>,
+    pub modes: Map<Mode, OsuUserMode>,
     /// More than 5 failures => gone
     pub failures: u8,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OsuUserMode {
+    pub pp: f64,
+    pub map_length: f64,
+    pub map_age: i64,
+    pub last_update: DateTime<Utc>,
 }
 
 impl From<OsuUser> for model::OsuUser {
@@ -120,12 +128,11 @@ impl From<OsuUser> for model::OsuUser {
             user_id: u.user_id.get() as i64,
             username: Some(u.username.into_owned()),
             id: u.id as i64,
-            last_update: u.last_update,
-            pp_std: u.pp[Mode::Std as usize],
-            pp_taiko: u.pp[Mode::Taiko as usize],
-            pp_catch: u.pp[Mode::Catch as usize],
-            pp_mania: u.pp[Mode::Mania as usize],
-            std_weighted_map_length: u.std_weighted_map_length,
+            modes: u
+                .modes
+                .into_iter()
+                .map(|(k, v)| (k as u8, v.into()))
+                .collect(),
             failures: u.failures,
         }
     }
@@ -137,15 +144,34 @@ impl From<model::OsuUser> for OsuUser {
             user_id: UserId::new(u.user_id as u64),
             username: u.username.map(Cow::Owned).unwrap_or("unknown".into()),
             id: u.id as u64,
-            last_update: u.last_update,
-            pp: [0, 1, 2, 3].map(|v| match Mode::from(v) {
-                Mode::Std => u.pp_std,
-                Mode::Taiko => u.pp_taiko,
-                Mode::Catch => u.pp_catch,
-                Mode::Mania => u.pp_mania,
-            }),
-            std_weighted_map_length: u.std_weighted_map_length,
+            modes: u
+                .modes
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
             failures: u.failures,
+        }
+    }
+}
+
+impl From<OsuUserMode> for model::OsuUserMode {
+    fn from(m: OsuUserMode) -> Self {
+        Self {
+            pp: m.pp,
+            map_length: m.map_length,
+            map_age: m.map_age,
+            last_update: m.last_update,
+        }
+    }
+}
+
+impl From<model::OsuUserMode> for OsuUserMode {
+    fn from(m: model::OsuUserMode) -> Self {
+        Self {
+            pp: m.pp,
+            map_length: m.map_length,
+            map_age: m.map_age,
+            last_update: m.last_update,
         }
     }
 }
