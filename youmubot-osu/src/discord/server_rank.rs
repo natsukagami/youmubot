@@ -46,6 +46,14 @@ impl RankQuery {
             RankQuery::MapAge { newest_first: _ } => "Map age",
         }
     }
+    fn pass_pp_limit(&self, mode: Mode, ou: &OsuUser) -> bool {
+        match self {
+            RankQuery::PP | RankQuery::TotalPP => true,
+            RankQuery::MapAge { newest_first: _ } | RankQuery::MapLength => {
+                ou.modes.get(&mode).is_some_and(|v| v.pp >= 500.0)
+            }
+        }
+    }
     fn extract_row(&self, mode: Mode, ou: &OsuUser) -> Cow<'static, str> {
         match self {
             RankQuery::PP => ou
@@ -110,6 +118,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         .all()
         .await?
         .into_iter()
+        .filter(|v| query.pass_pp_limit(mode, v))
         .map(|v| (v.user_id, v))
         .collect::<HashMap<_, _>>();
     let mut users = env
