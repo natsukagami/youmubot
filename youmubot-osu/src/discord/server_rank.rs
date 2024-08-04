@@ -83,12 +83,12 @@ impl FromStr for RankQuery {
 #[command("ranks")]
 #[description = "See the server's ranks"]
 #[usage = "[mode (Std, Taiko, Catch, Mania) = Std]"]
-#[max_args(1)]
+#[max_args(2)]
 #[only_in(guilds)]
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
     let mode = args.find::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
-    let query = args.single::<RankQuery>().unwrap_or_default();
+    let query = args.find::<RankQuery>().unwrap_or_default();
     let guild = m.guild_id.expect("Guild-only command");
 
     let mut users = env
@@ -124,6 +124,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     .map(|v| v.pp)
                     .partial_cmp(&b.modes.get(&mode).map(|v| v.pp))
                     .unwrap()
+                    .reverse()
             }),
             RankQuery::TotalPP => Box::new(|(_, a), (_, b)| {
                 a.modes
@@ -132,6 +133,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     .sum::<f64>()
                     .partial_cmp(&b.modes.values().map(|v| v.pp).sum())
                     .unwrap()
+                    .reverse()
             }),
             RankQuery::MapLength => Box::new(|(_, a), (_, b)| {
                 a.modes
@@ -139,6 +141,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     .map(|v| v.map_length)
                     .partial_cmp(&b.modes.get(&mode).map(|v| v.map_length))
                     .unwrap()
+                    .reverse()
             }),
         };
     users.sort_unstable_by(sort_fn);
@@ -165,25 +168,56 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     return Ok(false);
                 }
                 let users = &users[start..end];
-                let table = {
-                    const HEADERS: [&'static str; 5] =
-                        ["#", "pp", "Map length", "Username", "Member"];
-                    const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
+                let table = match query {
+                    RankQuery::PP | RankQuery::MapLength => {
+                        let (headers, first_col, second_col) = if query == RankQuery::PP {
+                            (
+                                ["#", "pp", "Map length", "Username", "Member"],
+                                RankQuery::PP,
+                                RankQuery::MapLength,
+                            )
+                        } else {
+                            (
+                                ["#", "Map length", "pp", "Username", "Member"],
+                                RankQuery::MapLength,
+                                RankQuery::PP,
+                            )
+                        };
+                        const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
 
-                    let table = users
-                        .iter()
-                        .enumerate()
-                        .map(|(i, (mem, ou))| {
-                            [
-                                format!("{}", 1 + i + start),
-                                RankQuery::PP.extract_row(mode, ou).to_string(),
-                                RankQuery::MapLength.extract_row(mode, ou).to_string(),
-                                ou.username.to_string(),
-                                mem.distinct(),
-                            ]
-                        })
-                        .collect::<Vec<_>>();
-                    table_formatting(&HEADERS, &ALIGNS, table)
+                        let table = users
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (mem, ou))| {
+                                [
+                                    format!("{}", 1 + i + start),
+                                    first_col.extract_row(mode, ou).to_string(),
+                                    second_col.extract_row(mode, ou).to_string(),
+                                    ou.username.to_string(),
+                                    mem.distinct(),
+                                ]
+                            })
+                            .collect::<Vec<_>>();
+                        table_formatting(&headers, &ALIGNS, table)
+                    }
+                    RankQuery::TotalPP => {
+                        const HEADERS: [&'static str; 4] = ["#", "Total pp", "Username", "Member"];
+                        const ALIGNS: [Align; 4] = [Right, Right, Left, Left];
+
+                        let table = users
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (mem, ou))| {
+                                [
+                                    format!("{}", 1 + i + start),
+                                    query.extract_row(mode, ou).to_string(),
+                                    ou.username.to_string(),
+                                    mem.distinct(),
+                                ]
+                            })
+                            .collect::<Vec<_>>();
+                        table_formatting(&HEADERS, &ALIGNS, table)
+                    }
                 };
                 let content = MessageBuilder::new()
                     .push_line(table)
