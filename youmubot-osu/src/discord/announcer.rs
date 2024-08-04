@@ -19,6 +19,7 @@ use youmubot_prelude::announcer::CacheAndHttp;
 use youmubot_prelude::stream::TryStreamExt;
 use youmubot_prelude::*;
 
+use crate::discord::calculate_weighted_map_age;
 use crate::discord::db::OsuUserMode;
 use crate::{
     discord::cache::save_beatmap,
@@ -114,7 +115,10 @@ impl Announcer {
                     .await
                     .pls_ok()
                     .unwrap_or(0.0),
-                map_age: 0, // soon
+                map_age: calculate_weighted_map_age(&top, &env.beatmaps, mode)
+                    .await
+                    .pls_ok()
+                    .unwrap_or(0),
                 last_update: now,
             };
             let last = user.modes.insert(mode, stats);

@@ -1,6 +1,7 @@
 use std::{borrow::Borrow, collections::HashMap as Map, str::FromStr, sync::Arc};
 
 use chrono::Utc;
+use future::try_join;
 use futures_util::join;
 use interaction::{beatmap_components, score_components};
 use rand::seq::IteratorRandom;
@@ -19,6 +20,7 @@ use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserMode};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
+use stream::FuturesOrdered;
 use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::{stream::FuturesUnordered, *};
 
@@ -378,7 +380,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
                     .unwrap_or(None)
                     .and_then(|u| u.pp)
             };
-            let map_length = async {
+            let map_length_age = async {
                 let scores = env
                     .client
                     .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
@@ -386,22 +388,29 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
                     .pls_ok()
                     .unwrap_or_else(|| vec![]);
 
-                calculate_weighted_map_length(&scores, &env.beatmaps, mode)
-                    .await
-                    .pls_ok()
-            };
-            let (pp, map_length) = join!(pp, map_length);
-            pp.zip(map_length).map(|(pp, map_length)| {
                 (
-                    mode,
-                    OsuUserMode {
-                        pp,
-                        map_length,
-                        map_age: 0, // TODO
-                        last_update: Utc::now(),
-                    },
+                    calculate_weighted_map_length(&scores, &env.beatmaps, mode)
+                        .await
+                        .pls_ok(),
+                    calculate_weighted_map_age(&scores, &env.beatmaps, mode)
+                        .await
+                        .pls_ok(),
                 )
-            })
+            };
+            let (pp, (map_length, map_age)) = join!(pp, map_length_age);
+            pp.zip(map_length)
+                .zip(map_age)
+                .map(|((pp, map_length), map_age)| {
+                    (
+                        mode,
+                        OsuUserMode {
+                            pp,
+                            map_length,
+                            map_age,
+                            last_update: Utc::now(),
+                        },
+                    )
+                })
         })
         .collect::<stream::FuturesOrdered<_>>()
         .filter_map(|v| future::ready(v))
@@ -837,7 +846,9 @@ async fn get_user(
             let bests = osu_client
                 .user_best(UserID::ID(u.id), |f| f.limit(100).mode(mode))
                 .await?;
-            let map_length = calculate_weighted_map_length(&bests, meta_cache, mode).await?;
+            let map_length = calculate_weighted_map_length(&bests, meta_cache, mode);
+            let map_age = calculate_weighted_map_age(&bests, meta_cache, mode);
+            let (map_length, map_age) = try_join(map_length, map_age).await?;
             let best = match bests.into_iter().next() {
                 Some(m) => {
                     let beatmap = meta_cache.get_beatmap(m.beatmap_id, mode).await?;
@@ -858,7 +869,7 @@ async fn get_user(
                             "{}: here is the user that you requested",
                             msg.author
                         ))
-                        .embed(user_embed(u, map_length, best)),
+                        .embed(user_embed(u, map_length, map_age, best)),
                 )
                 .await?;
         }
@@ -890,4 +901,37 @@ pub(in crate::discord) async fn calculate_weighted_map_length(
         .collect::<FuturesUnordered<_>>()
         .try_fold(0.0, |a, b| future::ready(Ok(a + b)))
         .await
+}
+
+pub(in crate::discord) async fn calculate_weighted_map_age(
+    from_scores: impl IntoIterator<Item = &Score>,
+    cache: &BeatmapMetaCache,
+    mode: Mode,
+) -> Result<i64> {
+    const SCALING_FACTOR: f64 = 0.95;
+    let scales = (0..100)
+        .scan(1.0, |a, _| Some(*a * SCALING_FACTOR))
+        .collect::<Vec<_>>();
+    let scores = from_scores
+        .into_iter()
+        .map(|s| async move {
+            let beatmap = cache.get_beatmap(s.beatmap_id, mode).await?;
+            Ok(
+                if let crate::ApprovalStatus::Ranked(at) = beatmap.approval {
+                    at.timestamp() as f64
+                } else {
+                    0.0
+                },
+            ) as Result<_>
+        })
+        .collect::<FuturesOrdered<_>>()
+        .try_collect::<Vec<_>>()
+        .await?;
+    Ok((scores
+        .iter()
+        .zip(scales.iter())
+        .map(|(a, b)| a * b)
+        .sum::<f64>()
+        / scales.iter().take(scores.len()).sum::<f64>())
+    .floor() as i64)
 }
