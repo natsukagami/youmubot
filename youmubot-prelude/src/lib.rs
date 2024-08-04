@@ -88,6 +88,8 @@ pub mod prelude_commands {
 }
 
 mod debugging_ok {
+    use std::backtrace::{Backtrace, BacktraceStatus};
+
     pub trait OkPrint {
         type Output;
         fn pls_ok(self) -> Option<Self::Output>;
@@ -101,6 +103,10 @@ mod debugging_ok {
                 Ok(v) => Some(v),
                 Err(e) => {
                     eprintln!("Error: {:?}", e);
+                    let captures = Backtrace::capture();
+                    if captures.status() == BacktraceStatus::Captured {
+                        eprintln!("{}", captures);
+                    }
                     None
                 }
             }

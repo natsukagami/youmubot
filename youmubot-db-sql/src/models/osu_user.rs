@@ -182,7 +182,22 @@ impl OsuUser {
 
 impl OsuUser {
     /// Stores the user.
-    pub async fn store<'a>(&self, conn: &mut Transaction<'a, Database>) -> Result<()> {
+    pub async fn store<'a>(&self, conn: &mut Transaction<'a, Database>) -> Result<bool> {
+        let old_user_id = {
+            query!(
+                r#"SELECT id as "id: i64" FROM osu_users WHERE user_id = ?"#,
+                self.user_id
+            )
+            .fetch_optional(&mut **conn)
+            .await?
+            .map(|v| v.id)
+        };
+
+        if old_user_id.is_some_and(|v| v != self.id) {
+            // There's another update that changed the user_id
+            return Ok(false);
+        }
+
         query!(
             r#"INSERT
                INTO osu_users(user_id, username, id, failures)
@@ -221,7 +236,7 @@ impl OsuUser {
             .execute(&mut **conn)
             .await?;
         }
-        Ok(())
+        Ok(true)
     }
 
     pub async fn delete(user_id: i64, conn: impl Executor<'_, Database = Database>) -> Result<()> {

@@ -46,18 +46,21 @@ impl OsuSavedUsers {
     }
 
     /// Save the given user.
-    pub async fn save(&self, u: OsuUser) -> Result<()> {
+    pub async fn save(&self, u: OsuUser) -> Result<bool> {
         let mut tx = self.pool.begin().await?;
-        model::OsuUser::from(u).store(&mut tx).await?;
+        let updated = model::OsuUser::from(u).store(&mut tx).await?;
         tx.commit().await?;
-        Ok(())
+        Ok(updated)
     }
 
     /// Save the given user as a completely new user.
     pub async fn new_user(&self, u: OsuUser) -> Result<()> {
         let mut t = self.pool.begin().await?;
         model::OsuUser::delete(u.user_id.get() as i64, &mut *t).await?;
-        model::OsuUser::from(u).store(&mut t).await?;
+        assert!(
+            model::OsuUser::from(u).store(&mut t).await?,
+            "Should be updated"
+        );
         t.commit().await?;
         Ok(())
     }
