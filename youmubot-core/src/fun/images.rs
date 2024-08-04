@@ -8,7 +8,7 @@ use serenity::{
     },
     model::channel::{Channel, Message},
 };
-use std::string::ToString;
+use std::fmt::Display;
 use youmubot_prelude::*;
 
 #[command]
@@ -108,8 +108,7 @@ async fn get_image(
     let req = client
         .get(format!(
             "https://danbooru.donmai.us/posts.json?tags=rating:{}+{}",
-            rating.to_string(),
-            tags
+            rating, tags
         ))
         .query(&[("limit", "50"), ("random", "true")])
         .build()?;
@@ -133,13 +132,12 @@ enum Rating {
     Safe,
 }
 
-impl ToString for Rating {
-    fn to_string(&self) -> String {
+impl Display for Rating {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Rating::*;
-        match self {
+        f.write_str(match self {
             Explicit => "explicit",
             Safe => "safe",
-        }
-        .to_owned()
+        })
     }
 }

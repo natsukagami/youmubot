@@ -34,11 +34,11 @@ mod scores {
     }
 
     impl ScoreListStyle {
-        pub async fn display_scores<'a>(
+        pub async fn display_scores(
             self,
             scores: Vec<Score>,
             mode: Mode,
-            ctx: &'a Context,
+            ctx: &Context,
             guild_id: Option<GuildId>,
             m: Message,
         ) -> Result<()> {
@@ -63,10 +63,10 @@ mod scores {
         use crate::discord::{cache::save_beatmap, BeatmapWithMode, OsuEnv};
         use crate::models::{Mode, Score};
 
-        pub async fn display_scores_grid<'a>(
+        pub async fn display_scores_grid(
             scores: Vec<Score>,
             mode: Mode,
-            ctx: &'a Context,
+            ctx: &Context,
             guild_id: Option<GuildId>,
             mut on: Message,
         ) -> Result<()> {
@@ -153,10 +153,10 @@ mod scores {
         use crate::discord::{Beatmap, BeatmapInfo, OsuEnv};
         use crate::models::{Mode, Score};
 
-        pub async fn display_scores_table<'a>(
+        pub async fn display_scores_table(
             scores: Vec<Score>,
             mode: Mode,
-            ctx: &'a Context,
+            ctx: &Context,
             mut on: Message,
         ) -> Result<()> {
             if scores.is_empty() {
@@ -298,8 +298,7 @@ mod scores {
                     })
                     .collect::<Vec<_>>();
 
-                const SCORE_HEADERS: [&str; 6] =
-                    ["#", "PP", "Acc", "Ranks", "Mods", "Beatmap"];
+                const SCORE_HEADERS: [&str; 6] = ["#", "PP", "Acc", "Ranks", "Mods", "Beatmap"];
                 const SCORE_ALIGNS: [Align; 6] = [Right, Right, Right, Right, Right, Left];
 
                 let score_arr = plays

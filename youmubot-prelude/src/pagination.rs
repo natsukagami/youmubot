@@ -241,7 +241,7 @@ pub async fn paginate_with_first_message(
     };
 
     for reaction in reactions {
-        if let None = reaction.delete_all(&ctx).await.pls_ok() {
+        if reaction.delete_all(&ctx).await.pls_ok().is_none() {
             // probably no permission to delete all reactions, fall back to delete my own.
             reaction.delete(&ctx).await.pls_ok();
         }

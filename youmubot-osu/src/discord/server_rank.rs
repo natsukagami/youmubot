@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc};
+use std::{borrow::Cow, cmp::Ordering, collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::DateTime;
 use pagination::paginate_with_first_message;
@@ -139,47 +139,48 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
             }
         })
         .min();
-    let sort_fn: Box<dyn Fn(&(Member, OsuUser), &(Member, OsuUser)) -> std::cmp::Ordering> =
-        match query {
-            RankQuery::PP => Box::new(|(_, a), (_, b)| {
-                a.modes
-                    .get(&mode)
-                    .map(|v| v.pp)
-                    .partial_cmp(&b.modes.get(&mode).map(|v| v.pp))
-                    .unwrap()
-                    .reverse()
-            }),
-            RankQuery::TotalPP => Box::new(|(_, a), (_, b)| {
-                a.modes
-                    .values()
-                    .map(|v| v.pp)
-                    .sum::<f64>()
-                    .partial_cmp(&b.modes.values().map(|v| v.pp).sum())
-                    .unwrap()
-                    .reverse()
-            }),
-            RankQuery::MapLength => Box::new(|(_, a), (_, b)| {
-                a.modes
-                    .get(&mode)
-                    .map(|v| v.map_length)
-                    .partial_cmp(&b.modes.get(&mode).map(|v| v.map_length))
-                    .unwrap()
-                    .reverse()
-            }),
-            RankQuery::MapAge { newest_first } => Box::new(move |(_, a), (_, b)| {
-                let r = a
-                    .modes
-                    .get(&mode)
-                    .map(|v| v.map_age)
-                    .partial_cmp(&b.modes.get(&mode).map(|v| v.map_age))
-                    .unwrap();
-                if newest_first {
-                    r.reverse()
-                } else {
-                    r
-                }
-            }),
-        };
+    type Item = (Member, OsuUser);
+    #[allow(clippy::type_complexity)]
+    let sort_fn: Box<dyn Fn(&Item, &Item) -> Ordering> = match query {
+        RankQuery::PP => Box::new(|(_, a), (_, b)| {
+            a.modes
+                .get(&mode)
+                .map(|v| v.pp)
+                .partial_cmp(&b.modes.get(&mode).map(|v| v.pp))
+                .unwrap()
+                .reverse()
+        }),
+        RankQuery::TotalPP => Box::new(|(_, a), (_, b)| {
+            a.modes
+                .values()
+                .map(|v| v.pp)
+                .sum::<f64>()
+                .partial_cmp(&b.modes.values().map(|v| v.pp).sum())
+                .unwrap()
+                .reverse()
+        }),
+        RankQuery::MapLength => Box::new(|(_, a), (_, b)| {
+            a.modes
+                .get(&mode)
+                .map(|v| v.map_length)
+                .partial_cmp(&b.modes.get(&mode).map(|v| v.map_length))
+                .unwrap()
+                .reverse()
+        }),
+        RankQuery::MapAge { newest_first } => Box::new(move |(_, a), (_, b)| {
+            let r = a
+                .modes
+                .get(&mode)
+                .map(|v| v.map_age)
+                .partial_cmp(&b.modes.get(&mode).map(|v| v.map_age))
+                .unwrap();
+            if newest_first {
+                r.reverse()
+            } else {
+                r
+            }
+        }),
+    };
     users.sort_unstable_by(sort_fn);
 
     if users.is_empty() {
@@ -465,7 +466,7 @@ pub async fn get_leaderboard(
         OrderBy::PP => scores.sort_by(|a, b| {
             (b.official, b.pp)
                 .partial_cmp(&(a.official, a.pp))
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(Ordering::Equal)
         }),
         OrderBy::Score => {
             scores.sort_by(|a, b| b.score.normalized_score.cmp(&a.score.normalized_score))
