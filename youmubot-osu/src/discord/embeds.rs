@@ -457,8 +457,28 @@ impl<'a> ScoreEmbedBuilder<'a> {
 pub(crate) fn user_embed(
     u: User,
     map_length: f64,
+    map_age: i64,
     best: Option<(Score, BeatmapWithMode, BeatmapInfo)>,
 ) -> CreateEmbed {
+    let mut stats = Vec::<(&'static str, String, bool)>::new();
+    if map_length > 0.0 {
+        stats.push((
+            "Weighted Map Length",
+            {
+                let secs = map_length.floor() as u64;
+                let minutes = secs / 60;
+                let seconds = map_length - (60 * minutes) as f64;
+                format!(
+                    "**{}**mins **{:05.2}**s (**{:.2}**s)",
+                    minutes, seconds, map_length
+                )
+            },
+            true,
+        ))
+    }
+    if map_age > 0 {
+        stats.push(("Weighted Map Age", format!("<t:{}:F>", map_age), true))
+    }
     CreateEmbed::new()
         .title(MessageBuilder::new().push_safe(u.username).build())
         .url(format!("https://osu.ppy.sh/users/{}", u.id))
@@ -504,19 +524,7 @@ pub(crate) fn user_embed(
             ),
             false,
         )
-        .field(
-            "Weighted Map Length",
-            {
-                let secs = map_length.floor() as u64;
-                let minutes = secs / 60;
-                let seconds = map_length - (60 * minutes) as f64;
-                format!(
-                    "**{}** minutes **{:05.2}** seconds (**{:.2}**s)",
-                    minutes, seconds, map_length
-                )
-            },
-            false,
-        )
+        .fields(stats)
         .field(
             format!("Level {:.0}", u.level),
             format!(

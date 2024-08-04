@@ -1,5 +1,6 @@
 use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc};
 
+use chrono::DateTime;
 use pagination::paginate_with_first_message;
 use serenity::{
     all::{GuildId, Member},
@@ -31,17 +32,20 @@ enum RankQuery {
     PP,
     TotalPP,
     MapLength,
-    // MapAge,
+    MapAge {
+        newest_first: bool,
+    },
 }
 
 impl RankQuery {
-    // fn col_name(&self) -> &'static str {
-    //     match self {
-    //         RankQuery::PP => "pp",
-    //         RankQuery::TotalPP => "Total pp",
-    //         RankQuery::MapLength => "Map length",
-    //     }
-    // }
+    fn col_name(&self) -> &'static str {
+        match self {
+            RankQuery::PP => "pp",
+            RankQuery::TotalPP => "Total pp",
+            RankQuery::MapLength => "Map length",
+            RankQuery::MapAge { newest_first: _ } => "Map age",
+        }
+    }
     fn extract_row(&self, mode: Mode, ou: &OsuUser) -> Cow<'static, str> {
         match self {
             RankQuery::PP => ou
@@ -63,6 +67,12 @@ impl RankQuery {
                     format!("{}m{:05.2}s", minutes, seconds).into()
                 })
                 .unwrap_or_else(|| "-".into()),
+            RankQuery::MapAge { newest_first: _ } => ou
+                .modes
+                .get(&mode)
+                .and_then(|v| DateTime::from_timestamp(v.map_age, 0))
+                .map(|time| time.format("%F %T").to_string().into())
+                .unwrap_or_else(|| "-".into()),
         }
     }
 }
@@ -75,6 +85,10 @@ impl FromStr for RankQuery {
             "pp" => Ok(RankQuery::PP),
             "total" | "total-pp" => Ok(RankQuery::TotalPP),
             "map-length" => Ok(RankQuery::MapLength),
+            "age" | "map-age" => Ok(RankQuery::MapAge { newest_first: true }),
+            "old" | "age-old" | "map-age-old" => Ok(RankQuery::MapAge {
+                newest_first: false,
+            }),
             _ => Err(format!("not a query: {}", s)),
         }
     }
@@ -143,6 +157,19 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     .unwrap()
                     .reverse()
             }),
+            RankQuery::MapAge { newest_first } => Box::new(move |(_, a), (_, b)| {
+                let r = a
+                    .modes
+                    .get(&mode)
+                    .map(|v| v.map_age)
+                    .partial_cmp(&b.modes.get(&mode).map(|v| v.map_age))
+                    .unwrap();
+                if newest_first {
+                    r.reverse()
+                } else {
+                    r
+                }
+            }),
         };
     users.sort_unstable_by(sort_fn);
 
@@ -169,20 +196,8 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 }
                 let users = &users[start..end];
                 let table = match query {
-                    RankQuery::PP | RankQuery::MapLength => {
-                        let (headers, first_col, second_col) = if query == RankQuery::PP {
-                            (
-                                ["#", "pp", "Map length", "Username", "Member"],
-                                RankQuery::PP,
-                                RankQuery::MapLength,
-                            )
-                        } else {
-                            (
-                                ["#", "Map length", "pp", "Username", "Member"],
-                                RankQuery::MapLength,
-                                RankQuery::PP,
-                            )
-                        };
+                    RankQuery::MapAge { newest_first: _ } | RankQuery::MapLength => {
+                        let headers = ["#", query.col_name(), "pp", "Username", "Member"];
                         const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
 
                         let table = users
@@ -191,14 +206,39 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                             .map(|(i, (mem, ou))| {
                                 [
                                     format!("{}", 1 + i + start),
-                                    first_col.extract_row(mode, ou).to_string(),
-                                    second_col.extract_row(mode, ou).to_string(),
+                                    query.extract_row(mode, ou).to_string(),
+                                    RankQuery::PP.extract_row(mode, ou).to_string(),
                                     ou.username.to_string(),
                                     mem.distinct(),
                                 ]
                             })
                             .collect::<Vec<_>>();
                         table_formatting(&headers, &ALIGNS, table)
+                    }
+                    RankQuery::PP => {
+                        const HEADERS: [&'static str; 6] =
+                            ["#", "pp", "Map length", "Map age", "Username", "Member"];
+                        const ALIGNS: [Align; 6] = [Right, Right, Right, Right, Left, Left];
+
+                        let table = users
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (mem, ou))| {
+                                [
+                                    format!("{}", 1 + i + start),
+                                    RankQuery::PP.extract_row(mode, ou).to_string(),
+                                    RankQuery::MapLength.extract_row(mode, ou).to_string(),
+                                    (RankQuery::MapAge {
+                                        newest_first: false,
+                                    })
+                                    .extract_row(mode, ou)
+                                    .to_string(),
+                                    ou.username.to_string(),
+                                    mem.distinct(),
+                                ]
+                            })
+                            .collect::<Vec<_>>();
+                        table_formatting(&HEADERS, &ALIGNS, table)
                     }
                     RankQuery::TotalPP => {
                         const HEADERS: [&'static str; 4] = ["#", "Total pp", "Username", "Member"];
