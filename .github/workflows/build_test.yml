@@ -15,9 +15,9 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
-            - uses: actions-rs/toolchain@v1
+            - uses: dtolnay/rust-toolchain@stable
               with:
-                  toolchain: stable
+                  toolchain: 1.78.0
                   components: rustfmt
             - name: Run rustfmt
               run: cargo fmt -- --check
@@ -26,10 +26,10 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
-            - uses: actions-rs/toolchain@v1
+            - uses: dtolnay/rust-toolchain@stable
               id: cargo
               with:
-                  toolchain: stable
+                  toolchain: 1.78.0
                   components: clippy
             - uses: actions/cache@v2
               with:
@@ -51,10 +51,10 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
-            - uses: actions-rs/toolchain@v1
+            - uses: dtolnay/rust-toolchain@stable
               id: cargo
               with:
-                  toolchain: stable
+                  toolchain: 1.78.0
                   components: clippy
             - uses: actions/cache@v2
               with:
@@ -75,10 +75,10 @@ jobs:
             - uses: cachix/install-nix-action@v27
               with:
                 github_access_token: ${{ secrets.GITHUB_TOKEN }}
-            - uses: actions-rs/toolchain@v1
+            - uses: dtolnay/rust-toolchain@stable
               id: cargo
               with:
-                  toolchain: stable
+                  toolchain: 1.78.0
                   components: clippy
             - uses: cachix/cachix-action@v15
               with:
