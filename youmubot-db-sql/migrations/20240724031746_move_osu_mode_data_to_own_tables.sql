@@ -1,7 +1,7 @@
 -- Add migration script here
 
 CREATE TABLE osu_user_mode_stats (
-  user_id INT NOT NULL REFERENCES osu_users (user_id),
+  user_id INT NOT NULL REFERENCES osu_users (user_id) ON DELETE CASCADE,
   mode INT NOT NULL,
   pp REAL NOT NULL DEFAULT 0,
   map_length REAL NOT NULL DEFAULT 0,
