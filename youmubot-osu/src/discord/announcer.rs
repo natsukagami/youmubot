@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use future::Future;
 use futures_util::try_join;
+use serenity::all::Member;
 use std::pin::Pin;
 use std::sync::Arc;
 use stream::FuturesUnordered;
@@ -145,7 +146,7 @@ impl Announcer {
                         .collect::<Vec<_>>()
                         .await
                         .into_iter();
-                    top.chain(recents)
+                    CollectedScore::merge(top.chain(recents))
                         .map(|v| v.send_message(&ctx, &env, mention, &broadcast_to))
                         .collect::<FuturesUnordered<_>>()
                         .filter_map(|v| future::ready(v.pls_ok().map(|_| ())))
@@ -206,6 +207,7 @@ impl Announcer {
         let events = std::mem::take(&mut user.events)
             .into_iter()
             .filter_map(|v| v.to_event_rank())
+            .filter(|s| s.mode == mode)
             .filter(|s| Self::is_announceable_date(s.date, last_update, now))
             .collect::<Vec<_>>();
         Ok((user, top_scores, events))
@@ -220,12 +222,27 @@ struct CollectedScore<'a> {
 }
 
 impl<'a> CollectedScore<'a> {
+    fn merge(scores: impl IntoIterator<Item = Self>) -> impl Iterator<Item = Self> {
+        let mut mp = std::collections::HashMap::<u64, Self>::new();
+        scores
+            .into_iter()
+            .filter_map(|s| s.score.id.map(|id| (id, s)))
+            .for_each(|(id, s)| {
+                mp.entry(id)
+                    .and_modify(|v| {
+                        v.kind = v.kind.merge(s.kind);
+                    })
+                    .or_insert(s);
+            });
+        mp.into_values()
+    }
+
     fn from_top_score(user: &'a User, score: Score, mode: Mode, rank: u8) -> Self {
         Self {
             user,
             score,
             mode,
-            kind: ScoreType::TopRecord(rank),
+            kind: ScoreType::top(rank),
         }
     }
 
@@ -255,7 +272,7 @@ impl<'a> CollectedScore<'a> {
             user,
             score,
             mode: event.mode,
-            kind: ScoreType::WorldRecord(event.rank),
+            kind: ScoreType::world(event.rank),
         })
     }
 }
@@ -314,31 +331,20 @@ impl<'a> CollectedScore<'a> {
             .send_message(
                 &ctx,
                 CreateMessage::new()
-                    .content(match self.kind {
-                        ScoreType::TopRecord(rank) => {
-                            if rank <= 25 {
-                                format!("New leaderboard record from {}!", mention.mention())
-                            } else {
-                                format!("New leaderboard record from **{}**!", member.distinct())
-                            }
-                        }
-                        ScoreType::WorldRecord(rank) => {
-                            if (self.mode == Mode::Std && rank <= 100)
-                                || (self.mode != Mode::Std && rank <= 50)
-                            {
-                                format!("New leaderboard record from {}!", mention.mention())
-                            } else {
-                                format!("New leaderboard record from **{}**!", member.distinct())
-                            }
-                        }
-                    })
+                    .content(self.kind.announcement_msg(self.mode, &member))
                     .embed({
                         let mut b = score_embed(&self.score, bm, content, self.user);
-                        match self.kind {
-                            ScoreType::TopRecord(rank) => b.top_record(rank),
-                            ScoreType::WorldRecord(rank) => b.world_record(rank),
-                        }
-                        .build()
+                        let b = if let Some(rank) = self.kind.top_record {
+                            b.top_record(rank)
+                        } else {
+                            &mut b
+                        };
+                        let b = if let Some(rank) = self.kind.world_record {
+                            b.world_record(rank)
+                        } else {
+                            b
+                        };
+                        b.build()
                     })
                     .components(vec![score_components(Some(guild))]),
             )
@@ -349,7 +355,49 @@ impl<'a> CollectedScore<'a> {
     }
 }
 
-enum ScoreType {
-    TopRecord(u8),
-    WorldRecord(u16),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ScoreType {
+    pub top_record: Option<u8>,
+    pub world_record: Option<u16>,
+}
+
+impl ScoreType {
+    fn top(rank: u8) -> Self {
+        Self {
+            top_record: Some(rank),
+            world_record: None,
+        }
+    }
+    fn world(rank: u16) -> Self {
+        Self {
+            top_record: None,
+            world_record: Some(rank),
+        }
+    }
+
+    fn merge(self, other: Self) -> Self {
+        Self {
+            top_record: self.top_record.or(other.top_record),
+            world_record: self.world_record.or(other.world_record),
+        }
+    }
+
+    fn announcement_msg(&self, mode: Mode, mention: &Member) -> String {
+        let mention_user = self.top_record.is_some_and(|r| r <= 25)
+            || self
+                .world_record
+                .is_some_and(|w| if mode == Mode::Std { w <= 100 } else { w <= 50 });
+        let title = if self.top_record.is_some() {
+            "New top record"
+        } else if self.world_record.is_some() {
+            "New leaderboard record"
+        } else {
+            "New record"
+        };
+        if mention_user {
+            format!("{} from {}!", title, mention.mention())
+        } else {
+            format!("{} from **{}**!", title, mention.distinct())
+        }
+    }
 }
