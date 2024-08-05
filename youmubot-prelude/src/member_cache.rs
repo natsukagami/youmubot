@@ -88,11 +88,11 @@ impl MemberCache {
     ) -> crate::Result<Arc<[Member]>> {
         let now = Utc::now();
         let mut map = self.per_guild.lock().await;
-        let entry = map.entry(guild_id);
+        let entry = map.get(&guild_id);
         // Check cache
-        if let Entry::Occupied(oe) = &entry {
-            if oe.get().timeout > now {
-                return match &oe.get().value {
+        if let Some(oe) = &entry {
+            if oe.timeout > now {
+                return match &oe.value {
                     Some(v) => Ok(v.clone()),
                     None => bail!("guild members for {} unavailable", guild_id),
                 };
@@ -105,17 +105,18 @@ impl MemberCache {
             .await
             .ok()
             .map(|v| v.into());
-        match &entry
-            .or_insert(Expiring::new(
+        map.insert(
+            guild_id,
+            Expiring::new(
                 members.clone(),
                 now + chrono::Duration::seconds(if members.is_some() {
                     VALID_CACHE_SECONDS
                 } else {
                     INVALID_CACHE_SECONDS
                 }),
-            ))
-            .value
-        {
+            ),
+        );
+        match members {
             Some(v) => Ok(v.clone()),
             None => bail!("guild members for {} unavailable", guild_id),
         }
