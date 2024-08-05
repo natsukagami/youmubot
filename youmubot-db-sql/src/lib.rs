@@ -18,7 +18,8 @@ pub async fn connect(path: impl AsRef<Path>) -> Result<Pool> {
             .filename(path)
             .foreign_keys(true)
             .create_if_missing(true)
-            .journal_mode(sqlite::SqliteJournalMode::Wal),
+            .journal_mode(sqlite::SqliteJournalMode::Wal)
+            .synchronous(sqlite::SqliteSynchronous::Normal),
     )
     .await?;
 

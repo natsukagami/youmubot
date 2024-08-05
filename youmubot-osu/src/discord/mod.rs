@@ -22,7 +22,7 @@ pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
 use stream::FuturesOrdered;
 use youmubot_prelude::announcer::AnnouncerHandler;
-use youmubot_prelude::{stream::FuturesUnordered, *};
+use youmubot_prelude::*;
 
 use crate::{
     discord::beatmap_cache::BeatmapMetaCache,
@@ -880,27 +880,41 @@ async fn get_user(
     Ok(())
 }
 
+const SCALING_FACTOR: f64 = 0.975;
+static SCALES: std::sync::OnceLock<Box<[f64]>> = std::sync::OnceLock::new();
+fn scales() -> &'static [f64] {
+    SCALES.get_or_init(|| {
+        (0..256)
+            .map(|r| SCALING_FACTOR.powi(r))
+            // .scan(1.0, |a, _| {
+            //     let old = *a;
+            //     *a *= SCALING_FACTOR;
+            //     Some(old)
+            // })
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    })
+}
+
 pub(in crate::discord) async fn calculate_weighted_map_length(
     from_scores: impl IntoIterator<Item = &Score>,
     cache: &BeatmapMetaCache,
     mode: Mode,
 ) -> Result<f64> {
-    from_scores
+    let scores = from_scores
         .into_iter()
-        .enumerate()
-        .map(|(i, s)| async move {
+        .map(|s| async move {
             let beatmap = cache.get_beatmap(s.beatmap_id, mode).await?;
-            const SCALING_FACTOR: f64 = 0.975;
             Ok(beatmap
                 .difficulty
                 .apply_mods(s.mods, 0.0 /* dont care */)
                 .drain_length
-                .as_secs_f64()
-                * (SCALING_FACTOR.powi(i as i32)))
+                .as_secs_f64()) as Result<_>
         })
-        .collect::<FuturesUnordered<_>>()
-        .try_fold(0.0, |a, b| future::ready(Ok(a + b)))
-        .await
+        .collect::<FuturesOrdered<_>>()
+        .try_collect::<Vec<_>>()
+        .await?;
+    Ok(scores.into_iter().zip(scales()).map(|(a, b)| a * b).sum())
 }
 
 pub(in crate::discord) async fn calculate_weighted_map_age(
@@ -908,10 +922,6 @@ pub(in crate::discord) async fn calculate_weighted_map_age(
     cache: &BeatmapMetaCache,
     mode: Mode,
 ) -> Result<i64> {
-    const SCALING_FACTOR: f64 = 0.95;
-    let scales = (0..100)
-        .scan(1.0, |a, _| Some(*a * SCALING_FACTOR))
-        .collect::<Vec<_>>();
     let scores = from_scores
         .into_iter()
         .map(|s| async move {
@@ -929,9 +939,9 @@ pub(in crate::discord) async fn calculate_weighted_map_age(
         .await?;
     Ok((scores
         .iter()
-        .zip(scales.iter())
+        .zip(scales().iter())
         .map(|(a, b)| a * b)
         .sum::<f64>()
-        / scales.iter().take(scores.len()).sum::<f64>())
+        / scales().iter().take(scores.len()).sum::<f64>())
     .floor() as i64)
 }
