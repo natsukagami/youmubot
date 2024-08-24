@@ -192,10 +192,18 @@ impl Mods {
                 DoubleTimeTaiko(dt) => fmt_speed_change("DT", &dt.speed_change, &dt.adjust_pitch),
                 DoubleTimeCatch(dt) => fmt_speed_change("DT", &dt.speed_change, &dt.adjust_pitch),
                 DoubleTimeMania(dt) => fmt_speed_change("DT", &dt.speed_change, &dt.adjust_pitch),
+                NightcoreOsu(dt) => fmt_speed_change("NC", &dt.speed_change, &None),
+                NightcoreTaiko(dt) => fmt_speed_change("NC", &dt.speed_change, &None),
+                NightcoreCatch(dt) => fmt_speed_change("NC", &dt.speed_change, &None),
+                NightcoreMania(dt) => fmt_speed_change("NC", &dt.speed_change, &None),
                 HalfTimeOsu(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
                 HalfTimeTaiko(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
                 HalfTimeCatch(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
                 HalfTimeMania(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
+                DaycoreOsu(ht) => fmt_speed_change("DC", &ht.speed_change, &None),
+                DaycoreTaiko(ht) => fmt_speed_change("DC", &ht.speed_change, &None),
+                DaycoreCatch(ht) => fmt_speed_change("DC", &ht.speed_change, &None),
+                DaycoreMania(ht) => fmt_speed_change("DC", &ht.speed_change, &None),
 
                 _ => None,
             })
@@ -236,6 +244,9 @@ impl Mods {
                 rosu::GameMod::ClassicMania(rosu::generated_mods::ClassicMania::default())
             }
         });
+        if !inner.is_valid() {
+            return Err(error!("Incompatible mods found: {}", inner));
+        }
         Ok(Self { inner })
         // let mut res = GameModsIntermode::default();
         // while s.len() >= 2 {
