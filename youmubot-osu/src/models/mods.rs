@@ -147,13 +147,68 @@ impl Mods {
     }
 
     pub fn contains(&self, other: &Mods) -> bool {
-        other.inner.iter().all(|m| self.inner.contains(m))
+        other
+            .inner
+            .iter()
+            .filter(|v| v.acronym().as_str() != "CL")
+            .all(|m| self.inner.contains(m))
     }
     // Format the mods into a string with padded size.
     pub fn to_string_padded(&self, size: usize) -> String {
         let s = format!("{}", self);
         let real_padded = size;
         format!("{:>mw$}", s, mw = real_padded)
+    }
+
+    /// Get details on the mods, if they are present.
+    pub fn details(&self) -> Vec<String> {
+        use rosu::GameMod::*;
+        fn fmt_speed_change(
+            mod_name: &str,
+            speed_change: &Option<f32>,
+            adjust_pitch: &Option<bool>,
+        ) -> Option<String> {
+            if speed_change.is_none() && adjust_pitch.is_none() {
+                return None;
+            }
+            let mut s = format!("**{}**: ", mod_name);
+            let mut need_comma = false;
+            if let Some(speed) = speed_change {
+                s += &format!("speed **{:.2}x**", speed);
+                need_comma = true;
+            }
+            if let Some(true) = adjust_pitch {
+                if need_comma {
+                    s += ", ";
+                }
+                s += "pitch **changed**"
+            }
+            Some(s)
+        }
+        self.inner
+            .iter()
+            .filter_map(|m| match m {
+                DoubleTimeOsu(dt) => fmt_speed_change("DT", &dt.speed_change, &dt.adjust_pitch),
+                DoubleTimeTaiko(dt) => fmt_speed_change("DT", &dt.speed_change, &dt.adjust_pitch),
+                DoubleTimeCatch(dt) => fmt_speed_change("DT", &dt.speed_change, &dt.adjust_pitch),
+                DoubleTimeMania(dt) => fmt_speed_change("DT", &dt.speed_change, &dt.adjust_pitch),
+                HalfTimeOsu(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
+                HalfTimeTaiko(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
+                HalfTimeCatch(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
+                HalfTimeMania(ht) => fmt_speed_change("HT", &ht.speed_change, &ht.adjust_pitch),
+
+                _ => None,
+            })
+            .collect()
+        // let mut res: Vec<String> = vec![];
+
+        // for m in &self.inner {
+        //     match m {
+        //         DoubleTimeOsu(dt) =>
+        //     }
+        // }
+
+        // res
     }
 }
 
@@ -165,9 +220,22 @@ impl Mods {
         }
         let intermode =
             GameModsIntermode::try_from_acronyms(s).ok_or_else(|| error!("Invalid mods: {}", s))?;
-        let inner = intermode
+        let mut inner = intermode
             .try_with_mode(mode.into())
             .ok_or_else(|| error!("Invalid mods for `{}`: {}", mode, intermode))?;
+        // Always add classic mod to `inner`
+        inner.insert(match mode {
+            Mode::Std => rosu::GameMod::ClassicOsu(rosu::generated_mods::ClassicOsu::default()),
+            Mode::Taiko => {
+                rosu::GameMod::ClassicTaiko(rosu::generated_mods::ClassicTaiko::default())
+            }
+            Mode::Catch => {
+                rosu::GameMod::ClassicCatch(rosu::generated_mods::ClassicCatch::default())
+            }
+            Mode::Mania => {
+                rosu::GameMod::ClassicMania(rosu::generated_mods::ClassicMania::default())
+            }
+        });
         Ok(Self { inner })
         // let mut res = GameModsIntermode::default();
         // while s.len() >= 2 {

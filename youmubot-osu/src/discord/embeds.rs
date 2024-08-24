@@ -383,6 +383,36 @@ impl<'a> ScoreEmbedBuilder<'a> {
         } else {
             format!("by {} ", b.creator)
         };
+        let mod_details = {
+            let mut d = s.mods.details();
+            if d.is_empty() {
+                None
+            } else {
+                d.insert(0, "**Mods**:".to_owned());
+                Some(Cow::from(d.join("\n- ")))
+            }
+        };
+        let description_fields = [
+            Some(
+                format!(
+                    "**Played**: {} {} {}",
+                    s.date.format("<t:%s:R>"),
+                    s.link()
+                        .map(|s| format!("[[Score]]({})", s).into())
+                        .unwrap_or(Cow::from("")),
+                    s.replay_download_link()
+                        .map(|s| format!("[[Replay]]({})", s).into())
+                        .unwrap_or(Cow::from("")),
+                )
+                .into(),
+            ),
+            pp_gained.as_ref().map(|v| (&v[..]).into()),
+            mod_details,
+        ]
+        .into_iter()
+        .filter_map(|v: Option<Cow<'_, str>>| v)
+        .collect::<Vec<_>>()
+        .join("\n");
         let mut m = CreateEmbed::new()
             .author(
                 CreateEmbedAuthor::new(&u.username)
@@ -411,18 +441,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     .push(world_record)
                     .build(),
             )
-            .description(format!(
-                r#"**Played**: {} {} {}
-{}"#,
-                s.date.format("<t:%s:R>"),
-                s.link()
-                    .map(|s| format!("[[Score]]({})", s).into())
-                    .unwrap_or(Cow::from("")),
-                s.replay_download_link()
-                    .map(|s| format!("[[Replay]]({})", s).into())
-                    .unwrap_or(Cow::from("")),
-                pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
-            ))
+            .description(description_fields)
             .thumbnail(b.thumbnail_url())
             .field(
                 "Score stats",
