@@ -1,3 +1,4 @@
+use regex::Regex;
 use rosu::{GameModIntermode, GameMods};
 use rosu_v2::model::mods as rosu;
 use rosu_v2::prelude::GameModsIntermode;
@@ -10,12 +11,26 @@ use crate::Mode;
 
 const LAZER_TEXT: &str = "v2";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnparsedMods(Cow<'static, str>);
+lazy_static::lazy_static! {
+    // Beatmap(set) hooks
+    static ref MODS: Regex = Regex::new(
+        // r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:\+(?P<mods>[A-Z]+))?"
+        r"^((\+?)(?P<mods>([A-Za-z0-9][A-Za-z])+))?(@(?P<clock>\d(\.\d+)?)x)?(v2)?$"
+    ).unwrap();
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnparsedMods {
+    mods: Cow<'static, str>,
+    clock: Option<f32>,
+}
 
 impl Default for UnparsedMods {
     fn default() -> Self {
-        Self("".into())
+        Self {
+            mods: "".into(),
+            clock: None,
+        }
     }
 }
 
@@ -24,24 +39,106 @@ impl FromStr for UnparsedMods {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         if s == "" {
-            return Ok(UnparsedMods("".into()));
+            return Ok(UnparsedMods::default());
         }
-        let v = match s.strip_prefix("+") {
-            Some(v) => v,
-            None => return Err(format!("Mods need to start with +: {}", s)),
+        let ms = match MODS.captures(s) {
+            Some(m) => m,
+            None => return Err(format!("invalid mods: {}", s)),
         };
-        if v.chars().all(|c| c.is_digit(10) || c.is_ascii_uppercase()) {
-            Ok(Self(v.to_owned().into()))
-        } else {
-            Err(format!("Not a mod string: {}", s))
+        let mods = ms.name("mods").map(|v| v.as_str().to_owned());
+        if let Some(mods) = &mods {
+            if GameModsIntermode::try_from_acronyms(mods).is_none() {
+                return Err(format!("invalid mod sequence: {}", mods));
+            }
         }
+        Ok(Self {
+            mods: mods.map(|v| v.into()).unwrap_or("".into()),
+            clock: ms
+                .name("clock")
+                .map(|v| v.as_str().parse::<f32>().unwrap())
+                .filter(|v| *v > 0.0),
+        })
     }
 }
 
 impl UnparsedMods {
     /// Convert to [Mods].
     pub fn to_mods(&self, mode: Mode) -> Result<Mods> {
-        Mods::from_str(&self.0, mode)
+        use rosu_v2::prelude::*;
+        let mut mods = Mods::from_str(&self.mods, mode)?;
+        if let Some(clock) = self.clock {
+            let has_night_day_core = mods.inner.contains_intermode(GameModIntermode::Nightcore)
+                || mods.inner.contains_intermode(GameModIntermode::Daycore);
+            mods.inner.remove_all_intermode([
+                GameModIntermode::Daycore,
+                GameModIntermode::Nightcore,
+                GameModIntermode::DoubleTime,
+                GameModIntermode::HalfTime,
+            ]);
+            let mut speed_change = Some(clock);
+            let adjust_pitch: Option<bool> = None;
+            if clock < 1.0 {
+                speed_change = speed_change.filter(|v| *v != 0.75);
+                mods.inner.insert(if has_night_day_core {
+                    match mode {
+                        Mode::Std => GameMod::DaycoreOsu(DaycoreOsu { speed_change }),
+                        Mode::Taiko => GameMod::DaycoreTaiko(DaycoreTaiko { speed_change }),
+                        Mode::Catch => GameMod::DaycoreCatch(DaycoreCatch { speed_change }),
+                        Mode::Mania => GameMod::DaycoreMania(DaycoreMania { speed_change }),
+                    }
+                } else {
+                    match mode {
+                        Mode::Std => GameMod::HalfTimeOsu(HalfTimeOsu {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                        Mode::Taiko => GameMod::HalfTimeTaiko(HalfTimeTaiko {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                        Mode::Catch => GameMod::HalfTimeCatch(HalfTimeCatch {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                        Mode::Mania => GameMod::HalfTimeMania(HalfTimeMania {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                    }
+                })
+            }
+            if clock > 1.0 {
+                speed_change = speed_change.filter(|v| *v != 1.5);
+                mods.inner.insert(if has_night_day_core {
+                    match mode {
+                        Mode::Std => GameMod::NightcoreOsu(NightcoreOsu { speed_change }),
+                        Mode::Taiko => GameMod::NightcoreTaiko(NightcoreTaiko { speed_change }),
+                        Mode::Catch => GameMod::NightcoreCatch(NightcoreCatch { speed_change }),
+                        Mode::Mania => GameMod::NightcoreMania(NightcoreMania { speed_change }),
+                    }
+                } else {
+                    match mode {
+                        Mode::Std => GameMod::DoubleTimeOsu(DoubleTimeOsu {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                        Mode::Taiko => GameMod::DoubleTimeTaiko(DoubleTimeTaiko {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                        Mode::Catch => GameMod::DoubleTimeCatch(DoubleTimeCatch {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                        Mode::Mania => GameMod::DoubleTimeMania(DoubleTimeMania {
+                            speed_change,
+                            adjust_pitch,
+                        }),
+                    }
+                })
+            }
+        };
+        Ok(mods)
     }
 }
 
@@ -54,6 +151,27 @@ impl Mods {
     pub const NOMOD: &'static Mods = &Mods {
         inner: GameMods::new(),
     };
+
+    pub fn strip_lazer(&self, mode: Mode) -> Self {
+        let mut m = self.clone();
+        m.inner.insert(Self::classic_mod_of(mode));
+        m
+    }
+
+    fn classic_mod_of(mode: Mode) -> rosu::GameMod {
+        match mode {
+            Mode::Std => rosu::GameMod::ClassicOsu(rosu::generated_mods::ClassicOsu::default()),
+            Mode::Taiko => {
+                rosu::GameMod::ClassicTaiko(rosu::generated_mods::ClassicTaiko::default())
+            }
+            Mode::Catch => {
+                rosu::GameMod::ClassicCatch(rosu::generated_mods::ClassicCatch::default())
+            }
+            Mode::Mania => {
+                rosu::GameMod::ClassicMania(rosu::generated_mods::ClassicMania::default())
+            }
+        }
+    }
 }
 
 impl From<GameMods> for Mods {
@@ -232,18 +350,7 @@ impl Mods {
             .try_with_mode(mode.into())
             .ok_or_else(|| error!("Invalid mods for `{}`: {}", mode, intermode))?;
         // Always add classic mod to `inner`
-        inner.insert(match mode {
-            Mode::Std => rosu::GameMod::ClassicOsu(rosu::generated_mods::ClassicOsu::default()),
-            Mode::Taiko => {
-                rosu::GameMod::ClassicTaiko(rosu::generated_mods::ClassicTaiko::default())
-            }
-            Mode::Catch => {
-                rosu::GameMod::ClassicCatch(rosu::generated_mods::ClassicCatch::default())
-            }
-            Mode::Mania => {
-                rosu::GameMod::ClassicMania(rosu::generated_mods::ClassicMania::default())
-            }
-        });
+        inner.insert(Self::classic_mod_of(mode));
         if !inner.is_valid() {
             return Err(error!("Incompatible mods found: {}", inner));
         }
@@ -300,6 +407,11 @@ impl fmt::Display for Mods {
         };
         if !mods.is_empty() {
             write!(f, "+{}", mods)?;
+        }
+        if let Some(clock) = mods.clock_rate() {
+            if clock != 1.0 && clock != 1.5 && clock != 0.75 {
+                write!(f, "@{:.2}x", clock)?;
+            }
         }
         if is_lazer {
             write!(f, "{}", LAZER_TEXT)?;

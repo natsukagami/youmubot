@@ -25,7 +25,7 @@ pub(crate) fn grouped_number(num: u64) -> String {
     b.build()
 }
 
-fn beatmap_description(b: &Beatmap) -> String {
+fn beatmap_description(b: &Beatmap, mods: &Mods) -> String {
     MessageBuilder::new()
         .push_bold_line(b.approval.to_string())
         .push({
@@ -59,7 +59,18 @@ fn beatmap_description(b: &Beatmap) -> String {
                 .collect::<Vec<_>>()
                 .join(" "),
         )
+        .push_line(mod_details(mods).unwrap_or("".into()))
         .build()
+}
+
+fn mod_details(mods: &Mods) -> Option<Cow<'_, str>> {
+    let mut d = mods.details();
+    if d.is_empty() {
+        None
+    } else {
+        d.insert(0, "**Mods**:".to_owned());
+        Some(Cow::from(d.join("\n- ")))
+    }
 }
 
 pub fn beatmap_offline_embed(
@@ -192,7 +203,7 @@ pub fn beatmap_embed(b: &'_ Beatmap, m: Mode, mods: &Mods, info: BeatmapInfoWith
             ))
         })
         .field("Information", diff.format_info(m, &mods, b), false)
-        .description(beatmap_description(b))
+        .description(beatmap_description(b, mods))
 }
 
 const MAX_DIFFS: usize = 25 - 4;
@@ -222,7 +233,7 @@ pub fn beatmapset_embed(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
             b.beatmapset_id
         ))
         .color(0xffb6c1)
-        .description(beatmap_description(b))
+        .description(beatmap_description(b, Mods::NOMOD))
         .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
             (
                 format!("[{}]", b.difficulty_name),
@@ -383,15 +394,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
         } else {
             format!("by {} ", b.creator)
         };
-        let mod_details = {
-            let mut d = s.mods.details();
-            if d.is_empty() {
-                None
-            } else {
-                d.insert(0, "**Mods**:".to_owned());
-                Some(Cow::from(d.join("\n- ")))
-            }
-        };
+        let mod_details = mod_details(&s.mods);
         let description_fields = [
             Some(
                 format!(
