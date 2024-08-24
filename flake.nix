@@ -54,7 +54,7 @@
       }) // {
     overlays.default = final: prev: {
       youmubot = final.callPackage ./package.nix {
-        craneLib = inputs.crane.lib.${final.system};
+        craneLib = (inputs.crane.mkLib final).overrideToolchain (p: p.rust-bin.stable."1.79.0".default);
       };
     };
     # module
