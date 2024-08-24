@@ -123,10 +123,11 @@ pub fn dot_osu_hook<'a>(
                     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
                     let (beatmap, _) = env.oppai.download_beatmap_from_url(&url).await.ok()?;
+                    let m = Mode::from(beatmap.content.mode as u8);
                     crate::discord::embeds::beatmap_offline_embed(
                         &beatmap,
-                        Mode::from(beatmap.content.mode as u8), /*For now*/
-                        msg.content.trim().parse().unwrap_or(Mods::NOMOD),
+                        m, /*For now*/
+                        &Mods::from_str(msg.content.trim(), m).unwrap_or_default(),
                     )
                     .pls_ok()
                 }
@@ -152,10 +153,11 @@ pub fn dot_osu_hook<'a>(
                         beatmaps
                             .into_iter()
                             .filter_map(|beatmap| {
+                                let m = Mode::from(beatmap.content.mode as u8);
                                 crate::discord::embeds::beatmap_offline_embed(
                                     &beatmap,
-                                    Mode::from(beatmap.content.mode as u8), /*For now*/
-                                    msg.content.trim().parse().unwrap_or(Mods::NOMOD),
+                                    m, /*For now*/
+                                    &Mods::from_str(msg.content.trim(), m).unwrap_or_default(),
                                 )
                                 .pls_ok()
                             })
@@ -300,7 +302,7 @@ async fn handle_beatmap<'a, 'b>(
                 .embed(beatmap_embed(
                     beatmap,
                     mode.unwrap_or(beatmap.mode),
-                    mods,
+                    &mods,
                     info,
                 ))
                 .components(vec![beatmap_components(reply_to.guild_id)])
@@ -321,7 +323,7 @@ async fn handle_beatmapset<'a, 'b>(
         ctx,
         beatmaps,
         mode,
-        None,
+        Mods::default(),
         reply_to,
         reply_to.guild_id,
         format!("Beatmapset information for `{}`", link),

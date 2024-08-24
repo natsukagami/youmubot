@@ -27,7 +27,7 @@ use crate::{
     discord::oppai_cache::BeatmapContent,
     models::{Mode, Score, User, UserEventRank},
     request::UserID,
-    Client as Osu,
+    OsuClient as Osu,
 };
 
 use super::db::OsuUser;

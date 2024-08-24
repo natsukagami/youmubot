@@ -14,7 +14,7 @@ pub mod request;
 
 /// Client is the client that will perform calls to the osu! api server.
 #[derive(Clone)]
-pub struct Client {
+pub struct OsuClient {
     rosu: Arc<rosu_v2::Osu>,
 
     user_header_cache: Arc<Mutex<HashMap<u64, Option<UserHeader>>>>,
@@ -30,15 +30,15 @@ pub fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>,
     Ok(res)
 }
 
-impl Client {
+impl OsuClient {
     /// Create a new client from the given API key.
-    pub async fn new(client_id: u64, client_secret: impl Into<String>) -> Result<Client> {
+    pub async fn new(client_id: u64, client_secret: impl Into<String>) -> Result<OsuClient> {
         let rosu = rosu_v2::OsuBuilder::new()
             .client_id(client_id)
             .client_secret(client_secret)
             .build()
             .await?;
-        Ok(Client {
+        Ok(OsuClient {
             rosu: Arc::new(rosu),
             user_header_cache: Arc::new(Mutex::new(HashMap::new())),
         })

@@ -211,7 +211,7 @@ mod scores {
                         let beatmap = meta_cache.get_beatmap(play.beatmap_id, mode).await?;
                         let info = {
                             let b = oppai.get_beatmap(beatmap.beatmap_id).await?;
-                            b.get_info_with(mode, play.mods).ok()
+                            b.get_info_with(mode, &play.mods).ok()
                         };
                         Ok((beatmap, info)) as Result<(Beatmap, Option<BeatmapInfo>)>
                     })
@@ -236,7 +236,7 @@ mod scores {
                                             p.count_50,
                                             p.count_miss,
                                         ),
-                                        p.mods,
+                                        &p.mods,
                                     )
                                     .ok()
                                     .map(|pp| format!("{:.2}[?]", pp))
@@ -291,7 +291,7 @@ mod scores {
                                 beatmap.artist,
                                 beatmap.title,
                                 beatmap.difficulty_name,
-                                beatmap.short_link(Some(self.mode), Some(play.mods)),
+                                beatmap.short_link(Some(self.mode), &play.mods),
                             )
                         })
                         .unwrap_or_else(|| "FETCH_FAILED".to_owned())
@@ -359,13 +359,11 @@ mod beatmapset {
         ctx: &Context,
         beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
-        mods: Option<Mods>,
+        mods: Mods,
         reply_to: &Message,
         guild_id: Option<GuildId>,
         message: impl AsRef<str>,
     ) -> Result<bool> {
-        let mods = mods.unwrap_or(Mods::NOMOD);
-
         if beatmapset.is_empty() {
             return Ok(false);
         }
@@ -405,7 +403,7 @@ mod beatmapset {
             env.oppai
                 .get_beatmap(b.beatmap_id)
                 .await
-                .and_then(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), self.mods))
+                .and_then(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), &self.mods))
         }
     }
 
@@ -446,7 +444,7 @@ mod beatmapset {
                        crate::discord::embeds::beatmap_embed(
                            map,
                            self.mode.unwrap_or(map.mode),
-                           self.mods,
+                           &self.mods,
                            info,
                        )
                            .footer({

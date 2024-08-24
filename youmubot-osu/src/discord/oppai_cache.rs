@@ -74,15 +74,20 @@ impl BeatmapContent {
         mode: Mode,
         combo: Option<usize>,
         accuracy: Accuracy,
-        mods: Mods,
+        mods: &Mods,
     ) -> Result<f64> {
+        let clock = match mods.inner.clock_rate() {
+            None => bail!("cannot calculate pp for mods: {}", mods),
+            Some(clock) => clock as f64,
+        };
         let mut perf = self
             .content
             .performance()
             .mode_or_ignore(mode.into())
             .accuracy(accuracy.into())
             .misses(accuracy.misses() as u32)
-            .mods(mods.bits() as u32);
+            .mods(mods.bits())
+            .clock_rate(clock);
         if let Some(combo) = combo {
             perf = perf.combo(combo as u32);
         }
@@ -91,12 +96,17 @@ impl BeatmapContent {
     }
 
     /// Get info given mods.
-    pub fn get_info_with(&self, mode: Mode, mods: Mods) -> Result<BeatmapInfo> {
+    pub fn get_info_with(&self, mode: Mode, mods: &Mods) -> Result<BeatmapInfo> {
+        let clock = match mods.inner.clock_rate() {
+            None => bail!("cannot calculate info for mods: {}", mods),
+            Some(clock) => clock as f64,
+        };
         let attrs = self
             .content
             .performance()
             .mode_or_ignore(mode.into())
-            .mods(mods.bits() as u32)
+            .mods(mods.bits())
+            .clock_rate(clock)
             .calculate();
         Ok(BeatmapInfo {
             objects: self.content.hit_objects.len(),
@@ -105,7 +115,7 @@ impl BeatmapContent {
         })
     }
 
-    pub fn get_possible_pp_with(&self, mode: Mode, mods: Mods) -> Result<BeatmapInfoWithPP> {
+    pub fn get_possible_pp_with(&self, mode: Mode, mods: &Mods) -> Result<BeatmapInfoWithPP> {
         let pp: [f64; 4] = [
             self.get_pp_from(mode, None, Accuracy::ByValue(95.0, 0), mods)?,
             self.get_pp_from(mode, None, Accuracy::ByValue(98.0, 0), mods)?,

@@ -7,16 +7,24 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
   nixConfig = {
     extra-substituters = [ "https://natsukagami.cachix.org" ];
-    trusted-public-keys = [ "natsukagami.cachix.org-1:3U6GV8i8gWEaXRUuXd2S4ASfYgdl2QFPWg4BKPbmYiQ=" ];
+    trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" "natsukagami.cachix.org-1:3U6GV8i8gWEaXRUuXd2S4ASfYgdl2QFPWg4BKPbmYiQ=" ];
   };
   outputs = { self, nixpkgs, flake-utils, ... }@inputs: flake-utils.lib.eachDefaultSystem
     (system:
       let
-        pkgs = import nixpkgs { inherit system; };
-        craneLib = inputs.crane.mkLib pkgs;
+        pkgs = import nixpkgs
+          {
+            inherit system; overlays = [ (import inputs.rust-overlay) ];
+          };
+        craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable."1.79.0".default);
+        # craneLib = inputs.crane.mkLib pkgs;
       in
       rec {
         packages.youmubot = pkgs.callPackage ./package.nix { inherit craneLib; };
@@ -35,7 +43,7 @@
           {
             inputsFrom = [ packages.youmubot ];
 
-            buildInputs = with pkgs; [ rustc rustfmt clippy sqlx-cli rust-analyzer ];
+            buildInputs = with pkgs; [ rustfmt clippy sqlx-cli rust-analyzer ];
 
             nativeBuildInputs = nixpkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
               pkg-config

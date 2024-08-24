@@ -25,7 +25,7 @@ pub(crate) fn grouped_number(num: u64) -> String {
     b.build()
 }
 
-fn beatmap_description(b: &Beatmap) -> String {
+fn beatmap_description(b: &Beatmap, mods: &Mods) -> String {
     MessageBuilder::new()
         .push_bold_line(b.approval.to_string())
         .push({
@@ -59,13 +59,24 @@ fn beatmap_description(b: &Beatmap) -> String {
                 .collect::<Vec<_>>()
                 .join(" "),
         )
+        .push_line(mod_details(mods).unwrap_or("".into()))
         .build()
+}
+
+fn mod_details(mods: &Mods) -> Option<Cow<'_, str>> {
+    let mut d = mods.details();
+    if d.is_empty() {
+        None
+    } else {
+        d.insert(0, "**Mods**:".to_owned());
+        Some(Cow::from(d.join("\n- ")))
+    }
 }
 
 pub fn beatmap_offline_embed(
     b: &'_ crate::discord::oppai_cache::BeatmapContent,
     m: Mode,
-    mods: Mods,
+    mods: &Mods,
 ) -> Result<(CreateEmbed, Vec<CreateAttachment>)> {
     let bm = b.content.clone();
     let metadata = b.metadata.clone();
@@ -150,7 +161,7 @@ fn beatmap_title(
     artist: impl AsRef<str>,
     title: impl AsRef<str>,
     difficulty: impl AsRef<str>,
-    mods: Mods,
+    mods: &Mods,
 ) -> String {
     let mod_str = if mods == Mods::NOMOD {
         "".to_owned()
@@ -168,7 +179,7 @@ fn beatmap_title(
         .build()
 }
 
-pub fn beatmap_embed(b: &'_ Beatmap, m: Mode, mods: Mods, info: BeatmapInfoWithPP) -> CreateEmbed {
+pub fn beatmap_embed(b: &'_ Beatmap, m: Mode, mods: &Mods, info: BeatmapInfoWithPP) -> CreateEmbed {
     let diff = b.difficulty.apply_mods(mods, info.0.stars);
     CreateEmbed::new()
         .title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
@@ -192,7 +203,7 @@ pub fn beatmap_embed(b: &'_ Beatmap, m: Mode, mods: Mods, info: BeatmapInfoWithP
             ))
         })
         .field("Information", diff.format_info(m, mods, b), false)
-        .description(beatmap_description(b))
+        .description(beatmap_description(b, mods))
 }
 
 const MAX_DIFFS: usize = 25 - 4;
@@ -222,7 +233,7 @@ pub fn beatmapset_embed(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
             b.beatmapset_id
         ))
         .color(0xffb6c1)
-        .description(beatmap_description(b))
+        .description(beatmap_description(b, Mods::NOMOD))
         .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
             (
                 format!("[{}]", b.difficulty_name),
@@ -292,7 +303,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
         let content = self.content;
         let u = &self.u;
         let accuracy = s.accuracy(mode);
-        let info = content.get_info_with(mode, s.mods).ok();
+        let info = content.get_info_with(mode, &s.mods).ok();
         let stars = info
             .as_ref()
             .map(|info| info.stars)
@@ -322,7 +333,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     mode,
                     Some(s.max_combo as usize),
                     Accuracy::ByCount(s.count_300, s.count_100, s.count_50, s.count_miss),
-                    s.mods,
+                    &s.mods,
                 )
                 .ok()
                 .map(|pp| (pp, format!("{:.2}pp [?]", pp)))
@@ -333,7 +344,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     mode,
                     None,
                     Accuracy::ByCount(s.count_300 + s.count_miss, s.count_100, s.count_50, 0),
-                    s.mods,
+                    &s.mods,
                 )
                 .ok()
                 .filter(|&v| pp.as_ref().map(|&(origin, _)| origin < v).unwrap_or(false))
@@ -377,12 +388,34 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .or(s.global_rank)
             .map(|v| format!(" | #{} on Global Rankings!", v))
             .unwrap_or_else(|| "".to_owned());
-        let diff = b.difficulty.apply_mods(s.mods, stars);
+        let diff = b.difficulty.apply_mods(&s.mods, stars);
         let creator = if b.difficulty_name.contains("'s") {
             "".to_owned()
         } else {
             format!("by {} ", b.creator)
         };
+        let mod_details = mod_details(&s.mods);
+        let description_fields = [
+            Some(
+                format!(
+                    "**Played**: {} {} {}",
+                    s.date.format("<t:%s:R>"),
+                    s.link()
+                        .map(|s| format!("[[Score]]({})", s).into())
+                        .unwrap_or(Cow::from("")),
+                    s.replay_download_link()
+                        .map(|s| format!("[[Replay]]({})", s).into())
+                        .unwrap_or(Cow::from("")),
+                )
+                .into(),
+            ),
+            pp_gained.as_ref().map(|v| (&v[..]).into()),
+            mod_details,
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("\n");
         let mut m = CreateEmbed::new()
             .author(
                 CreateEmbedAuthor::new(&u.username)
@@ -411,18 +444,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                     .push(world_record)
                     .build(),
             )
-            .description(format!(
-                r#"**Played**: {} {} {}
-{}"#,
-                s.date.format("<t:%s:R>"),
-                s.link()
-                    .map(|s| format!("[[Score]]({})", s).into())
-                    .unwrap_or(Cow::from("")),
-                s.replay_download_link()
-                    .map(|s| format!("[[Replay]]({})", s).into())
-                    .unwrap_or(Cow::from("")),
-                pp_gained.as_ref().map(|v| &v[..]).unwrap_or(""),
-            ))
+            .description(description_fields)
             .thumbnail(b.thumbnail_url())
             .field(
                 "Score stats",
@@ -442,9 +464,9 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 ),
                 true,
             )
-            .field("Map stats", diff.format_info(mode, s.mods, b), false);
+            .field("Map stats", diff.format_info(mode, &s.mods, b), false);
         let mut footer = self.footer.take().unwrap_or_default();
-        if mode != Mode::Std && s.mods != Mods::NOMOD {
+        if mode != Mode::Std && &s.mods != Mods::NOMOD {
             footer += " Star difficulty does not reflect game mods.";
         }
         if !footer.is_empty() {
@@ -557,8 +579,8 @@ pub(crate) fn user_embed(
                     .push(format!(
                         "> {}",
                         map.difficulty
-                            .apply_mods(v.mods, info.stars)
-                            .format_info(mode, v.mods, &map)
+                            .apply_mods(&v.mods, info.stars)
+                            .format_info(mode, &v.mods, &map)
                             .replace('\n', "\n> ")
                     ))
                     .build(),

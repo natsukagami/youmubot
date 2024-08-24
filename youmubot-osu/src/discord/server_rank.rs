@@ -446,7 +446,7 @@ pub async fn get_leaderboard(
                                     score.count_50,
                                     score.count_miss,
                                 ),
-                                score.mods,
+                                &score.mods,
                             )
                             .ok()
                             .map(|v| (false, v))

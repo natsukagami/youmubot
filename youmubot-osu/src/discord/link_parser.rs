@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use crate::models::*;
 use lazy_static::lazy_static;
+use mods::UnparsedMods;
 use regex::Regex;
 use stream::Stream;
 use youmubot_prelude::*;
@@ -22,7 +23,7 @@ pub struct ToPrint<'a> {
 lazy_static! {
     // Beatmap(set) hooks
     static ref OLD_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:\+(?P<mods>[A-Z]+))?"
+        r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:\+(?P<mods>[A-Z]+))?"
     ).unwrap();
     static ref NEW_LINK_REGEX: Regex = Regex::new(
         r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:\+(?P<mods>[A-Z]+))?"
@@ -51,12 +52,12 @@ pub fn parse_old_links<'a>(
                 .transpose()?
                 .map(Mode::from);
             let embed = match req_type {
-                "b" => {
+                "b" | "beatmaps" => {
                     // collect beatmap info
                     let mods = capture
                         .name("mods")
-                        .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
-                        .unwrap_or(Mods::NOMOD);
+                        .and_then(|v| UnparsedMods::from_str(v.as_str()).pls_ok())
+                        .unwrap_or_default();
                     EmbedType::from_beatmap_id(env, capture["id"].parse()?, mode, mods).await
                 }
                 "s" => EmbedType::from_beatmapset_id(env, capture["id"].parse()?).await,
@@ -90,8 +91,8 @@ pub fn parse_new_links<'a>(
                 Some(beatmap_id) => {
                     let mods = capture
                         .name("mods")
-                        .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
-                        .unwrap_or(Mods::NOMOD);
+                        .and_then(|v| UnparsedMods::from_str(v.as_str()).pls_ok())
+                        .unwrap_or_default();
                     EmbedType::from_beatmap_id(env, beatmap_id, mode, mods).await
                 }
                 None => {
@@ -122,8 +123,8 @@ pub fn parse_short_links<'a>(
             let id: u64 = capture.name("id").unwrap().as_str().parse()?;
             let mods = capture
                 .name("mods")
-                .and_then(|v| Mods::from_str(v.as_str()).pls_ok())
-                .unwrap_or(Mods::NOMOD);
+                .and_then(|v| UnparsedMods::from_str(v.as_str()).pls_ok())
+                .unwrap_or_default();
             let embed = EmbedType::from_beatmap_id(env, id, mode, mods).await?;
             Ok(ToPrint { embed, link, mode })
         })
@@ -136,18 +137,19 @@ impl EmbedType {
         env: &OsuEnv,
         beatmap_id: u64,
         mode: Option<Mode>,
-        mods: Mods,
+        mods: UnparsedMods,
     ) -> Result<Self> {
         let bm = match mode {
             Some(mode) => env.beatmaps.get_beatmap(beatmap_id, mode).await?,
             None => env.beatmaps.get_beatmap_default(beatmap_id).await?,
         };
+        let mods = mods.to_mods(mode.unwrap_or(bm.mode))?;
         let info = {
             let mode = mode.unwrap_or(bm.mode);
             env.oppai
                 .get_beatmap(bm.beatmap_id)
                 .await
-                .and_then(|b| b.get_possible_pp_with(mode, mods))?
+                .and_then(|b| b.get_possible_pp_with(mode, &mods))?
         };
         Ok(Self::Beatmap(Box::new(bm), info, mods))
     }
