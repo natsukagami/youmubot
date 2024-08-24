@@ -25,12 +25,15 @@ use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::*;
 
 use crate::{
-    discord::beatmap_cache::BeatmapMetaCache,
-    discord::display::ScoreListStyle,
-    discord::oppai_cache::{BeatmapCache, BeatmapInfo},
+    discord::{
+        beatmap_cache::BeatmapMetaCache,
+        display::ScoreListStyle,
+        oppai_cache::{BeatmapCache, BeatmapInfo},
+    },
     models::{Beatmap, Mode, Mods, Score, User},
+    mods::UnparsedMods,
     request::{BeatmapRequestKind, UserID},
-    Client as OsuHttpClient,
+    OsuClient as OsuHttpClient,
 };
 
 mod announcer;
@@ -49,7 +52,7 @@ mod server_rank;
 pub(crate) struct OsuClient;
 
 impl TypeMapKey for OsuClient {
-    type Value = Arc<crate::Client>;
+    type Value = Arc<crate::OsuClient>;
 }
 
 /// The environment for osu! app commands.
@@ -60,7 +63,7 @@ pub struct OsuEnv {
     pub(crate) saved_users: OsuSavedUsers,
     pub(crate) last_beatmaps: OsuLastBeatmap,
     // clients
-    pub(crate) client: Arc<crate::Client>,
+    pub(crate) client: Arc<crate::OsuClient>,
     pub(crate) oppai: BeatmapCache,
     pub(crate) beatmaps: BeatmapMetaCache,
 }
@@ -199,8 +202,8 @@ pub async fn mania(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 pub(crate) struct BeatmapWithMode(pub Beatmap, pub Mode);
 
 impl BeatmapWithMode {
-    pub fn short_link(&self, mods: Mods) -> String {
-        self.0.short_link(Some(self.1), Some(mods))
+    pub fn short_link(&self, mods: &Mods) -> String {
+        self.0.short_link(Some(self.1), mods)
     }
 
     fn mode(&self) -> Mode {
@@ -623,14 +626,17 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     match b {
         Some((bm, mods_def)) => {
-            let mods = args.find::<Mods>().ok().or(mods_def).unwrap_or(Mods::NOMOD);
+            let mods = match args.find::<UnparsedMods>().ok() {
+                Some(m) => m.to_mods(bm.mode())?,
+                None => mods_def.unwrap_or_default(),
+            };
             if beatmapset {
                 let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
                 display::display_beatmapset(
                     ctx,
                     beatmapset,
                     None,
-                    Some(mods),
+                    mods,
                     msg,
                     msg.guild_id,
                     "Here is the beatmapset you requested!",
@@ -642,13 +648,13 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .oppai
                 .get_beatmap(bm.0.beatmap_id)
                 .await?
-                .get_possible_pp_with(bm.1, mods)?;
+                .get_possible_pp_with(bm.1, &mods)?;
             msg.channel_id
                 .send_message(
                     &ctx,
                     CreateMessage::new()
                         .content("Here is the beatmap you requested!")
-                        .embed(beatmap_embed(&bm.0, bm.1, mods, info))
+                        .embed(beatmap_embed(&bm.0, bm.1, &mods, info))
                         .components(vec![beatmap_components(msg.guild_id)])
                         .reference_message(msg),
                 )
@@ -683,14 +689,18 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         }
     };
     let mode = bm.1;
-    let mods = args.find::<Mods>().ok().unwrap_or_default();
+    let mods = args
+        .find::<UnparsedMods>()
+        .ok()
+        .unwrap_or_default()
+        .to_mods(mode)?;
     let style = args
         .single::<ScoreListStyle>()
         .unwrap_or(ScoreListStyle::Grid);
     let username_arg = args.single::<UsernameArg>().ok();
     let user = to_user_id_query(username_arg, &env, msg.author.id).await?;
 
-    let scores = do_check(&env, &bm, mods, &user).await?;
+    let scores = do_check(&env, &bm, &mods, &user).await?;
 
     if scores.is_empty() {
         msg.reply(&ctx, "No scores found").await?;
@@ -702,7 +712,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             format!(
                 "Here are the scores by `{}` on `{}`!",
                 &user,
-                bm.short_link(mods)
+                bm.short_link(&mods)
             ),
         )
         .await?;
@@ -716,7 +726,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 pub(crate) async fn do_check(
     env: &OsuEnv,
     bm: &BeatmapWithMode,
-    mods: Mods,
+    mods: &Mods,
     user: &UserID,
 ) -> Result<Vec<Score>> {
     let BeatmapWithMode(b, m) = bm;
@@ -856,7 +866,7 @@ async fn get_user(
                         .oppai
                         .get_beatmap(m.beatmap_id)
                         .await?
-                        .get_info_with(mode, m.mods)?;
+                        .get_info_with(mode, &m.mods)?;
                     Some((m, BeatmapWithMode(beatmap, mode), info))
                 }
                 None => None,
@@ -907,7 +917,7 @@ pub(in crate::discord) async fn calculate_weighted_map_length(
             let beatmap = cache.get_beatmap(s.beatmap_id, mode).await?;
             Ok(beatmap
                 .difficulty
-                .apply_mods(s.mods, 0.0 /* dont care */)
+                .apply_mods(&s.mods, 0.0 /* dont care */)
                 .drain_length
                 .as_secs_f64()) as Result<_>
         })

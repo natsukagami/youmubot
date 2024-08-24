@@ -1,13 +1,65 @@
-use rosu::{GameModIntermode, GameModsIntermode};
+use rosu::{GameModIntermode, GameMods};
 use rosu_v2::model::mods as rosu;
+use rosu_v2::prelude::GameModsIntermode;
 use std::borrow::Cow;
 use std::fmt;
+use std::str::FromStr;
+use youmubot_prelude::*;
+
+use crate::Mode;
 
 const LAZER_TEXT: &str = "v2";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnparsedMods(Cow<'static, str>);
+
+impl Default for UnparsedMods {
+    fn default() -> Self {
+        Self("".into())
+    }
+}
+
+impl FromStr for UnparsedMods {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        if s == "" {
+            return Ok(UnparsedMods("".into()));
+        }
+        let v = match s.strip_prefix("+") {
+            Some(v) => v,
+            None => return Err(format!("Mods need to start with +: {}", s)),
+        };
+        if v.chars().all(|c| c.is_digit(10) || c.is_ascii_uppercase()) {
+            Ok(Self(v.to_owned().into()))
+        } else {
+            Err(format!("Not a mod string: {}", s))
+        }
+    }
+}
+
+impl UnparsedMods {
+    /// Convert to [Mods].
+    pub fn to_mods(&self, mode: Mode) -> Result<Mods> {
+        Mods::from_str(&self.0, mode)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Mods {
-    inner: GameModsIntermode,
+    pub inner: GameMods,
+}
+
+impl Mods {
+    pub const NOMOD: &'static Mods = &Mods {
+        inner: GameMods::new(),
+    };
+}
+
+impl From<GameMods> for Mods {
+    fn from(inner: GameMods) -> Self {
+        Self { inner }
+    }
 }
 
 // bitflags::bitflags! {
@@ -90,12 +142,13 @@ pub struct Mods {
 // ];
 
 impl Mods {
-    // Return the string length of the string representation of the mods.
-    pub fn str_len(&self) -> usize {
-        let s = format!("{}", self);
-        s.len()
+    pub fn bits(&self) -> u32 {
+        self.inner.bits()
     }
 
+    pub fn contains(&self, other: &Mods) -> bool {
+        other.inner.iter().all(|m| self.inner.contains(m))
+    }
     // Format the mods into a string with padded size.
     pub fn to_string_padded(&self, size: usize) -> String {
         let s = format!("{}", self);
@@ -104,17 +157,18 @@ impl Mods {
     }
 }
 
-impl std::str::FromStr for Mods {
-    type Err = String;
-    fn from_str(mut s: &str) -> Result<Self, Self::Err> {
+impl Mods {
+    pub fn from_str(mut s: &str, mode: Mode) -> Result<Self> {
         // Strip leading +
         if s.starts_with('+') {
             s = &s[1..];
         }
-        match GameModsIntermode::try_from_acronyms(s) {
-            Some(inner) => Ok(Mods { inner }),
-            None => Err(format!("Invalid mods: {}", s)),
-        }
+        let intermode =
+            GameModsIntermode::try_from_acronyms(s).ok_or_else(|| error!("Invalid mods: {}", s))?;
+        let inner = intermode
+            .try_with_mode(mode.into())
+            .ok_or_else(|| error!("Invalid mods for `{}`: {}", mode, intermode))?;
+        Ok(Self { inner })
         // let mut res = GameModsIntermode::default();
         // while s.len() >= 2 {
         //     let (m, nw) = s.split_at(2);
@@ -157,10 +211,10 @@ impl std::str::FromStr for Mods {
 
 impl fmt::Display for Mods {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let is_lazer = !self.inner.contains(GameModIntermode::Classic);
+        let is_lazer = !self.inner.contains_intermode(GameModIntermode::Classic);
         let mods = if !is_lazer {
             let mut v = self.inner.clone();
-            v.remove(GameModIntermode::Classic);
+            v.remove_intermode(GameModIntermode::Classic);
             Cow::Owned(v)
         } else {
             Cow::Borrowed(&self.inner)

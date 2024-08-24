@@ -147,18 +147,21 @@ pub fn handle_last_button<'a>(
             .unwrap();
         let BeatmapWithMode(b, m) = &bm;
 
-        let mods = mods_def.unwrap_or(Mods::NOMOD);
+        let mods = mods_def.unwrap_or_default();
         let info = env
             .oppai
             .get_beatmap(b.beatmap_id)
             .await?
-            .get_possible_pp_with(*m, mods)?;
+            .get_possible_pp_with(*m, &mods)?;
         comp.create_response(
             &ctx,
             serenity::all::CreateInteractionResponse::Message(
                 CreateInteractionResponseMessage::new()
-                    .content(format!("Information for beatmap `{}`", bm.short_link(mods)))
-                    .embed(beatmap_embed(b, *m, mods, info))
+                    .content(format!(
+                        "Information for beatmap `{}`",
+                        bm.short_link(&mods)
+                    ))
+                    .embed(beatmap_embed(b, *m, &mods, info))
                     .components(vec![beatmap_components(comp.guild_id)]),
             ),
         )

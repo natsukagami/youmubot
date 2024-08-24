@@ -1,7 +1,4 @@
-use rosu_v2::model::{
-    self as rosu,
-    mods::{GameModIntermode, GameModsIntermode},
-};
+use rosu_v2::model::{self as rosu};
 
 use super::*;
 
@@ -244,180 +241,180 @@ impl From<rosu::Grade> for Rank {
     }
 }
 
-impl From<Mods> for rosu::mods::GameModsIntermode {
-    fn from(value: Mods) -> Self {
-        let mut res = GameModsIntermode::new();
-        const MOD_MAP: &[(Mods, GameModIntermode)] = &[
-            (Mods::NF, GameModIntermode::NoFail),
-            (Mods::EZ, GameModIntermode::Easy),
-            (Mods::TD, GameModIntermode::TouchDevice),
-            (Mods::HD, GameModIntermode::Hidden),
-            (Mods::HR, GameModIntermode::HardRock),
-            (Mods::SD, GameModIntermode::SuddenDeath),
-            (Mods::DT, GameModIntermode::DoubleTime),
-            (Mods::RX, GameModIntermode::Relax),
-            (Mods::HT, GameModIntermode::HalfTime),
-            (Mods::NC, GameModIntermode::Nightcore),
-            (Mods::FL, GameModIntermode::Flashlight),
-            (Mods::AT, GameModIntermode::Autoplay),
-            (Mods::SO, GameModIntermode::SpunOut),
-            (Mods::AP, GameModIntermode::Autopilot),
-            (Mods::PF, GameModIntermode::Perfect),
-            (Mods::KEY1, GameModIntermode::OneKey),
-            (Mods::KEY2, GameModIntermode::TwoKeys),
-            (Mods::KEY3, GameModIntermode::ThreeKeys),
-            (Mods::KEY4, GameModIntermode::FourKeys),
-            (Mods::KEY5, GameModIntermode::FiveKeys),
-            (Mods::KEY6, GameModIntermode::SixKeys),
-            (Mods::KEY7, GameModIntermode::SevenKeys),
-            (Mods::KEY8, GameModIntermode::EightKeys),
-            (Mods::KEY9, GameModIntermode::NineKeys),
-        ];
-        for (m1, m2) in MOD_MAP {
-            if value.contains(*m1) {
-                res.insert(*m2);
-            }
-        }
-        if !value.contains(Mods::LAZER) {
-            res.insert(GameModIntermode::Classic);
-        }
-        res
-    }
-}
+// impl From<Mods> for rosu::mods::GameModsIntermode {
+//     fn from(value: Mods) -> Self {
+//         let mut res = GameModsIntermode::new();
+//         const MOD_MAP: &[(Mods, GameModIntermode)] = &[
+//             (Mods::NF, GameModIntermode::NoFail),
+//             (Mods::EZ, GameModIntermode::Easy),
+//             (Mods::TD, GameModIntermode::TouchDevice),
+//             (Mods::HD, GameModIntermode::Hidden),
+//             (Mods::HR, GameModIntermode::HardRock),
+//             (Mods::SD, GameModIntermode::SuddenDeath),
+//             (Mods::DT, GameModIntermode::DoubleTime),
+//             (Mods::RX, GameModIntermode::Relax),
+//             (Mods::HT, GameModIntermode::HalfTime),
+//             (Mods::NC, GameModIntermode::Nightcore),
+//             (Mods::FL, GameModIntermode::Flashlight),
+//             (Mods::AT, GameModIntermode::Autoplay),
+//             (Mods::SO, GameModIntermode::SpunOut),
+//             (Mods::AP, GameModIntermode::Autopilot),
+//             (Mods::PF, GameModIntermode::Perfect),
+//             (Mods::KEY1, GameModIntermode::OneKey),
+//             (Mods::KEY2, GameModIntermode::TwoKeys),
+//             (Mods::KEY3, GameModIntermode::ThreeKeys),
+//             (Mods::KEY4, GameModIntermode::FourKeys),
+//             (Mods::KEY5, GameModIntermode::FiveKeys),
+//             (Mods::KEY6, GameModIntermode::SixKeys),
+//             (Mods::KEY7, GameModIntermode::SevenKeys),
+//             (Mods::KEY8, GameModIntermode::EightKeys),
+//             (Mods::KEY9, GameModIntermode::NineKeys),
+//         ];
+//         for (m1, m2) in MOD_MAP {
+//             if value.contains(*m1) {
+//                 res.insert(*m2);
+//             }
+//         }
+//         if !value.contains(Mods::LAZER) {
+//             res.insert(GameModIntermode::Classic);
+//         }
+//         res
+//     }
+// }
 
-impl From<rosu::mods::GameModsIntermode> for Mods {
-    fn from(value: rosu_v2::prelude::GameModsIntermode) -> Self {
-        let init = if value.contains(GameModIntermode::Classic) {
-            Mods::NOMOD
-        } else {
-            Mods::LAZER
-        };
-        value
-            .into_iter()
-            .map(|m| match m {
-                GameModIntermode::NoFail => Mods::NF,
-                GameModIntermode::Easy => Mods::EZ,
-                GameModIntermode::TouchDevice => Mods::TD,
-                GameModIntermode::Hidden => Mods::HD,
-                GameModIntermode::HardRock => Mods::HR,
-                GameModIntermode::SuddenDeath => Mods::SD,
-                GameModIntermode::DoubleTime => Mods::DT,
-                GameModIntermode::Relax => Mods::RX,
-                GameModIntermode::HalfTime => Mods::HT,
-                GameModIntermode::Nightcore => Mods::DT | Mods::NC,
-                GameModIntermode::Flashlight => Mods::FL,
-                GameModIntermode::Autoplay => Mods::AT,
-                GameModIntermode::SpunOut => Mods::SO,
-                GameModIntermode::Autopilot => Mods::AP,
-                GameModIntermode::Perfect => Mods::SD | Mods::PF,
-                GameModIntermode::OneKey => Mods::KEY1,
-                GameModIntermode::TwoKeys => Mods::KEY2,
-                GameModIntermode::ThreeKeys => Mods::KEY3,
-                GameModIntermode::FourKeys => Mods::KEY4,
-                GameModIntermode::FiveKeys => Mods::KEY5,
-                GameModIntermode::SixKeys => Mods::KEY6,
-                GameModIntermode::SevenKeys => Mods::KEY7,
-                GameModIntermode::EightKeys => Mods::KEY8,
-                GameModIntermode::NineKeys => Mods::KEY9,
-                GameModIntermode::Classic => Mods::NOMOD,
-                _ => Mods::UNKNOWN,
-            })
-            .fold(init, |a, b| a | b)
+// impl From<rosu::mods::GameModsIntermode> for Mods {
+//     fn from(value: rosu_v2::prelude::GameModsIntermode) -> Self {
+//         let init = if value.contains(GameModIntermode::Classic) {
+//             Mods::NOMOD
+//         } else {
+//             Mods::LAZER
+//         };
+//         value
+//             .into_iter()
+//             .map(|m| match m {
+//                 GameModIntermode::NoFail => Mods::NF,
+//                 GameModIntermode::Easy => Mods::EZ,
+//                 GameModIntermode::TouchDevice => Mods::TD,
+//                 GameModIntermode::Hidden => Mods::HD,
+//                 GameModIntermode::HardRock => Mods::HR,
+//                 GameModIntermode::SuddenDeath => Mods::SD,
+//                 GameModIntermode::DoubleTime => Mods::DT,
+//                 GameModIntermode::Relax => Mods::RX,
+//                 GameModIntermode::HalfTime => Mods::HT,
+//                 GameModIntermode::Nightcore => Mods::DT | Mods::NC,
+//                 GameModIntermode::Flashlight => Mods::FL,
+//                 GameModIntermode::Autoplay => Mods::AT,
+//                 GameModIntermode::SpunOut => Mods::SO,
+//                 GameModIntermode::Autopilot => Mods::AP,
+//                 GameModIntermode::Perfect => Mods::SD | Mods::PF,
+//                 GameModIntermode::OneKey => Mods::KEY1,
+//                 GameModIntermode::TwoKeys => Mods::KEY2,
+//                 GameModIntermode::ThreeKeys => Mods::KEY3,
+//                 GameModIntermode::FourKeys => Mods::KEY4,
+//                 GameModIntermode::FiveKeys => Mods::KEY5,
+//                 GameModIntermode::SixKeys => Mods::KEY6,
+//                 GameModIntermode::SevenKeys => Mods::KEY7,
+//                 GameModIntermode::EightKeys => Mods::KEY8,
+//                 GameModIntermode::NineKeys => Mods::KEY9,
+//                 GameModIntermode::Classic => Mods::NOMOD,
+//                 _ => Mods::UNKNOWN,
+//             })
+//             .fold(init, |a, b| a | b)
 
-        // Mods::from_bits_truncate(value.bits() as u64)
-    }
-}
+//         // Mods::from_bits_truncate(value.bits() as u64)
+//     }
+// }
 
-impl From<rosu::mods::GameMods> for Mods {
-    fn from(value: rosu::mods::GameMods) -> Self {
-        let unknown =
-            rosu::mods::GameModIntermode::Unknown(rosu_v2::prelude::UnknownMod::default());
-        value
-            .iter()
-            .cloned()
-            .map(|m| match m {
-                rosu::mods::GameMod::HalfTimeOsu(ht)
-                    if ht.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreOsu(dc)
-                    if dc.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreOsu(_) => rosu::mods::GameModIntermode::HalfTime,
-                rosu::mods::GameMod::DoubleTimeOsu(dt)
-                    if dt.speed_change.is_some_and(|v| v != 1.5) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::NightcoreOsu(nc)
-                    if nc.speed_change.is_some_and(|v| v != 1.5) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::HalfTimeTaiko(ht)
-                    if ht.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreTaiko(dc)
-                    if dc.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreTaiko(_) => rosu::mods::GameModIntermode::HalfTime,
-                rosu::mods::GameMod::DoubleTimeTaiko(dt)
-                    if dt.speed_change.is_some_and(|v| v != 1.5) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::NightcoreTaiko(nc)
-                    if nc.speed_change.is_some_and(|v| v != 1.5) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::HalfTimeCatch(ht)
-                    if ht.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreCatch(dc)
-                    if dc.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreCatch(_) => rosu::mods::GameModIntermode::HalfTime,
-                rosu::mods::GameMod::DoubleTimeCatch(dt)
-                    if dt.speed_change.is_some_and(|v| v != 1.5) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::NightcoreCatch(nc)
-                    if nc.speed_change.is_some_and(|v| v != 1.5) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::HalfTimeMania(ht)
-                    if ht.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreMania(dc)
-                    if dc.speed_change.is_some_and(|v| v != 0.75) =>
-                {
-                    unknown
-                }
-                rosu::mods::GameMod::DaycoreMania(_) => rosu::mods::GameModIntermode::HalfTime,
-                rosu::mods::GameMod::DoubleTimeMania(dt)
-                    if dt.speed_change.is_some_and(|v| v != 1.5) =>
-                {
-                    unknown
-                }
-                _ => m.intermode(),
-            })
-            .collect::<GameModsIntermode>()
-            .into()
-    }
-}
+// impl From<rosu::mods::GameMods> for Mods {
+//     fn from(value: rosu::mods::GameMods) -> Self {
+//         let unknown =
+//             rosu::mods::GameModIntermode::Unknown(rosu_v2::prelude::UnknownMod::default());
+//         value
+//             .iter()
+//             .cloned()
+//             .map(|m| match m {
+//                 rosu::mods::GameMod::HalfTimeOsu(ht)
+//                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreOsu(dc)
+//                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreOsu(_) => rosu::mods::GameModIntermode::HalfTime,
+//                 rosu::mods::GameMod::DoubleTimeOsu(dt)
+//                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::NightcoreOsu(nc)
+//                     if nc.speed_change.is_some_and(|v| v != 1.5) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::HalfTimeTaiko(ht)
+//                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreTaiko(dc)
+//                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreTaiko(_) => rosu::mods::GameModIntermode::HalfTime,
+//                 rosu::mods::GameMod::DoubleTimeTaiko(dt)
+//                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::NightcoreTaiko(nc)
+//                     if nc.speed_change.is_some_and(|v| v != 1.5) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::HalfTimeCatch(ht)
+//                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreCatch(dc)
+//                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreCatch(_) => rosu::mods::GameModIntermode::HalfTime,
+//                 rosu::mods::GameMod::DoubleTimeCatch(dt)
+//                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::NightcoreCatch(nc)
+//                     if nc.speed_change.is_some_and(|v| v != 1.5) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::HalfTimeMania(ht)
+//                     if ht.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreMania(dc)
+//                     if dc.speed_change.is_some_and(|v| v != 0.75) =>
+//                 {
+//                     unknown
+//                 }
+//                 rosu::mods::GameMod::DaycoreMania(_) => rosu::mods::GameModIntermode::HalfTime,
+//                 rosu::mods::GameMod::DoubleTimeMania(dt)
+//                     if dt.speed_change.is_some_and(|v| v != 1.5) =>
+//                 {
+//                     unknown
+//                 }
+//                 _ => m.intermode(),
+//             })
+//             .collect::<GameModsIntermode>()
+//             .into()
+//     }
+// }

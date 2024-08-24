@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::models::{Mode, Mods};
-use crate::Client;
+use crate::OsuClient;
 use rosu_v2::error::OsuError;
 use youmubot_prelude::*;
 
@@ -58,6 +58,7 @@ pub mod builders {
 
     use crate::models;
 
+    use super::OsuClient;
     use super::*;
     /// A builder for a Beatmap request.
     pub struct BeatmapRequestBuilder {
@@ -82,7 +83,7 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(self, client: &Client) -> Result<Vec<models::Beatmap>> {
+        pub(crate) async fn build(self, client: &OsuClient) -> Result<Vec<models::Beatmap>> {
             Ok(match self.kind {
                 BeatmapRequestKind::Beatmap(id) => {
                     match handle_not_found(client.rosu.beatmap().map_id(id as u32).await)? {
@@ -141,7 +142,7 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(self, client: &Client) -> Result<Option<models::User>> {
+        pub(crate) async fn build(self, client: &OsuClient) -> Result<Option<models::User>> {
             let mut r = client.rosu.user(self.user);
             if let Some(mode) = self.mode {
                 r = r.mode(mode.into());
@@ -154,7 +155,7 @@ pub mod builders {
                 - time::Duration::DAY * self.event_days.unwrap_or(31);
             let mut events = handle_not_found(client.rosu.recent_activity(user.user_id).await)?
                 .unwrap_or(vec![]);
-            events.retain(|e| (now <= e.created_at));
+            events.retain(|e: &rosu_v2::model::event::Event| (now <= e.created_at));
             let stats = user.statistics.take().unwrap();
             Ok(Some(models::User::from_rosu(user, stats, events)))
         }
@@ -199,31 +200,29 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(self, client: &Client) -> Result<Vec<models::Score>> {
+        pub(crate) async fn build(self, osu: &OsuClient) -> Result<Vec<models::Score>> {
             let scores = handle_not_found(match self.user {
                 Some(user) => {
-                    let mut r = client
-                        .rosu
-                        .beatmap_user_scores(self.beatmap_id as u32, user);
+                    let mut r = osu.rosu.beatmap_user_scores(self.beatmap_id as u32, user);
                     if let Some(mode) = self.mode {
                         r = r.mode(mode.into());
                     }
                     match self.mods {
                         Some(mods) => r.await.map(|mut ss| {
-                            let mods = GameModsIntermode::from(mods);
-                            ss.retain(|s| mods.iter().all(|m| s.mods.contains_intermode(m)));
+                            // let mods = GameModsIntermode::from(mods.inner);
+                            ss.retain(|s| Mods::from(s.mods.clone()).contains(&mods));
                             ss
                         }),
                         None => r.await,
                     }
                 }
                 None => {
-                    let mut r = client.rosu.beatmap_scores(self.beatmap_id as u32).global();
+                    let mut r = osu.rosu.beatmap_scores(self.beatmap_id as u32).global();
                     if let Some(mode) = self.mode {
                         r = r.mode(mode.into());
                     }
                     if let Some(mods) = self.mods {
-                        r = r.mods(GameModsIntermode::from(mods));
+                        r = r.mods(GameModsIntermode::from(mods.inner));
                     }
                     if let Some(limit) = self.limit {
                         r = r.limit(limit as u32);
@@ -268,7 +267,7 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(self, client: &Client) -> Result<Vec<models::Score>> {
+        pub(crate) async fn build(self, client: &OsuClient) -> Result<Vec<models::Score>> {
             let scores = handle_not_found({
                 let mut r = client.rosu.user_scores(self.user);
                 r = match self.score_type {

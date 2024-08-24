@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use rosu_v2::prelude::GameModIntermode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -85,39 +86,44 @@ impl Difficulty {
         // then convert back
         self.od = (79.0 - (hit_timing - 0.5)) / 6.0;
     }
-    fn apply_length_by_ratio(&mut self, mul: u32, div: u32) {
-        self.bpm = self.bpm / (mul as f64) * (div as f64); // Inverse since bpm increases while time decreases
-        self.drain_length = self.drain_length * mul / div;
-        self.total_length = self.total_length * mul / div;
+    fn apply_length_by_ratio(&mut self, ratio: f64) {
+        self.bpm = self.bpm / ratio; // Inverse since bpm increases while time decreases
+        self.drain_length = Duration::from_secs_f64(self.drain_length.as_secs_f64() * ratio);
+        self.total_length = Duration::from_secs_f64(self.total_length.as_secs_f64() * ratio);
     }
     /// Apply mods to the given difficulty.
     /// Note that `stars`, `aim` and `speed` cannot be calculated from this alone.
-    pub fn apply_mods(&self, mods: Mods, updated_stars: f64) -> Difficulty {
+    pub fn apply_mods(&self, mods: &Mods, updated_stars: f64) -> Difficulty {
         let mut diff = Difficulty {
             stars: updated_stars,
             ..self.clone()
         };
 
         // Apply mods one by one
-        if mods.contains(Mods::EZ) {
+        if mods.inner.contains_intermode(GameModIntermode::Easy) {
             diff.apply_everything_by_ratio(0.5);
         }
-        if mods.contains(Mods::HR) {
+        if mods.inner.contains_intermode(GameModIntermode::HardRock) {
             let old_cs = diff.cs;
             diff.apply_everything_by_ratio(1.4);
             // CS is changed by 1.3 tho
             diff.cs = old_cs * 1.3;
         }
-        if mods.contains(Mods::HT) {
-            diff.apply_ar_by_time_ratio(4.0 / 3.0);
-            diff.apply_od_by_time_ratio(4.0 / 3.0);
-            diff.apply_length_by_ratio(4, 3);
+        if let Some(ratio) = mods.inner.clock_rate() {
+            diff.apply_length_by_ratio(1.0 / ratio as f64);
+            diff.apply_ar_by_time_ratio(1.0 / ratio as f64);
+            diff.apply_od_by_time_ratio(1.0 / ratio as f64);
         }
-        if mods.contains(Mods::DT) {
-            diff.apply_ar_by_time_ratio(2.0 / 3.0);
-            diff.apply_od_by_time_ratio(2.0 / 3.0);
-            diff.apply_length_by_ratio(2, 3);
-        }
+        // if mods.contains(Mods::HT) {
+        //     diff.apply_ar_by_time_ratio(4.0 / 3.0);
+        //     diff.apply_od_by_time_ratio(4.0 / 3.0);
+        //     diff.apply_length_by_ratio(4, 3);
+        // }
+        // if mods.contains(Mods::DT) {
+        //     diff.apply_ar_by_time_ratio(2.0 / 3.0);
+        //     diff.apply_od_by_time_ratio(2.0 / 3.0);
+        //     diff.apply_length_by_ratio(2, 3);
+        // }
 
         diff
     }
@@ -126,7 +132,7 @@ impl Difficulty {
     pub fn format_info<'a>(
         &self,
         mode: Mode,
-        mods: Mods,
+        mods: &Mods,
         original_beatmap: impl Into<Option<&'a Beatmap>> + 'a,
     ) -> String {
         let original_beatmap = original_beatmap.into();
@@ -146,7 +152,7 @@ impl Difficulty {
                             original_beatmap.download_link(BeatmapSite::Bancho),
                             original_beatmap.download_link(BeatmapSite::Beatconnect),
                             original_beatmap.download_link(BeatmapSite::Chimu),
-                            original_beatmap.short_link(Some(mode), Some(mods))
+                            original_beatmap.short_link(Some(mode), mods)
                         )
                     })
                     .unwrap_or("**Uploaded**".to_owned()),
@@ -405,7 +411,7 @@ impl Beatmap {
     }
 
     /// Return a parsable short link.
-    pub fn short_link(&self, override_mode: Option<Mode>, mods: Option<Mods>) -> String {
+    pub fn short_link(&self, override_mode: Option<Mode>, mods: &Mods) -> String {
         format!(
             "/b/{}{}{}",
             self.beatmap_id,
@@ -413,8 +419,7 @@ impl Beatmap {
                 Some(mode) if mode != self.mode => format!("/{}", mode.as_str_new_site()),
                 _ => "".to_owned(),
             },
-            mods.map(|m| format!("{}", m))
-                .unwrap_or_else(|| "".to_owned()),
+            mods
         )
     }
 
@@ -587,7 +592,7 @@ impl fmt::Display for Rank {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Score {
     pub id: Option<u64>, // No id if you fail
     pub user_id: u64,
