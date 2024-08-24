@@ -141,7 +141,7 @@ pub fn beatmap_offline_embed(
             ),
             false,
         )
-        .field("Information", diff.format_info(m, &mods, None), false);
+        .field("Information", diff.format_info(m, mods, None), false);
     let mut attachments = Vec::new();
     if let Some(bg) = &b.beatmap_background {
         embed = embed.thumbnail(format!("attachment://{}", bg.filename));
@@ -202,7 +202,7 @@ pub fn beatmap_embed(b: &'_ Beatmap, m: Mode, mods: &Mods, info: BeatmapInfoWith
                 false,
             ))
         })
-        .field("Information", diff.format_info(m, &mods, b), false)
+        .field("Information", diff.format_info(m, mods, b), false)
         .description(beatmap_description(b, mods))
 }
 
@@ -413,7 +413,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
             mod_details,
         ]
         .into_iter()
-        .filter_map(|v: Option<Cow<'_, str>>| v)
+        .flatten()
         .collect::<Vec<_>>()
         .join("\n");
         let mut m = CreateEmbed::new()

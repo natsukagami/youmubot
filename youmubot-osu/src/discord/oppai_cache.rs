@@ -86,7 +86,7 @@ impl BeatmapContent {
             .mode_or_ignore(mode.into())
             .accuracy(accuracy.into())
             .misses(accuracy.misses() as u32)
-            .mods(mods.bits() as u32)
+            .mods(mods.bits())
             .clock_rate(clock);
         if let Some(combo) = combo {
             perf = perf.combo(combo as u32);
@@ -105,7 +105,7 @@ impl BeatmapContent {
             .content
             .performance()
             .mode_or_ignore(mode.into())
-            .mods(mods.bits() as u32)
+            .mods(mods.bits())
             .clock_rate(clock)
             .calculate();
         Ok(BeatmapInfo {

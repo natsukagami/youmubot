@@ -87,7 +87,7 @@ impl Difficulty {
         self.od = (79.0 - (hit_timing - 0.5)) / 6.0;
     }
     fn apply_length_by_ratio(&mut self, ratio: f64) {
-        self.bpm = self.bpm / ratio; // Inverse since bpm increases while time decreases
+        self.bpm /= ratio; // Inverse since bpm increases while time decreases
         self.drain_length = Duration::from_secs_f64(self.drain_length.as_secs_f64() * ratio);
         self.total_length = Duration::from_secs_f64(self.total_length.as_secs_f64() * ratio);
     }

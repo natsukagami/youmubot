@@ -38,7 +38,7 @@ impl FromStr for UnparsedMods {
     type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        if s == "" {
+        if s.is_empty() {
             return Ok(UnparsedMods::default());
         }
         let ms = match MODS.captures(s) {
