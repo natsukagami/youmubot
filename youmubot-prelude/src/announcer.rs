@@ -142,7 +142,6 @@ impl AnnouncerHandler {
     }
 
     pub fn run(self, client: &Client) -> AnnouncerRunner {
-        
         AnnouncerRunner {
             cache_http: CacheAndHttp::from_client(client),
             data: client.data.clone(),

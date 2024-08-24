@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Arc;
-use std::{collections::HashMap};
 
 use rosu_map::Beatmap as BeatmapMetadata;
 use rosu_pp::Beatmap;
