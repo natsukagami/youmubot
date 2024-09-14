@@ -3,7 +3,7 @@ use std::io::Read;
 use std::sync::Arc;
 
 use rosu_map::Beatmap as BeatmapMetadata;
-use rosu_pp::Beatmap;
+use rosu_pp::{Beatmap, GameMods};
 
 use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
@@ -67,6 +67,19 @@ impl Accuracy {
 /// Beatmap Info with attached 95/98/99/100% FC pp.
 pub type BeatmapInfoWithPP = (BeatmapInfo, [f64; 4]);
 
+fn apply_mods(
+    perf: rosu_pp::Performance<'_>,
+    mods: impl Into<GameMods>,
+) -> rosu_pp::Performance<'_> {
+    use rosu_pp::Performance::*;
+    match perf {
+        Osu(o) => Osu(o.mods(mods)),
+        Taiko(t) => Taiko(t.mods(mods)),
+        Catch(f) => Catch(f.mods(mods)),
+        Mania(m) => Mania(m.mods(mods)),
+    }
+}
+
 impl BeatmapContent {
     /// Get pp given the combo and accuracy.
     pub fn get_pp_from(
@@ -76,18 +89,13 @@ impl BeatmapContent {
         accuracy: Accuracy,
         mods: &Mods,
     ) -> Result<f64> {
-        let clock = match mods.inner.clock_rate() {
-            None => bail!("cannot calculate pp for mods: {}", mods),
-            Some(clock) => clock as f64,
-        };
-        let mut perf = self
+        let perf = self
             .content
             .performance()
             .mode_or_ignore(mode.into())
             .accuracy(accuracy.into())
-            .misses(accuracy.misses() as u32)
-            .mods(mods.bits())
-            .clock_rate(clock);
+            .misses(accuracy.misses() as u32);
+        let mut perf = apply_mods(perf, mods.inner.clone());
         if let Some(combo) = combo {
             perf = perf.combo(combo as u32);
         }
@@ -97,17 +105,8 @@ impl BeatmapContent {
 
     /// Get info given mods.
     pub fn get_info_with(&self, mode: Mode, mods: &Mods) -> Result<BeatmapInfo> {
-        let clock = match mods.inner.clock_rate() {
-            None => bail!("cannot calculate info for mods: {}", mods),
-            Some(clock) => clock as f64,
-        };
-        let attrs = self
-            .content
-            .performance()
-            .mode_or_ignore(mode.into())
-            .mods(mods.bits())
-            .clock_rate(clock)
-            .calculate();
+        let perf = self.content.performance().mode_or_ignore(mode.into());
+        let attrs = apply_mods(perf, mods.inner.clone()).calculate();
         Ok(BeatmapInfo {
             objects: self.content.hit_objects.len(),
             max_combo: attrs.max_combo() as usize,

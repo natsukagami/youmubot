@@ -110,9 +110,11 @@ impl Difficulty {
             diff.cs = old_cs * 1.3;
         }
         if let Some(ratio) = mods.inner.clock_rate() {
-            diff.apply_length_by_ratio(1.0 / ratio as f64);
-            diff.apply_ar_by_time_ratio(1.0 / ratio as f64);
-            diff.apply_od_by_time_ratio(1.0 / ratio as f64);
+            if ratio != 1.0 {
+                diff.apply_length_by_ratio(1.0 / ratio as f64);
+                diff.apply_ar_by_time_ratio(1.0 / ratio as f64);
+                diff.apply_od_by_time_ratio(1.0 / ratio as f64);
+            }
         }
         // if mods.contains(Mods::HT) {
         //     diff.apply_ar_by_time_ratio(4.0 / 3.0);
