@@ -2,8 +2,9 @@ use std::pin::Pin;
 
 use future::Future;
 use serenity::all::{
-    ComponentInteractionDataKind, CreateActionRow, CreateButton, CreateInteractionResponse,
-    CreateInteractionResponseFollowup, CreateInteractionResponseMessage, GuildId, Interaction,
+    ComponentInteraction, ComponentInteractionDataKind, CreateActionRow, CreateButton,
+    CreateInteractionResponse, CreateInteractionResponseFollowup, CreateInteractionResponseMessage,
+    GuildId, Interaction,
 };
 use youmubot_prelude::*;
 
@@ -52,14 +53,9 @@ pub fn handle_check_button<'a>(
     interaction: &'a Interaction,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
     Box::pin(async move {
-        let comp = match interaction.as_message_component() {
-            Some(comp)
-                if comp.data.custom_id == BTN_CHECK
-                    && matches!(comp.data.kind, ComponentInteractionDataKind::Button) =>
-            {
-                comp
-            }
-            _ => return Ok(()),
+        let comp = match expect_and_defer_button(ctx, interaction, BTN_CHECK).await? {
+            Some(comp) => comp,
+            None => return Ok(()),
         };
         let msg = &*comp.message;
 
@@ -70,46 +66,46 @@ pub fn handle_check_button<'a>(
         let user = match env.saved_users.by_user_id(comp.user.id).await? {
             Some(u) => u,
             None => {
-                comp.create_response(&ctx, CreateInteractionResponse::Message(CreateInteractionResponseMessage::new().content("You don't have a saved account yet! Save your osu! account by `y2!osu save <your-osu-username>`.").ephemeral(true))).await?;
+                comp.create_followup(&ctx, CreateInteractionResponseFollowup::new().content("You don't have a saved account yet! Save your osu! account by `y2!osu save <your-osu-username>`.").ephemeral(true)).await?;
                 return Ok(());
             }
         };
 
         let scores = super::do_check(&env, &bm, Mods::NOMOD, &crate::UserID::ID(user.id)).await?;
         if scores.is_empty() {
-            comp.create_response(
+            comp.create_followup(
                 &ctx,
-                CreateInteractionResponse::Message(
-                    CreateInteractionResponseMessage::new().content(format!(
-                        "No plays found for [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`.",
-                        user.username,
-                        user.id,
-                        bm.short_link(Mods::NOMOD)
-                    )),
-                ),
+                CreateInteractionResponseFollowup::new().content(format!(
+                    "No plays found for [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`.",
+                    user.username,
+                    user.id,
+                    bm.short_link(Mods::NOMOD)
+                )),
             )
             .await?;
             return Ok(());
         }
 
-        let reply = {
-            comp.create_response(
+        let reply = comp
+            .create_followup(
                 &ctx,
-                serenity::all::CreateInteractionResponse::Message(
-                    CreateInteractionResponseMessage::new().content(format!(
-                        "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`!",
-                        user.username,
-                        user.id,
-                        bm.short_link(Mods::NOMOD)
-                    )),
-                ),
+                CreateInteractionResponseFollowup::new().content(format!(
+                    "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`!",
+                    user.username,
+                    user.id,
+                    bm.short_link(Mods::NOMOD)
+                )),
             )
             .await?;
-            comp.get_response(&ctx).await?
-        };
-        ScoreListStyle::Grid
-            .display_scores(scores, bm.1, ctx, comp.guild_id, reply)
-            .await?;
+
+        let ctx = ctx.clone();
+        let guild_id = comp.guild_id;
+        spawn_future(async move {
+            ScoreListStyle::Grid
+                .display_scores(scores, bm.1, &ctx, guild_id, reply)
+                .await
+                .pls_ok();
+        });
 
         Ok(())
     })
@@ -129,14 +125,9 @@ pub fn handle_last_button<'a>(
     interaction: &'a Interaction,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
     Box::pin(async move {
-        let comp = match interaction.as_message_component() {
-            Some(comp)
-                if comp.data.custom_id == BTN_LAST
-                    && matches!(comp.data.kind, ComponentInteractionDataKind::Button) =>
-            {
-                comp
-            }
-            _ => return Ok(()),
+        let comp = match expect_and_defer_button(ctx, interaction, BTN_LAST).await? {
+            Some(comp) => comp,
+            None => return Ok(()),
         };
         let msg = &*comp.message;
 
@@ -153,17 +144,15 @@ pub fn handle_last_button<'a>(
             .get_beatmap(b.beatmap_id)
             .await?
             .get_possible_pp_with(*m, &mods)?;
-        comp.create_response(
+        comp.create_followup(
             &ctx,
-            serenity::all::CreateInteractionResponse::Message(
-                CreateInteractionResponseMessage::new()
-                    .content(format!(
-                        "Information for beatmap `{}`",
-                        bm.short_link(&mods)
-                    ))
-                    .embed(beatmap_embed(b, *m, &mods, info))
-                    .components(vec![beatmap_components(comp.guild_id)]),
-            ),
+            serenity::all::CreateInteractionResponseFollowup::new()
+                .content(format!(
+                    "Information for beatmap `{}`",
+                    bm.short_link(&mods)
+                ))
+                .embed(beatmap_embed(b, *m, &mods, info))
+                .components(vec![beatmap_components(comp.guild_id)]),
         )
         .await?;
         // Save the beatmap...
@@ -187,14 +176,9 @@ pub fn handle_lb_button<'a>(
     interaction: &'a Interaction,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
     Box::pin(async move {
-        let comp = match interaction.as_message_component() {
-            Some(comp)
-                if comp.data.custom_id == BTN_LB
-                    && matches!(comp.data.kind, ComponentInteractionDataKind::Button) =>
-            {
-                comp
-            }
-            _ => return Ok(()),
+        let comp = match expect_and_defer_button(ctx, interaction, BTN_LB).await? {
+            Some(comp) => comp,
+            None => return Ok(()),
         };
         let msg = &*comp.message;
 
@@ -206,11 +190,6 @@ pub fn handle_lb_button<'a>(
         let order = OrderBy::default();
         let guild = comp.guild_id.expect("Guild-only command");
 
-        comp.create_response(
-            &ctx,
-            CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new()),
-        )
-        .await?;
         let scores = get_leaderboard(ctx, &env, &bm, order, guild).await?;
 
         if scores.is_empty() {
@@ -236,4 +215,26 @@ pub fn handle_lb_button<'a>(
         display_rankings_table(ctx, reply, scores, &bm, order).await?;
         Ok(())
     })
+}
+
+async fn expect_and_defer_button<'a>(
+    ctx: &'_ Context,
+    interaction: &'a Interaction,
+    expect_id: &'static str,
+) -> Result<Option<&'a ComponentInteraction>> {
+    let comp = match interaction.as_message_component() {
+        Some(comp)
+            if comp.data.custom_id == expect_id
+                && matches!(comp.data.kind, ComponentInteractionDataKind::Button) =>
+        {
+            comp
+        }
+        _ => return Ok(None),
+    };
+    comp.create_response(
+        &ctx,
+        CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new()),
+    )
+    .await?;
+    Ok(Some(comp))
 }

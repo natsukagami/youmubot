@@ -26,13 +26,13 @@ where
 /// InteractionHook represents the asynchronous hook that is run on every interaction.
 #[async_trait]
 pub trait InteractionHook: Send + Sync {
-    async fn call(&mut self, ctx: &Context, interaction: &Interaction) -> Result<()>;
+    async fn call(&self, ctx: &Context, interaction: &Interaction) -> Result<()>;
 }
 
 #[async_trait]
 impl<T> InteractionHook for T
 where
-    T: for<'a> FnMut(
+    T: for<'a> Fn(
             &'a Context,
             &'a Interaction,
         )
@@ -40,7 +40,7 @@ where
         + Send
         + Sync,
 {
-    async fn call(&mut self, ctx: &Context, interaction: &Interaction) -> Result<()> {
+    async fn call(&self, ctx: &Context, interaction: &Interaction) -> Result<()> {
         self(ctx, interaction).await
     }
 }

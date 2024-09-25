@@ -21,7 +21,7 @@ mod compose_framework;
 
 struct Handler {
     hooks: Vec<RwLock<Box<dyn Hook>>>,
-    interaction_hooks: Vec<RwLock<Box<dyn InteractionHook>>>,
+    interaction_hooks: Vec<Box<dyn InteractionHook>>,
     ready_hooks: Vec<fn(&Context) -> CommandResult>,
 }
 
@@ -43,7 +43,7 @@ impl Handler {
     }
 
     fn push_interaction_hook<T: InteractionHook + 'static>(&mut self, f: T) {
-        self.interaction_hooks.push(RwLock::new(Box::new(f)));
+        self.interaction_hooks.push(Box::new(f));
     }
 }
 
@@ -113,10 +113,7 @@ impl EventHandler for Handler {
         let interaction = &interaction;
         self.interaction_hooks
             .iter()
-            .map(|hook| {
-                hook.write()
-                    .then(|mut h| async move { h.call(ctx, interaction).await })
-            })
+            .map(|hook| hook.call(ctx, interaction))
             .collect::<stream::FuturesUnordered<_>>()
             .for_each(|v| async move {
                 if let Err(e) = v {
