@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use mods::Stats;
 use rosu_v2::prelude::GameModIntermode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -55,6 +56,14 @@ pub struct Difficulty {
 impl Difficulty {
     // Difficulty calculation is based on
     // https://www.reddit.com/r/osugame/comments/6phntt/difficulty_settings_table_with_all_values/
+    //
+
+    fn override_stats(&mut self, stats: &Stats) {
+        self.cs = stats.cs.unwrap_or(self.cs);
+        self.od = stats.od.unwrap_or(self.od);
+        self.ar = stats.ar.unwrap_or(self.ar);
+        self.hp = stats.hp.unwrap_or(self.hp);
+    }
 
     fn apply_everything_by_ratio(&mut self, rat: f64) {
         self.cs = (self.cs * rat).min(10.0);
@@ -109,6 +118,9 @@ impl Difficulty {
             // CS is changed by 1.3 tho
             diff.cs = old_cs * 1.3;
         }
+
+        diff.override_stats(&mods.overrides());
+
         if let Some(ratio) = mods.inner.clock_rate() {
             if ratio != 1.0 {
                 diff.apply_length_by_ratio(1.0 / ratio as f64);
@@ -116,16 +128,6 @@ impl Difficulty {
                 diff.apply_od_by_time_ratio(1.0 / ratio as f64);
             }
         }
-        // if mods.contains(Mods::HT) {
-        //     diff.apply_ar_by_time_ratio(4.0 / 3.0);
-        //     diff.apply_od_by_time_ratio(4.0 / 3.0);
-        //     diff.apply_length_by_ratio(4, 3);
-        // }
-        // if mods.contains(Mods::DT) {
-        //     diff.apply_ar_by_time_ratio(2.0 / 3.0);
-        //     diff.apply_od_by_time_ratio(2.0 / 3.0);
-        //     diff.apply_length_by_ratio(2, 3);
-        // }
 
         diff
     }

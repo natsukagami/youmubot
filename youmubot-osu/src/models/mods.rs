@@ -4,6 +4,7 @@ use rosu_v2::model::mods as rosu;
 use rosu_v2::prelude::GameModsIntermode;
 use std::borrow::Cow;
 use std::fmt;
+use std::fmt::Write;
 use std::str::FromStr;
 use youmubot_prelude::*;
 
@@ -15,23 +16,14 @@ lazy_static::lazy_static! {
     // Beatmap(set) hooks
     static ref MODS: Regex = Regex::new(
         // r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:\+(?P<mods>[A-Z]+))?"
-        r"^((\+?)(?P<mods>([A-Za-z0-9][A-Za-z])+))?(@(?P<clock>\d(\.\d+)?)x)?(v2)?$"
+        r"^((\+?)(?P<mods>([A-Za-z0-9][A-Za-z])+))?(@(?P<clock>\d(\.\d+)?)x)?(?P<stats>(@(ar|AR|od|OD|cs|CS|hp|HP)\d(\.\d)?)+)?(v2)?$"
     ).unwrap();
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct UnparsedMods {
     mods: Cow<'static, str>,
     clock: Option<f32>,
-}
-
-impl Default for UnparsedMods {
-    fn default() -> Self {
-        Self {
-            mods: "".into(),
-            clock: None,
-        }
-    }
 }
 
 impl FromStr for UnparsedMods {
@@ -147,6 +139,30 @@ pub struct Mods {
     pub inner: GameMods,
 }
 
+/// Store overrides to the stats.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Stats {
+    pub ar: Option<f64>,
+    pub od: Option<f64>,
+    pub hp: Option<f64>,
+    pub cs: Option<f64>,
+}
+
+impl Stats {
+    pub fn from_f32(ar: Option<f32>, od: Option<f32>, hp: Option<f32>, cs: Option<f32>) -> Self {
+        Self {
+            ar: ar.map(|v| v as f64),
+            od: od.map(|v| v as f64),
+            hp: hp.map(|v| v as f64),
+            cs: cs.map(|v| v as f64),
+        }
+    }
+
+    pub fn has_any(&self) -> bool {
+        self.ar.is_some() || self.od.is_some() || self.hp.is_some() || self.cs.is_some()
+    }
+}
+
 impl Mods {
     pub const NOMOD: &'static Mods = &Mods {
         inner: GameMods::new(),
@@ -171,6 +187,36 @@ impl Mods {
                 rosu::GameMod::ClassicMania(rosu::generated_mods::ClassicMania::default())
             }
         }
+    }
+
+    pub fn overrides(&self) -> Stats {
+        use rosu_v2::prelude::GameMod::*;
+        self.inner
+            .iter()
+            .find_map(|m| {
+                Some(match m {
+                    DifficultyAdjustOsu(da) => Stats::from_f32(
+                        da.approach_rate,
+                        da.overall_difficulty,
+                        da.drain_rate,
+                        da.circle_size,
+                    ),
+                    DifficultyAdjustTaiko(da) => {
+                        Stats::from_f32(None, da.overall_difficulty, da.drain_rate, None)
+                    }
+                    DifficultyAdjustCatch(da) => Stats::from_f32(
+                        da.approach_rate,
+                        da.overall_difficulty,
+                        da.drain_rate,
+                        da.circle_size,
+                    ),
+                    DifficultyAdjustMania(da) => {
+                        Stats::from_f32(None, da.overall_difficulty, da.drain_rate, None)
+                    }
+                    _ => return None,
+                })
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -303,6 +349,28 @@ impl Mods {
             }
             Some(s)
         }
+        fn fmt_diff_adj(
+            ar: Option<f32>,
+            od: Option<f32>,
+            hp: Option<f32>,
+            cs: Option<f32>,
+        ) -> Option<String> {
+            let stats = [("AR", ar), ("OD", od), ("HP", hp), ("CS", cs)];
+            let mut output = String::with_capacity(4 * (2 + 3 + 4) + 3 * 2);
+            for (name, stat) in stats {
+                if let Some(stat) = stat {
+                    if !output.is_empty() {
+                        write!(output, ", ").unwrap();
+                    }
+                    write!(output, "{}**{:.1}**", name, stat).unwrap();
+                }
+            }
+            if output.is_empty() {
+                None
+            } else {
+                Some("**DA**: ".to_owned() + &output)
+            }
+        }
         self.inner
             .iter()
             .filter_map(|m| match m {
@@ -323,18 +391,27 @@ impl Mods {
                 DaycoreCatch(ht) => fmt_speed_change("DC", &ht.speed_change, &None),
                 DaycoreMania(ht) => fmt_speed_change("DC", &ht.speed_change, &None),
 
+                DifficultyAdjustOsu(da) => fmt_diff_adj(
+                    da.approach_rate,
+                    da.overall_difficulty,
+                    da.drain_rate,
+                    da.circle_size,
+                ),
+                DifficultyAdjustTaiko(da) => {
+                    fmt_diff_adj(None, da.overall_difficulty, da.drain_rate, None)
+                }
+                DifficultyAdjustCatch(da) => fmt_diff_adj(
+                    da.approach_rate,
+                    da.overall_difficulty,
+                    da.drain_rate,
+                    da.circle_size,
+                ),
+                DifficultyAdjustMania(da) => {
+                    fmt_diff_adj(None, da.overall_difficulty, da.drain_rate, None)
+                }
                 _ => None,
             })
             .collect()
-        // let mut res: Vec<String> = vec![];
-
-        // for m in &self.inner {
-        //     match m {
-        //         DoubleTimeOsu(dt) =>
-        //     }
-        // }
-
-        // res
     }
 }
 
