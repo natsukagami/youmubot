@@ -431,6 +431,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
     Ok(())
 }
 
+#[derive(Debug, Clone)]
 struct ModeArg(Mode);
 
 impl FromStr for ModeArg {
@@ -464,7 +465,9 @@ async fn to_user_id_query(
         .ok_or_else(|| Error::msg("No saved account found"))
 }
 
+#[derive(Debug, Clone, Default)]
 enum Nth {
+    #[default]
     All,
     Nth(u8),
 }
@@ -483,6 +486,34 @@ impl FromStr for Nth {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ListingArgs {
+    pub nth: Nth,
+    pub style: ScoreListStyle,
+    pub mode: Mode,
+    pub user: UserID,
+}
+
+impl ListingArgs {
+    pub async fn parse(env: &OsuEnv, msg: &Message, args: &mut Args) -> Result<ListingArgs> {
+        let nth = args.single::<Nth>().unwrap_or(Nth::All);
+        let style = args.single::<ScoreListStyle>().unwrap_or_default();
+        let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
+        let user = to_user_id_query(
+            args.quoted().trimmed().single::<UsernameArg>().ok(),
+            &env,
+            msg.author.id,
+        )
+        .await?;
+        Ok(Self {
+            nth,
+            style,
+            mode,
+            user,
+        })
+    }
+}
+
 #[command]
 #[aliases("rs", "rc", "r")]
 #[description = "Gets an user's recent play"]
@@ -493,15 +524,12 @@ impl FromStr for Nth {
 pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-    let nth = args.single::<Nth>().unwrap_or(Nth::All);
-    let style = args.single::<ScoreListStyle>().unwrap_or_default();
-    let mode = args.single::<ModeArg>().unwrap_or(ModeArg(Mode::Std)).0;
-    let user = to_user_id_query(
-        args.quoted().trimmed().single::<UsernameArg>().ok(),
-        &env,
-        msg.author.id,
-    )
-    .await?;
+    let ListingArgs {
+        nth,
+        style,
+        mode,
+        user,
+    } = ListingArgs::parse(&env, msg, &mut args).await?;
 
     let osu_client = &env.client;
 
@@ -509,18 +537,31 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         .user(&user, |f| f.mode(mode))
         .await?
         .ok_or_else(|| Error::msg("User not found"))?;
+    let plays = osu_client
+        .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))
+        .await?;
     match nth {
-        Nth::Nth(nth) => {
-            let recent_play = osu_client
-                .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(nth))
-                .await?
-                .into_iter()
-                .last()
-                .ok_or_else(|| Error::msg("No such play"))?;
-            let beatmap = env
-                .beatmaps
-                .get_beatmap(recent_play.beatmap_id, mode)
+        Nth::All => {
+            let reply = msg
+                .reply(
+                    ctx,
+                    format!("Here are the recent plays by `{}`!", user.username),
+                )
                 .await?;
+            style
+                .display_scores(plays, mode, ctx, reply.guild_id, reply)
+                .await?;
+        }
+        Nth::Nth(nth) => {
+            let Some(play) = plays.get(nth as usize) else {
+                Err(Error::msg("No such play"))?
+            };
+            let attempts = plays
+                .iter()
+                .skip(nth as usize)
+                .take_while(|p| p.beatmap_id == play.beatmap_id && p.mods == play.mods)
+                .count();
+            let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, mode);
 
@@ -529,7 +570,11 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                     &ctx,
                     CreateMessage::new()
                         .content("Here is the play that you requested".to_string())
-                        .embed(score_embed(&recent_play, &beatmap_mode, &content, &user).build())
+                        .embed(
+                            score_embed(play, &beatmap_mode, &content, &user)
+                                .footer(format!("Attempt #{}", attempts))
+                                .build(),
+                        )
                         .components(vec![score_components(msg.guild_id)])
                         .reference_message(msg),
                 )
