@@ -108,6 +108,14 @@ impl OsuClient {
         self.user_scores(UserScoreType::Recent, user, f).await
     }
 
+    pub async fn user_pins(
+        &self,
+        user: UserID,
+        f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
+    ) -> Result<Vec<Score>, Error> {
+        self.user_scores(UserScoreType::Pin, user, f).await
+    }
+
     async fn user_scores(
         &self,
         u: UserScoreType,
