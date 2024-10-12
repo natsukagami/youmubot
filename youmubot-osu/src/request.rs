@@ -238,6 +238,7 @@ pub mod builders {
     pub(crate) enum UserScoreType {
         Recent,
         Best,
+        Pin,
     }
 
     pub struct UserScoreRequestBuilder {
@@ -273,6 +274,7 @@ pub mod builders {
                 r = match self.score_type {
                     UserScoreType::Recent => r.recent().include_fails(true),
                     UserScoreType::Best => r.best(),
+                    UserScoreType::Pin => r.pinned(),
                 };
                 if let Some(mode) = self.mode {
                     r = r.mode(mode.into());

@@ -272,7 +272,10 @@ impl<'a> ScoreEmbedBuilder<'a> {
         self
     }
     pub fn footer(&mut self, footer: impl Into<String>) -> &mut Self {
-        self.footer = Some(footer.into());
+        self.footer = Some(match self.footer.take() {
+            None => footer.into(),
+            Some(pre) => format!("{} | {}", pre, footer.into()),
+        });
         self
     }
 }

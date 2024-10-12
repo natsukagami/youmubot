@@ -253,6 +253,7 @@ mod username_arg {
     use serenity::model::id::UserId;
     use std::str::FromStr;
     /// An argument that can be either a tagged user, or a raw string.
+    #[derive(Debug, Clone)]
     pub enum UsernameArg {
         Tagged(UserId),
         Raw(String),
