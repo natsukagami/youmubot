@@ -481,8 +481,12 @@ impl FromStr for Nth {
         } else if !s.starts_with('#') {
             Err(Error::msg("Not an order"))
         } else {
-            let v = s.split_at("#".len()).1.parse()?;
-            Ok(Nth::Nth(v))
+            let v = s.split_at("#".len()).1.parse::<u8>()?;
+            if v > 0 {
+                Ok(Nth::Nth(v - 1))
+            } else {
+                Err(Error::msg("number has to be at least 1"))
+            }
         }
     }
 }
@@ -872,19 +876,17 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .await?
         .ok_or_else(|| Error::msg("User not found"))?;
 
+    let plays = osu_client
+        .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
+        .await?;
+
     match nth {
         Nth::Nth(nth) => {
-            let top_play = osu_client
-                .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(nth))
-                .await?;
+            let Some(play) = plays.get(nth as usize) else {
+                Err(Error::msg("no such play"))?
+            };
 
-            let rank = top_play.len() as u8;
-
-            let top_play = top_play
-                .into_iter()
-                .last()
-                .ok_or_else(|| Error::msg("No such play"))?;
-            let beatmap = env.beatmaps.get_beatmap(top_play.beatmap_id, mode).await?;
+            let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, mode);
 
@@ -896,8 +898,8 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                             msg.author
                         ))
                         .embed(
-                            score_embed(&top_play, &beatmap, &content, &user)
-                                .top_record(rank)
+                            score_embed(&play, &beatmap, &content, &user)
+                                .top_record(nth + 1)
                                 .build(),
                         )
                         .components(vec![score_components(msg.guild_id)])
@@ -908,9 +910,6 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             cache::save_beatmap(&env, msg.channel_id, &beatmap).await?;
         }
         Nth::All => {
-            let plays = osu_client
-                .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
-                .await?;
             let reply = msg
                 .reply(
                     &ctx,
