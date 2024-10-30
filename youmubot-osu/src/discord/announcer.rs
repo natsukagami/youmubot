@@ -122,6 +122,10 @@ impl Announcer {
                     .unwrap_or(0),
                 last_update: now,
             };
+            if u.username != user.username {
+                user.username = u.username.clone().into();
+            }
+            user.preferred_mode = u.preferred_mode;
             let last = user.modes.insert(mode, stats);
 
             // broadcast
