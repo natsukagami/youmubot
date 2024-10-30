@@ -160,6 +160,15 @@ impl From<model::OsuUser> for OsuUser {
     }
 }
 
+impl From<OsuUser> for crate::models::UserHeader {
+    fn from(value: OsuUser) -> Self {
+        Self {
+            id: value.id as u64,
+            username: value.username.to_string(),
+        }
+    }
+}
+
 impl From<OsuUserMode> for model::OsuUserMode {
     fn from(m: OsuUserMode) -> Self {
         Self {

@@ -8,7 +8,7 @@ use serenity::all::{
 };
 use youmubot_prelude::*;
 
-use crate::Mods;
+use crate::{Mods, UserHeader};
 
 use super::{
     display::ScoreListStyle,
@@ -70,8 +70,9 @@ pub fn handle_check_button<'a>(
                 return Ok(());
             }
         };
+        let header = UserHeader::from(user.clone());
 
-        let scores = super::do_check(&env, &bm, Mods::NOMOD, &crate::UserID::ID(user.id)).await?;
+        let scores = super::do_check(&env, &bm, Mods::NOMOD, &header).await?;
         if scores.is_empty() {
             comp.create_followup(
                 &ctx,
