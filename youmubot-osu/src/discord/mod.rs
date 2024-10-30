@@ -424,6 +424,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
     let u = OsuUser {
         user_id: target,
         username: user.username.into(),
+        preferred_mode: user.preferred_mode,
         id: user.id,
         failures: 0,
         modes,

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT\n               INTO osu_users(user_id, username, id, preferred_mode, failures)\n               VALUES(?, ?, ?, ?, ?)\n               ON CONFLICT (user_id) WHERE id = ? DO UPDATE\n               SET\n                username = excluded.username,\n                preferred_mode = excluded.preferred_mode,\n                failures = excluded.failures\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "b9c63ef764711088cfbb58ce2ed1f46e3521357ec1d7c062bef762d3e4267378"
+}

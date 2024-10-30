@@ -113,6 +113,7 @@ pub struct OsuUser {
     pub username: Cow<'static, str>,
     pub id: u64,
     pub modes: Map<Mode, OsuUserMode>,
+    pub preferred_mode: Mode,
     /// More than 5 failures => gone
     pub failures: u8,
 }
@@ -136,6 +137,7 @@ impl From<OsuUser> for model::OsuUser {
                 .into_iter()
                 .map(|(k, v)| (k as u8, v.into()))
                 .collect(),
+            preferred_mode: u.preferred_mode as u8,
             failures: u.failures,
         }
     }
@@ -152,6 +154,7 @@ impl From<model::OsuUser> for OsuUser {
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
+            preferred_mode: u.preferred_mode.into(),
             failures: u.failures,
         }
     }

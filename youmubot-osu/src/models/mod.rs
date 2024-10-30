@@ -497,6 +497,7 @@ pub struct User {
     pub username: String,
     pub joined: DateTime<Utc>,
     pub country: String,
+    pub preferred_mode: Mode,
     // History
     pub count_300: u64,
     pub count_100: u64,

@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                user_id as \"user_id: i64\",\n                username,\n                id as \"id: i64\",\n                preferred_mode as \"preferred_mode: u8\",\n                failures as \"failures: u8\"\n            FROM osu_users WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "user_id: i64",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "id: i64",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "preferred_mode: u8",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "failures: u8",
+        "ordinal": 4,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e313b2e91d0da80a94e9a1030f94cf30b025c9ac0ac4d5bcc12656459c5e083a"
+}

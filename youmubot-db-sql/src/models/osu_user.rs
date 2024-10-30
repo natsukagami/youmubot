@@ -9,6 +9,7 @@ pub struct OsuUser {
     pub username: Option<String>, // should always be there
     pub id: i64,
     pub modes: Map<u8, OsuUserMode>,
+    pub preferred_mode: u8,
     /// Number of consecutive update failures
     pub failures: u8,
 }
@@ -97,6 +98,7 @@ mod raw {
         pub user_id: i64,
         pub username: Option<String>, // should always be there
         pub id: i64,
+        pub preferred_mode: u8,
         pub failures: u8,
     }
 }
@@ -108,6 +110,7 @@ impl OsuUser {
             username: r.username,
             id: r.id,
             modes,
+            preferred_mode: r.preferred_mode,
             failures: r.failures,
         }
     }
@@ -119,6 +122,7 @@ impl OsuUser {
                 user_id as "user_id: i64",
                 username,
                 id as "id: i64",
+                preferred_mode as "preferred_mode: u8",
                 failures as "failures: u8"
             FROM osu_users WHERE user_id = ?"#,
             user_id
@@ -141,6 +145,7 @@ impl OsuUser {
                 user_id as "user_id: i64",
                 username,
                 id as "id: i64",
+                preferred_mode as "preferred_mode: u8",
                 failures as "failures: u8"
             FROM osu_users WHERE id = ?"#,
             osu_id
@@ -164,6 +169,7 @@ impl OsuUser {
                 user_id as "user_id: i64",
                 username,
                 id as "id: i64",
+                preferred_mode as "preferred_mode: u8",
                 failures as "failures: u8"
             FROM osu_users"#,
         )
@@ -200,16 +206,18 @@ impl OsuUser {
 
         query!(
             r#"INSERT
-               INTO osu_users(user_id, username, id, failures)
-               VALUES(?, ?, ?, ?)
+               INTO osu_users(user_id, username, id, preferred_mode, failures)
+               VALUES(?, ?, ?, ?, ?)
                ON CONFLICT (user_id) WHERE id = ? DO UPDATE
                SET
                 username = excluded.username,
+                preferred_mode = excluded.preferred_mode,
                 failures = excluded.failures
             "#,
             self.user_id,
             self.username,
             self.id,
+            self.preferred_mode,
             self.failures,
             self.user_id,
         )
