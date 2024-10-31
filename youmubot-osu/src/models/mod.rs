@@ -488,7 +488,6 @@ impl UserEvent {
 pub struct UserHeader {
     pub id: u64,
     pub username: String,
-    pub country: String,
 }
 
 #[derive(Clone, Debug)]
@@ -497,6 +496,7 @@ pub struct User {
     pub username: String,
     pub joined: DateTime<Utc>,
     pub country: String,
+    pub preferred_mode: Mode,
     // History
     pub count_300: u64,
     pub count_100: u64,
@@ -544,7 +544,6 @@ impl<'a> From<&'a User> for UserHeader {
         Self {
             id: u.id,
             username: u.username.clone(),
-            country: u.country.clone(),
         }
     }
 }
@@ -554,7 +553,6 @@ impl From<User> for UserHeader {
         Self {
             id: u.id,
             username: u.username,
-            country: u.country,
         }
     }
 }

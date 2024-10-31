@@ -132,8 +132,8 @@ pub mod builders {
             }
         }
 
-        pub fn mode(&mut self, mode: Mode) -> &mut Self {
-            self.mode = Some(mode);
+        pub fn mode(&mut self, mode: impl Into<Option<Mode>>) -> &mut Self {
+            self.mode = mode.into();
             self
         }
 
@@ -185,8 +185,8 @@ pub mod builders {
             self
         }
 
-        pub fn mode(&mut self, mode: Mode) -> &mut Self {
-            self.mode = Some(mode);
+        pub fn mode(&mut self, mode: impl Into<Option<Mode>>) -> &mut Self {
+            self.mode = mode.into();
             self
         }
 

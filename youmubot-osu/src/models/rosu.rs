@@ -80,6 +80,7 @@ impl User {
             username: user.username.into_string(),
             joined: time_to_utc(user.join_date),
             country: user.country_code.to_string(),
+            preferred_mode: user.mode.into(),
             count_300: 0, // why do we even want this
             count_100: 0, // why do we even want this
             count_50: 0,  // why do we even want this

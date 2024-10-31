@@ -1,6 +1,6 @@
-use super::BeatmapWithMode;
+use super::{BeatmapWithMode, UserExtras};
 use crate::{
-    discord::oppai_cache::{Accuracy, BeatmapContent, BeatmapInfo, BeatmapInfoWithPP},
+    discord::oppai_cache::{Accuracy, BeatmapContent, BeatmapInfoWithPP},
     models::{Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
     UserHeader,
 };
@@ -479,13 +479,13 @@ impl<'a> ScoreEmbedBuilder<'a> {
     }
 }
 
-pub(crate) fn user_embed(
-    u: User,
-    map_length: f64,
-    map_age: i64,
-    best: Option<(Score, BeatmapWithMode, BeatmapInfo)>,
-) -> CreateEmbed {
+pub(crate) fn user_embed(u: User, ex: UserExtras) -> CreateEmbed {
     let mut stats = Vec::<(&'static str, String, bool)>::new();
+    let UserExtras {
+        map_length,
+        map_age,
+        best_score: best,
+    } = ex;
     if map_length > 0.0 {
         stats.push((
             "Weighted Map Length",
