@@ -1,7 +1,6 @@
 use std::{borrow::Borrow, collections::HashMap as Map, str::FromStr, sync::Arc};
 
 use chrono::Utc;
-use future::try_join;
 use futures_util::join;
 use interaction::{beatmap_components, score_components};
 use rand::seq::IteratorRandom;
@@ -246,7 +245,13 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         }
     };
     async fn find_score(client: &OsuHttpClient, u: &User) -> Result<Option<(Score, Mode)>> {
-        for mode in &[Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania] {
+        for mode in &[
+            u.preferred_mode,
+            Mode::Std,
+            Mode::Taiko,
+            Mode::Catch,
+            Mode::Mania,
+        ] {
             let scores = client
                 .user_best(UserID::ID(u.id), |f| f.mode(*mode))
                 .await?;
@@ -280,10 +285,11 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let reply = msg.reply(
         &ctx,
         format!(
-            "To set your osu username, please make your most recent play \
+            "To set your osu username to **{}**, please make your most recent play \
             be the following map: `/b/{}` in **{}** mode! \
         It does **not** have to be a pass, and **NF** can be used! \
         React to this message with 👌 within 5 minutes when you're done!",
+            u.username,
             score.beatmap_id,
             mode.as_str_new_site()
         ),
@@ -317,7 +323,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             .message_id(reply.id)
             .author_id(msg.author.id)
             .filter(move |r| r.emoji == emoji)
-            .timeout(std::time::Duration::from_secs(300))
+            .timeout(std::time::Duration::from_secs(300) + beatmap.difficulty.total_length)
             .next()
             .await;
         if let Some(ur) = user_reaction {
@@ -330,20 +336,39 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         }
     };
     if !completed {
+        reply
+            .edit(
+                &ctx,
+                EditMessage::new()
+                    .content(format!(
+                        "Setting username to **{}** failed due to timeout. Please try again!",
+                        u.username
+                    ))
+                    .embeds(vec![])
+                    .components(vec![]),
+            )
+            .await?;
         reaction.delete(&ctx).await?;
         return Ok(());
     }
 
     let username = u.username.clone();
-    add_user(msg.author.id, u, &env).await?;
-    msg.reply(
-        &ctx,
-        MessageBuilder::new()
-            .push("user has been set to ")
-            .push_mono_safe(username)
-            .build(),
-    )
-    .await?;
+    add_user(msg.author.id, &u, &env).await?;
+    let ex = UserExtras::from_user(&env, &u, mode).await?;
+    msg.channel_id
+        .send_message(
+            &ctx,
+            CreateMessage::new()
+                .reference_message(msg)
+                .content(
+                    MessageBuilder::new()
+                        .push("user has been set to ")
+                        .push_bold_safe(username)
+                        .build(),
+                )
+                .add_embed(user_embed(u, ex)),
+        )
+        .await?;
     Ok(())
 }
 
@@ -366,7 +391,7 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
         .await?;
     match user {
         Some(u) => {
-            add_user(target, u, &env).await?;
+            add_user(target, &u, &env).await?;
             msg.reply(
                 &ctx,
                 MessageBuilder::new()
@@ -383,49 +408,34 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     Ok(())
 }
 
-async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv) -> Result<()> {
+async fn add_user(target: serenity::model::id::UserId, user: &User, env: &OsuEnv) -> Result<()> {
     let modes = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
         .into_iter()
-        .map(|mode| async move {
-            let pp = async {
-                env.client
-                    .user(&UserID::ID(user.id), |f| f.mode(mode))
-                    .await
-                    .pls_ok()
-                    .unwrap_or(None)
-                    .and_then(|u| u.pp)
-            };
-            let map_length_age = async {
-                let scores = env
-                    .client
-                    .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
-                    .await
-                    .pls_ok()
-                    .unwrap_or_else(std::vec::Vec::new);
-
-                (
-                    calculate_weighted_map_length(&scores, &env.beatmaps, mode)
+        .map(|mode| {
+            let mode = mode.clone();
+            async move {
+                let pp = async {
+                    env.client
+                        .user(&UserID::ID(user.id), |f| f.mode(mode))
                         .await
-                        .pls_ok(),
-                    calculate_weighted_map_age(&scores, &env.beatmaps, mode)
-                        .await
-                        .pls_ok(),
-                )
-            };
-            let (pp, (map_length, map_age)) = join!(pp, map_length_age);
-            pp.zip(map_length)
-                .zip(map_age)
-                .map(|((pp, map_length), map_age)| {
+                        .pls_ok()
+                        .unwrap_or(None)
+                        .and_then(|u| u.pp)
+                };
+                let map_length_age = UserExtras::from_user(env, user, mode);
+                let (pp, ex) = join!(pp, map_length_age);
+                pp.zip(ex.ok()).map(|(pp, ex)| {
                     (
                         mode,
                         OsuUserMode {
                             pp,
-                            map_length,
-                            map_age,
+                            map_length: ex.map_length,
+                            map_age: ex.map_age,
                             last_update: Utc::now(),
                         },
                     )
                 })
+            }
         })
         .collect::<stream::FuturesOrdered<_>>()
         .filter_map(future::ready)
@@ -434,7 +444,7 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
 
     let u = OsuUser {
         user_id: target,
-        username: user.username.into(),
+        username: user.username.clone().into(),
         preferred_mode: user.preferred_mode,
         id: user.id,
         failures: 0,
@@ -442,6 +452,47 @@ async fn add_user(target: serenity::model::id::UserId, user: User, env: &OsuEnv)
     };
     env.saved_users.new_user(u).await?;
     Ok(())
+}
+
+/// Stores extra information to create an user embed.
+pub(crate) struct UserExtras {
+    pub map_length: f64,
+    pub map_age: i64,
+    pub best_score: Option<(Score, BeatmapWithMode, BeatmapInfo)>,
+}
+
+impl UserExtras {
+    // Collect UserExtras from the given user.
+    pub async fn from_user(env: &OsuEnv, user: &User, mode: Mode) -> Result<Self> {
+        let scores = env
+            .client
+            .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
+            .await
+            .pls_ok()
+            .unwrap_or_else(std::vec::Vec::new);
+
+        let (length, age) = join!(
+            calculate_weighted_map_length(&scores, &env.beatmaps, mode),
+            calculate_weighted_map_age(&scores, &env.beatmaps, mode)
+        );
+        let best = if let Some(s) = scores.into_iter().next() {
+            let beatmap = env.beatmaps.get_beatmap(s.beatmap_id, mode).await?;
+            let info = env
+                .oppai
+                .get_beatmap(s.beatmap_id)
+                .await?
+                .get_info_with(mode, &s.mods)?;
+            Some((s, BeatmapWithMode(beatmap, mode), info))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            map_length: length.unwrap_or(0.0),
+            map_age: age.unwrap_or(0),
+            best_score: best,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -952,32 +1003,14 @@ async fn get_user(
 ) -> CommandResult {
     let (mode, user) = user_header_from_args(args.single::<UsernameArg>().ok(), env, msg).await?;
     let mode = mode_override.into().unwrap_or(mode);
-    let osu_client = &env.client;
-    let meta_cache = &env.beatmaps;
-    let user = osu_client
+    let user = env
+        .client
         .user(&UserID::ID(user.id), |f| f.mode(mode))
         .await?;
 
     match user {
         Some(u) => {
-            let bests = osu_client
-                .user_best(UserID::ID(u.id), |f| f.limit(100).mode(mode))
-                .await?;
-            let map_length = calculate_weighted_map_length(&bests, meta_cache, mode);
-            let map_age = calculate_weighted_map_age(&bests, meta_cache, mode);
-            let (map_length, map_age) = try_join(map_length, map_age).await?;
-            let best = match bests.into_iter().next() {
-                Some(m) => {
-                    let beatmap = meta_cache.get_beatmap(m.beatmap_id, mode).await?;
-                    let info = env
-                        .oppai
-                        .get_beatmap(m.beatmap_id)
-                        .await?
-                        .get_info_with(mode, &m.mods)?;
-                    Some((m, BeatmapWithMode(beatmap, mode), info))
-                }
-                None => None,
-            };
+            let ex = UserExtras::from_user(env, &u, mode).await?;
             msg.channel_id
                 .send_message(
                     &ctx,
@@ -986,7 +1019,7 @@ async fn get_user(
                             "{}: here is the user that you requested",
                             msg.author
                         ))
-                        .embed(user_embed(u, map_length, map_age, best)),
+                        .embed(user_embed(u, ex)),
                 )
                 .await?;
         }
