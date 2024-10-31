@@ -362,7 +362,9 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .reference_message(msg)
                 .content(
                     MessageBuilder::new()
-                        .push("user has been set to ")
+                        .push("Youmu is now tracking user ")
+                        .push(msg.author.mention().to_string())
+                        .push(" with osu! account ")
                         .push_bold_safe(username)
                         .build(),
                 )
@@ -392,14 +394,23 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     match user {
         Some(u) => {
             add_user(target, &u, &env).await?;
-            msg.reply(
-                &ctx,
-                MessageBuilder::new()
-                    .push("user has been set to ")
-                    .push_mono_safe(username)
-                    .build(),
-            )
-            .await?;
+            let ex = UserExtras::from_user(&env, &u, u.preferred_mode).await?;
+            msg.channel_id
+                .send_message(
+                    &ctx,
+                    CreateMessage::new()
+                        .reference_message(msg)
+                        .content(
+                            MessageBuilder::new()
+                                .push("Youmu is now tracking user ")
+                                .push(target.mention().to_string())
+                                .push(" with osu! account ")
+                                .push_bold_safe(username)
+                                .build(),
+                        )
+                        .embed(user_embed(u, ex)),
+                )
+                .await?;
         }
         None => {
             msg.reply(&ctx, "user not found...").await?;
