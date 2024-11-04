@@ -360,6 +360,7 @@ mod beatmapset {
         beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
         mods: Mods,
+        guild_id: Option<GuildId>,
         target: Message,
     ) -> Result<bool> {
         assert!(!beatmapset.is_empty(), "Beatmapset should not be empty");
@@ -369,7 +370,7 @@ mod beatmapset {
             maps: beatmapset,
             mode,
             mods,
-            guild_id: target.guild_id,
+            guild_id,
 
             all_reaction: None,
         };

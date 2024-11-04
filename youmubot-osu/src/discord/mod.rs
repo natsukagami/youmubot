@@ -813,7 +813,15 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 let reply = msg
                     .reply(&ctx, "Here is the beatmapset you requested!")
                     .await?;
-                display::display_beatmapset(ctx.clone(), beatmapset, None, mods, reply).await?;
+                display::display_beatmapset(
+                    ctx.clone(),
+                    beatmapset,
+                    None,
+                    mods,
+                    msg.guild_id,
+                    reply,
+                )
+                .await?;
                 return Ok(());
             }
             let info = env

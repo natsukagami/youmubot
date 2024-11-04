@@ -20,6 +20,7 @@ use super::{
 pub(super) const BTN_CHECK: &str = "youmubot_osu_btn_check";
 pub(super) const BTN_LB: &str = "youmubot_osu_btn_lb";
 pub(super) const BTN_LAST: &str = "youmubot_osu_btn_last";
+pub(super) const BTN_LAST_SET: &str = "youmubot_osu_btn_last_set";
 
 /// Create an action row for score pages.
 pub fn score_components(guild_id: Option<GuildId>) -> CreateActionRow {
@@ -36,6 +37,7 @@ pub fn beatmap_components(guild_id: Option<GuildId>) -> CreateActionRow {
     if guild_id.is_some() {
         btns.push(lb_button());
     }
+    btns.push(mapset_button());
     CreateActionRow::Buttons(btns)
 }
 
@@ -120,6 +122,13 @@ pub fn last_button() -> CreateButton {
         .style(serenity::all::ButtonStyle::Success)
 }
 
+pub fn mapset_button() -> CreateButton {
+    CreateButton::new(BTN_LAST_SET)
+        .label("Set")
+        .emoji('📚')
+        .style(serenity::all::ButtonStyle::Secondary)
+}
+
 /// Implements the `last` button on scores and beatmaps.
 pub fn handle_last_button<'a>(
     ctx: &'a Context,
@@ -130,16 +139,60 @@ pub fn handle_last_button<'a>(
             Some(comp) => comp,
             None => return Ok(()),
         };
-        let msg = &*comp.message;
+        handle_last_req(ctx, comp, false).await
+    })
+}
 
-        let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+/// Implements the `beatmapset` button on scores and beatmaps.
+pub fn handle_last_set_button<'a>(
+    ctx: &'a Context,
+    interaction: &'a Interaction,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let comp = match expect_and_defer_button(ctx, interaction, BTN_LAST_SET).await? {
+            Some(comp) => comp,
+            None => return Ok(()),
+        };
+        handle_last_req(ctx, comp, true).await
+    })
+}
 
-        let (bm, mods_def) = super::load_beatmap(&env, comp.channel_id, Some(msg))
-            .await
-            .unwrap();
-        let BeatmapWithMode(b, m) = &bm;
+async fn handle_last_req(
+    ctx: &Context,
+    comp: &ComponentInteraction,
+    is_beatmapset_req: bool,
+) -> Result<()> {
+    let msg = &*comp.message;
 
-        let mods = mods_def.unwrap_or_default();
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+
+    let (bm, mods_def) = super::load_beatmap(&env, comp.channel_id, Some(msg))
+        .await
+        .unwrap();
+    let BeatmapWithMode(b, m) = &bm;
+
+    let mods = mods_def.unwrap_or_default();
+
+    if is_beatmapset_req {
+        let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
+        let reply = comp
+            .create_followup(
+                &ctx,
+                CreateInteractionResponseFollowup::new()
+                    .content(format!("Beatmapset of `{}`", bm.short_link(&mods))),
+            )
+            .await?;
+        super::display::display_beatmapset(
+            ctx.clone(),
+            beatmapset,
+            None,
+            mods,
+            comp.guild_id,
+            reply,
+        )
+        .await?;
+        return Ok(());
+    } else {
         let info = env
             .oppai
             .get_beatmap(b.beatmap_id)
@@ -158,9 +211,9 @@ pub fn handle_last_button<'a>(
         .await?;
         // Save the beatmap...
         super::cache::save_beatmap(&env, msg.channel_id, &bm).await?;
+    }
 
-        Ok(())
-    })
+    Ok(())
 }
 
 /// Creates a new check button.

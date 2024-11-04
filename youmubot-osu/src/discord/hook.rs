@@ -327,6 +327,7 @@ async fn handle_beatmapset<'a, 'b>(
         beatmaps,
         mode,
         Mods::default(),
+        reply_to.guild_id,
         reply,
     )
     .await
