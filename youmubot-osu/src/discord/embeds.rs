@@ -490,7 +490,7 @@ impl<'a> FakeScore<'a> {
     }
     fn is_fc(&self, map_max_combo: usize) -> bool {
         match self.max_combo {
-            None => true,
+            None => self.count_miss == 0,
             Some(combo) => combo == map_max_combo - self.count_slider_ends_missed.unwrap_or(0),
         }
     }

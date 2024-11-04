@@ -131,14 +131,14 @@ pub fn mapset_button() -> CreateButton {
     CreateButton::new(BTN_LAST_SET)
         .label("Set")
         .emoji('📚')
-        .style(serenity::all::ButtonStyle::Secondary)
+        .style(serenity::all::ButtonStyle::Success)
 }
 
 pub fn simulate_button() -> CreateButton {
     CreateButton::new(BTN_SIMULATE)
         .label("What If?")
         .emoji('🌈')
-        .style(serenity::all::ButtonStyle::Primary)
+        .style(serenity::all::ButtonStyle::Success)
 }
 
 /// Implements the `last` button on scores and beatmaps.
