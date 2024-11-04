@@ -319,14 +319,15 @@ async fn handle_beatmapset<'a, 'b>(
     mode: Option<Mode>,
     reply_to: &Message,
 ) -> Result<()> {
+    let reply = reply_to
+        .reply(ctx, format!("Beatmapset information for `{}`", link))
+        .await?;
     crate::discord::display::display_beatmapset(
-        ctx,
+        ctx.clone(),
         beatmaps,
         mode,
         Mods::default(),
-        reply_to,
-        reply_to.guild_id,
-        format!("Beatmapset information for `{}`", link),
+        reply,
     )
     .await
     .pls_ok();

@@ -356,33 +356,34 @@ mod beatmapset {
     const SHOW_ALL_EMOTE: &str = "🗒️";
 
     pub async fn display_beatmapset(
-        ctx: &Context,
+        ctx: Context,
         beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
         mods: Mods,
-        reply_to: &Message,
-        guild_id: Option<GuildId>,
-        message: impl AsRef<str>,
+        target: Message,
     ) -> Result<bool> {
-        if beatmapset.is_empty() {
-            return Ok(false);
-        }
+        assert!(!beatmapset.is_empty(), "Beatmapset should not be empty");
 
         let p = Paginate {
             infos: vec![None; beatmapset.len()],
             maps: beatmapset,
             mode,
             mods,
-            guild_id,
-            message: message.as_ref().to_owned(),
+            guild_id: target.guild_id,
+
+            all_reaction: None,
         };
 
         let ctx = ctx.clone();
-        let reply_to = reply_to.clone();
         spawn_future(async move {
-            pagination::paginate_reply(p, &ctx, &reply_to, std::time::Duration::from_secs(60))
-                .await
-                .pls_ok();
+            pagination::paginate_with_first_message(
+                p,
+                &ctx,
+                target,
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .pls_ok();
         });
         Ok(true)
     }
@@ -392,8 +393,9 @@ mod beatmapset {
         infos: Vec<Option<BeatmapInfoWithPP>>,
         mode: Option<Mode>,
         mods: Mods,
-        message: String,
         guild_id: Option<GuildId>,
+
+        all_reaction: Option<Reaction>,
     }
 
     impl Paginate {
@@ -440,7 +442,7 @@ mod beatmapset {
                 }
             };
             msg.edit(ctx,
-                     EditMessage::new().content(self.message.as_str()).embed(
+                     EditMessage::new().embed(
                        crate::discord::embeds::beatmap_embed(
                            map,
                            self.mode.unwrap_or(map.mode),
@@ -498,6 +500,14 @@ mod beatmapset {
             pagination::handle_pagination_reaction(page, self, ctx, message, reaction)
                 .await
                 .map(Some)
+        }
+
+        async fn cleanup(&mut self, ctx: &Context, _msg: &mut Message) {
+            if let Some(r) = self.all_reaction.take() {
+                if !r.delete_all(&ctx).await.is_ok() {
+                    r.delete(&ctx).await.pls_ok();
+                }
+            }
         }
     }
 }

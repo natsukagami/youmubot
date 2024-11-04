@@ -810,16 +810,10 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             };
             if beatmapset {
                 let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
-                display::display_beatmapset(
-                    ctx,
-                    beatmapset,
-                    None,
-                    mods,
-                    msg,
-                    msg.guild_id,
-                    "Here is the beatmapset you requested!",
-                )
-                .await?;
+                let reply = msg
+                    .reply(&ctx, "Here is the beatmapset you requested!")
+                    .await?;
+                display::display_beatmapset(ctx.clone(), beatmapset, None, mods, reply).await?;
                 return Ok(());
             }
             let info = env

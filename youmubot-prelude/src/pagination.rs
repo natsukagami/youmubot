@@ -27,6 +27,9 @@ pub trait Paginate: Send + Sized {
         Ok(())
     }
 
+    /// Cleans up after the pagination has timed out.
+    async fn cleanup(&mut self, _ctx: &Context, _m: &mut Message) -> () {}
+
     /// Handle the incoming reaction. Defaults to calling `handle_pagination_reaction`, but you can do some additional handling
     /// before handing the functionality over.
     ///
@@ -115,6 +118,10 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
 
     fn is_empty(&self) -> Option<bool> {
         Some(self.page_count == 0)
+    }
+
+    async fn cleanup(&mut self, ctx: &Context, msg: &mut Message) {
+        self.inner.cleanup(ctx, msg).await;
     }
 }
 
@@ -239,6 +246,8 @@ pub async fn paginate_with_first_message(
             }
         }
     };
+
+    pager.cleanup(ctx, &mut message).await;
 
     for reaction in reactions {
         if reaction.delete_all(&ctx).await.pls_ok().is_none() {
