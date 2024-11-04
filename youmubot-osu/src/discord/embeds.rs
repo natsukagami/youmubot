@@ -392,11 +392,6 @@ impl<'a> ScoreEmbedBuilder<'a> {
             .map(|v| format!(" | #{} on Global Rankings!", v))
             .unwrap_or_else(|| "".to_owned());
         let diff = b.difficulty.apply_mods(&s.mods, stars);
-        let creator = if b.difficulty_name.contains("'s") {
-            "".to_owned()
-        } else {
-            format!("by {} ", b.creator)
-        };
         let mod_details = mod_details(&s.mods);
         let description_fields = [
             Some(
@@ -430,18 +425,8 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 MessageBuilder::new()
                     .push_safe(&u.username)
                     .push(" | ")
-                    .push_safe(&b.artist)
-                    .push(" - ")
-                    .push(&b.title)
-                    .push(" [")
-                    .push_safe(&b.difficulty_name)
-                    .push("] ")
-                    .push(s.mods.to_string())
-                    .push(" ")
-                    .push(format!("({:.2}\\*)", stars))
-                    .push(" ")
-                    .push_safe(creator)
-                    .push("| ")
+                    .push(b.full_title(&s.mods, stars))
+                    .push(" | ")
                     .push(score_line)
                     .push(top_record)
                     .push(world_record)
@@ -476,6 +461,132 @@ impl<'a> ScoreEmbedBuilder<'a> {
             m = m.footer(CreateEmbedFooter::new(footer));
         }
         m
+    }
+}
+
+pub(crate) struct FakeScore<'a> {
+    pub bm: &'a BeatmapWithMode,
+    pub content: &'a BeatmapContent,
+    pub mods: Mods,
+
+    pub count_300: usize,
+    pub count_100: usize,
+    pub count_50: usize,
+    pub count_miss: usize,
+
+    pub count_slider_ends_missed: Option<usize>, // lazer only
+
+    pub max_combo: Option<usize>,
+}
+
+impl<'a> FakeScore<'a> {
+    fn is_ss(&self, map_max_combo: usize) -> bool {
+        self.is_fc(map_max_combo)
+            && self.count_100
+                + self.count_50
+                + self.count_miss
+                + self.count_slider_ends_missed.unwrap_or(0)
+                == 0
+    }
+    fn is_fc(&self, map_max_combo: usize) -> bool {
+        match self.max_combo {
+            None => self.count_miss == 0,
+            Some(combo) => combo == map_max_combo - self.count_slider_ends_missed.unwrap_or(0),
+        }
+    }
+    fn accuracy(&self) -> f64 {
+        100.0
+            * (self.count_300 as f64 * 300.0
+                + self.count_100 as f64 * 100.0
+                + self.count_50 as f64 * 50.0)
+            / ((self.count_300 + self.count_100 + self.count_50 + self.count_miss) as f64 * 300.0)
+    }
+    pub fn embed(self, ctx: &Context) -> Result<CreateEmbed> {
+        let BeatmapWithMode(b, mode) = self.bm;
+        let info = self.content.get_info_with(*mode, &self.mods)?;
+        let max_combo = self.max_combo.unwrap_or(
+            info.max_combo - self.count_miss - self.count_slider_ends_missed.unwrap_or(0),
+        );
+        let acc = format!("{:.2}%", self.accuracy());
+        let score_line: Cow<str> = if self.is_ss(info.max_combo) {
+            "SS".into()
+        } else if self.is_fc(info.max_combo) {
+            format!("{} FC", acc).into()
+        } else {
+            format!("{} {}x {} miss", acc, max_combo, self.count_miss).into()
+        };
+        let pp = self.content.get_pp_from(
+            *mode,
+            self.max_combo,
+            Accuracy::ByCount(
+                self.count_300 as u64,
+                self.count_100 as u64,
+                self.count_50 as u64,
+                self.count_miss as u64,
+            ),
+            &self.mods,
+        )?;
+        let pp_if_fc: Cow<str> = if self.is_fc(info.max_combo) {
+            "".into()
+        } else {
+            let pp = self.content.get_pp_from(
+                *mode,
+                None,
+                Accuracy::ByCount(
+                    (self.count_300 + self.count_miss) as u64,
+                    self.count_100 as u64,
+                    self.count_50 as u64,
+                    0,
+                ),
+                &self.mods,
+            )?;
+            format!(" ({:.2}pp if fc)", pp).into()
+        };
+
+        let youmu = ctx.cache.current_user();
+
+        Ok(CreateEmbed::new()
+            .author(
+                CreateEmbedAuthor::new(&youmu.name).icon_url(youmu.static_avatar_url().unwrap()),
+            )
+            .color(0xffb6c1)
+            .title(
+                MessageBuilder::new()
+                    .push_safe(&youmu.name)
+                    .push(" | ")
+                    .push(b.full_title(&self.mods, info.stars))
+                    .push(" | ")
+                    .push(score_line)
+                    .push(" | ")
+                    .push(format!("{:.2}pp [?]", pp))
+                    .push(pp_if_fc)
+                    .build(),
+            )
+            .thumbnail(b.thumbnail_url())
+            .description(format!("**pp gained**: **{:.2}**pp", pp))
+            .field(
+                "Score stats",
+                format!("**{}** combo | **{}**", max_combo, acc),
+                true,
+            )
+            .field(
+                "300s | 100s | 50s | misses",
+                format!(
+                    "**{}** | **{}** | **{}** | **{}**",
+                    self.count_300, self.count_100, self.count_50, self.count_miss
+                ),
+                true,
+            )
+            .field(
+                "Map stats",
+                b.difficulty
+                    .apply_mods(&self.mods, info.stars)
+                    .format_info(*mode, &self.mods, b),
+                false,
+            )
+            .footer(CreateEmbedFooter::new(
+                "This is a simulated score, with pp calculated by Youmu.",
+            )))
     }
 }
 

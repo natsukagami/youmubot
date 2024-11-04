@@ -1,14 +1,15 @@
-use std::pin::Pin;
+use std::{pin::Pin, str::FromStr, time::Duration};
 
 use future::Future;
 use serenity::all::{
     ComponentInteraction, ComponentInteractionDataKind, CreateActionRow, CreateButton,
-    CreateInteractionResponse, CreateInteractionResponseFollowup, CreateInteractionResponseMessage,
-    GuildId, Interaction,
+    CreateInputText, CreateInteractionResponse, CreateInteractionResponseFollowup,
+    CreateInteractionResponseMessage, CreateQuickModal, GuildId, InputTextStyle, Interaction,
+    QuickModalResponse,
 };
 use youmubot_prelude::*;
 
-use crate::{Mods, UserHeader};
+use crate::{discord::embeds::FakeScore, mods::UnparsedMods, Mode, Mods, UserHeader};
 
 use super::{
     display::ScoreListStyle,
@@ -20,6 +21,8 @@ use super::{
 pub(super) const BTN_CHECK: &str = "youmubot_osu_btn_check";
 pub(super) const BTN_LB: &str = "youmubot_osu_btn_lb";
 pub(super) const BTN_LAST: &str = "youmubot_osu_btn_last";
+pub(super) const BTN_LAST_SET: &str = "youmubot_osu_btn_last_set";
+pub(super) const BTN_SIMULATE: &str = "youmubot_osu_btn_simulate";
 
 /// Create an action row for score pages.
 pub fn score_components(guild_id: Option<GuildId>) -> CreateActionRow {
@@ -31,10 +34,14 @@ pub fn score_components(guild_id: Option<GuildId>) -> CreateActionRow {
 }
 
 /// Create an action row for score pages.
-pub fn beatmap_components(guild_id: Option<GuildId>) -> CreateActionRow {
+pub fn beatmap_components(mode: Mode, guild_id: Option<GuildId>) -> CreateActionRow {
     let mut btns = vec![check_button()];
     if guild_id.is_some() {
         btns.push(lb_button());
+    }
+    btns.push(mapset_button());
+    if mode == Mode::Std {
+        btns.push(simulate_button());
     }
     CreateActionRow::Buttons(btns)
 }
@@ -120,6 +127,20 @@ pub fn last_button() -> CreateButton {
         .style(serenity::all::ButtonStyle::Success)
 }
 
+pub fn mapset_button() -> CreateButton {
+    CreateButton::new(BTN_LAST_SET)
+        .label("Set")
+        .emoji('📚')
+        .style(serenity::all::ButtonStyle::Success)
+}
+
+pub fn simulate_button() -> CreateButton {
+    CreateButton::new(BTN_SIMULATE)
+        .label("What If?")
+        .emoji('🌈')
+        .style(serenity::all::ButtonStyle::Success)
+}
+
 /// Implements the `last` button on scores and beatmaps.
 pub fn handle_last_button<'a>(
     ctx: &'a Context,
@@ -130,16 +151,190 @@ pub fn handle_last_button<'a>(
             Some(comp) => comp,
             None => return Ok(()),
         };
+        handle_last_req(ctx, comp, false).await
+    })
+}
+
+/// Implements the `beatmapset` button on scores and beatmaps.
+pub fn handle_last_set_button<'a>(
+    ctx: &'a Context,
+    interaction: &'a Interaction,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let comp = match expect_and_defer_button(ctx, interaction, BTN_LAST_SET).await? {
+            Some(comp) => comp,
+            None => return Ok(()),
+        };
+        handle_last_req(ctx, comp, true).await
+    })
+}
+
+/// Implements the `simulate` button on beatmaps.
+pub fn handle_simulate_button<'a>(
+    ctx: &'a Context,
+    interaction: &'a Interaction,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let comp = match interaction.as_message_component() {
+            Some(comp)
+                if comp.data.custom_id == BTN_SIMULATE
+                    && matches!(comp.data.kind, ComponentInteractionDataKind::Button) =>
+            {
+                comp
+            }
+            _ => return Ok(()),
+        };
+
         let msg = &*comp.message;
 
         let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-        let (bm, mods_def) = super::load_beatmap(&env, comp.channel_id, Some(msg))
+        let (bm, _) = super::load_beatmap(&env, comp.channel_id, Some(msg))
             .await
             .unwrap();
-        let BeatmapWithMode(b, m) = &bm;
+        let b = &bm.0;
+        let mode = bm.1;
+        let content = env.oppai.get_beatmap(b.beatmap_id).await?;
+        let info = content.get_info_with(mode, Mods::NOMOD)?;
 
-        let mods = mods_def.unwrap_or_default();
+        assert!(mode == Mode::Std);
+
+        fn mk_input(title: &str, placeholder: impl Into<String>) -> CreateInputText {
+            CreateInputText::new(InputTextStyle::Short, title, "")
+                .placeholder(placeholder)
+                .required(false)
+        }
+
+        let Some(query) = comp
+            .quick_modal(
+                &ctx,
+                CreateQuickModal::new(format!(
+                    "Simulate Score on beatmap `{}`",
+                    b.short_link(None, Mods::NOMOD)
+                ))
+                .timeout(Duration::from_secs(300))
+                .field(mk_input("Mods", "NM"))
+                .field(mk_input("Max Combo", info.max_combo.to_string()))
+                .field(mk_input("100s", "0"))
+                .field(mk_input("50s", "0"))
+                .field(mk_input("Misses", "0")),
+                // .short_field("Slider Ends Missed (Lazer Only)"), // too long LMAO
+            )
+            .await?
+        else {
+            return Ok(());
+        };
+
+        query.interaction.defer(&ctx).await?;
+
+        if let Err(err) = handle_simluate_query(ctx, &env, &query, bm).await {
+            query
+                .interaction
+                .create_followup(
+                    ctx,
+                    CreateInteractionResponseFollowup::new()
+                        .content(format!("Cannot simulate score: {}", err))
+                        .ephemeral(true),
+                )
+                .await
+                .pls_ok();
+        }
+
+        Ok(())
+    })
+}
+
+async fn handle_simluate_query(
+    ctx: &Context,
+    env: &OsuEnv,
+    query: &QuickModalResponse,
+    bm: BeatmapWithMode,
+) -> Result<()> {
+    let b = &bm.0;
+    let mode = bm.1;
+    let content = env.oppai.get_beatmap(b.beatmap_id).await?;
+
+    let score = {
+        let inputs = &query.inputs;
+        let (mods, max_combo, c100, c50, cmiss, csliderends) = (
+            &inputs[0], &inputs[1], &inputs[2], &inputs[3], &inputs[4], "",
+        );
+        let mods = UnparsedMods::from_str(mods)
+            .map_err(|v| Error::msg(v))?
+            .to_mods(mode)?;
+        let info = content.get_info_with(mode, &mods)?;
+        let max_combo = max_combo.parse::<usize>().ok();
+        let c100 = c100.parse::<usize>().unwrap_or(0);
+        let c50 = c50.parse::<usize>().unwrap_or(0);
+        let cmiss = cmiss.parse::<usize>().unwrap_or(0);
+        let c300 = info.objects - c100 - c50 - cmiss;
+        let csliderends = csliderends.parse::<usize>().ok();
+        FakeScore {
+            bm: &bm,
+            content: &content,
+            mods,
+            count_300: c300,
+            count_100: c100,
+            count_50: c50,
+            count_miss: cmiss,
+            count_slider_ends_missed: csliderends,
+            max_combo,
+        }
+    };
+
+    query
+        .interaction
+        .create_followup(
+            &ctx,
+            CreateInteractionResponseFollowup::new()
+                .content(format!(
+                    "Simulated score for `{}`",
+                    b.short_link(None, Mods::NOMOD)
+                ))
+                .add_embed(score.embed(ctx)?)
+                .components(vec![score_components(query.interaction.guild_id)]),
+        )
+        .await?;
+
+    Ok(())
+}
+
+async fn handle_last_req(
+    ctx: &Context,
+    comp: &ComponentInteraction,
+    is_beatmapset_req: bool,
+) -> Result<()> {
+    let msg = &*comp.message;
+
+    let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+
+    let (bm, mods_def) = super::load_beatmap(&env, comp.channel_id, Some(msg))
+        .await
+        .unwrap();
+    let BeatmapWithMode(b, m) = &bm;
+
+    let mods = mods_def.unwrap_or_default();
+
+    if is_beatmapset_req {
+        let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
+        let reply = comp
+            .create_followup(
+                &ctx,
+                CreateInteractionResponseFollowup::new()
+                    .content(format!("Beatmapset of `{}`", bm.short_link(&mods))),
+            )
+            .await?;
+        super::display::display_beatmapset(
+            ctx.clone(),
+            beatmapset,
+            None,
+            mods,
+            comp.guild_id,
+            reply,
+        )
+        .await?;
+        return Ok(());
+    } else {
         let info = env
             .oppai
             .get_beatmap(b.beatmap_id)
@@ -153,14 +348,14 @@ pub fn handle_last_button<'a>(
                     bm.short_link(&mods)
                 ))
                 .embed(beatmap_embed(b, *m, &mods, info))
-                .components(vec![beatmap_components(comp.guild_id)]),
+                .components(vec![beatmap_components(bm.1, comp.guild_id)]),
         )
         .await?;
         // Save the beatmap...
         super::cache::save_beatmap(&env, msg.channel_id, &bm).await?;
+    }
 
-        Ok(())
-    })
+    Ok(())
 }
 
 /// Creates a new check button.
@@ -191,7 +386,7 @@ pub fn handle_lb_button<'a>(
         let order = OrderBy::default();
         let guild = comp.guild_id.expect("Guild-only command");
 
-        let scores = get_leaderboard(ctx, &env, &bm, order, guild).await?;
+        let scores = get_leaderboard(ctx, &env, &bm, false, order, guild).await?;
 
         if scores.is_empty() {
             comp.create_followup(

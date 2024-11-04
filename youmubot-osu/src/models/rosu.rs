@@ -135,6 +135,8 @@ impl From<rosu::score::Score> for Score {
             count_geki: legacy_stats.count_geki as u64,
             max_combo: s.max_combo as u64,
             perfect: s.is_perfect_combo,
+            ranked: s.ranked,
+            preserved: s.preserve,
             lazer_build_id: s.build_id,
         }
     }

@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use mods::Stats;
 use rosu_v2::prelude::GameModIntermode;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fmt;
 use std::time::Duration;
 
@@ -439,6 +440,39 @@ impl Beatmap {
     pub fn thumbnail_url(&self) -> String {
         format!("https://b.ppy.sh/thumb/{}l.jpg", self.beatmapset_id)
     }
+
+    /// Beatmap title and difficulty name
+    pub fn map_title(&self) -> String {
+        MessageBuilder::new()
+            .push_safe(&self.artist)
+            .push(" - ")
+            .push_safe(&self.title)
+            .push(" [")
+            .push_safe(&self.difficulty_name)
+            .push("]")
+            .build()
+    }
+
+    /// Full title with creator name if needed
+    pub fn full_title(&self, mods: &Mods, stars: f64) -> String {
+        let creator: Cow<str> = if self.difficulty_name.contains("'s") {
+            "".into()
+        } else {
+            format!(" by {}", self.creator).into()
+        };
+
+        MessageBuilder::new()
+            .push_safe(&self.artist)
+            .push(" - ")
+            .push_safe(&self.title)
+            .push(" [")
+            .push_safe(&self.difficulty_name)
+            .push("] ")
+            .push(mods.to_string())
+            .push(format!(" ({:.2}\\*)", stars))
+            .push_safe(creator)
+            .build()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -617,6 +651,11 @@ pub struct Score {
     pub count_geki: u64,
     pub max_combo: u64,
     pub perfect: bool,
+
+    /// Whether score would get pp
+    pub ranked: Option<bool>,
+    /// Whether score would be stored
+    pub preserved: Option<bool>,
 
     // Some APIv2 stats
     pub server_accuracy: f64,

@@ -166,6 +166,8 @@ async fn main() {
         handler.push_hook(youmubot_osu::discord::score_hook);
         handler.push_interaction_hook(youmubot_osu::discord::interaction::handle_check_button);
         handler.push_interaction_hook(youmubot_osu::discord::interaction::handle_last_button);
+        handler.push_interaction_hook(youmubot_osu::discord::interaction::handle_last_set_button);
+        handler.push_interaction_hook(youmubot_osu::discord::interaction::handle_simulate_button);
         handler.push_interaction_hook(youmubot_osu::discord::interaction::handle_lb_button);
     }
     #[cfg(feature = "codeforces")]

@@ -313,7 +313,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             &ctx,
             EditMessage::new()
                 .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, info))
-                .components(vec![beatmap_components(msg.guild_id)]),
+                .components(vec![beatmap_components(mode, msg.guild_id)]),
         )
         .await?;
     let reaction = reply.react(&ctx, '👌').await?;
@@ -810,14 +810,16 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             };
             if beatmapset {
                 let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
+                let reply = msg
+                    .reply(&ctx, "Here is the beatmapset you requested!")
+                    .await?;
                 display::display_beatmapset(
-                    ctx,
+                    ctx.clone(),
                     beatmapset,
                     None,
                     mods,
-                    msg,
                     msg.guild_id,
-                    "Here is the beatmapset you requested!",
+                    reply,
                 )
                 .await?;
                 return Ok(());
@@ -833,7 +835,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     CreateMessage::new()
                         .content("Here is the beatmap you requested!")
                         .embed(beatmap_embed(&bm.0, bm.1, &mods, info))
-                        .components(vec![beatmap_components(msg.guild_id)])
+                        .components(vec![beatmap_components(bm.1, msg.guild_id)])
                         .reference_message(msg),
                 )
                 .await?;
@@ -941,9 +943,12 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
     } = ListingArgs::parse(&env, msg, &mut args, ScoreListStyle::default()).await?;
     let osu_client = &env.client;
 
-    let plays = osu_client
+    let mut plays = osu_client
         .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
         .await?;
+
+    plays.sort_unstable_by(|a, b| b.pp.partial_cmp(&a.pp).unwrap());
+    let plays = plays;
 
     match nth {
         Nth::Nth(nth) => {
