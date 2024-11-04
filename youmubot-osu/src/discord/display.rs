@@ -479,8 +479,10 @@ mod beatmapset {
             ctx: &Context,
             m: &mut serenity::model::channel::Message,
         ) -> Result<()> {
-            m.react(&ctx, SHOW_ALL_EMOTE.parse::<ReactionType>().unwrap())
-                .await?;
+            self.all_reaction = Some(
+                m.react(&ctx, SHOW_ALL_EMOTE.parse::<ReactionType>().unwrap())
+                    .await?,
+            );
             Ok(())
         }
 
