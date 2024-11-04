@@ -1,14 +1,15 @@
-use std::{pin::Pin, time::Duration};
+use std::{pin::Pin, str::FromStr, time::Duration};
 
 use future::Future;
 use serenity::all::{
     ComponentInteraction, ComponentInteractionDataKind, CreateActionRow, CreateButton,
     CreateInputText, CreateInteractionResponse, CreateInteractionResponseFollowup,
     CreateInteractionResponseMessage, CreateQuickModal, GuildId, InputTextStyle, Interaction,
+    QuickModalResponse,
 };
 use youmubot_prelude::*;
 
-use crate::{discord::embeds::FakeScore, Mode, Mods, UserHeader};
+use crate::{discord::embeds::FakeScore, mods::UnparsedMods, Mode, Mods, UserHeader};
 
 use super::{
     display::ScoreListStyle,
@@ -222,50 +223,76 @@ pub fn handle_simulate_button<'a>(
 
         query.interaction.defer(&ctx).await?;
 
-        let content = env.oppai.get_beatmap(b.beatmap_id).await?;
-
-        let score = {
-            let inputs = query.inputs;
-            let (mods, max_combo, c100, c50, cmiss, csliderends) = (
-                &inputs[0], &inputs[1], &inputs[2], &inputs[3], &inputs[4], "",
-            );
-            let mods = Mods::from_str(mods, mode)?;
-            let info = content.get_info_with(mode, &mods)?;
-            let max_combo = max_combo.parse::<usize>().ok();
-            let c100 = c100.parse::<usize>().unwrap_or(0);
-            let c50 = c50.parse::<usize>().unwrap_or(0);
-            let cmiss = cmiss.parse::<usize>().unwrap_or(0);
-            let c300 = info.objects - c100 - c50 - cmiss;
-            let csliderends = csliderends.parse::<usize>().ok();
-            FakeScore {
-                bm: &bm,
-                content: &content,
-                mods,
-                count_300: c300,
-                count_100: c100,
-                count_50: c50,
-                count_miss: cmiss,
-                count_slider_ends_missed: csliderends,
-                max_combo,
-            }
-        };
-
-        query
-            .interaction
-            .create_followup(
-                &ctx,
-                CreateInteractionResponseFollowup::new()
-                    .content(format!(
-                        "Simulated score for `{}`",
-                        b.short_link(None, Mods::NOMOD)
-                    ))
-                    .add_embed(score.embed(ctx)?)
-                    .components(vec![score_components(comp.guild_id)]),
-            )
-            .await?;
+        if let Err(err) = handle_simluate_query(ctx, &env, &query, bm).await {
+            query
+                .interaction
+                .create_followup(
+                    ctx,
+                    CreateInteractionResponseFollowup::new()
+                        .content(format!("Cannot simulate score: {}", err))
+                        .ephemeral(true),
+                )
+                .await
+                .pls_ok();
+        }
 
         Ok(())
     })
+}
+
+async fn handle_simluate_query(
+    ctx: &Context,
+    env: &OsuEnv,
+    query: &QuickModalResponse,
+    bm: BeatmapWithMode,
+) -> Result<()> {
+    let b = &bm.0;
+    let mode = bm.1;
+    let content = env.oppai.get_beatmap(b.beatmap_id).await?;
+
+    let score = {
+        let inputs = &query.inputs;
+        let (mods, max_combo, c100, c50, cmiss, csliderends) = (
+            &inputs[0], &inputs[1], &inputs[2], &inputs[3], &inputs[4], "",
+        );
+        let mods = UnparsedMods::from_str(mods)
+            .map_err(|v| Error::msg(v))?
+            .to_mods(mode)?;
+        let info = content.get_info_with(mode, &mods)?;
+        let max_combo = max_combo.parse::<usize>().ok();
+        let c100 = c100.parse::<usize>().unwrap_or(0);
+        let c50 = c50.parse::<usize>().unwrap_or(0);
+        let cmiss = cmiss.parse::<usize>().unwrap_or(0);
+        let c300 = info.objects - c100 - c50 - cmiss;
+        let csliderends = csliderends.parse::<usize>().ok();
+        FakeScore {
+            bm: &bm,
+            content: &content,
+            mods,
+            count_300: c300,
+            count_100: c100,
+            count_50: c50,
+            count_miss: cmiss,
+            count_slider_ends_missed: csliderends,
+            max_combo,
+        }
+    };
+
+    query
+        .interaction
+        .create_followup(
+            &ctx,
+            CreateInteractionResponseFollowup::new()
+                .content(format!(
+                    "Simulated score for `{}`",
+                    b.short_link(None, Mods::NOMOD)
+                ))
+                .add_embed(score.embed(ctx)?)
+                .components(vec![score_components(query.interaction.guild_id)]),
+        )
+        .await?;
+
+    Ok(())
 }
 
 async fn handle_last_req(
