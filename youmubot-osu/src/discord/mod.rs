@@ -943,9 +943,12 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
     } = ListingArgs::parse(&env, msg, &mut args, ScoreListStyle::default()).await?;
     let osu_client = &env.client;
 
-    let plays = osu_client
+    let mut plays = osu_client
         .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
         .await?;
+
+    plays.sort_unstable_by(|a, b| b.pp.partial_cmp(&a.pp).unwrap());
+    let plays = plays;
 
     match nth {
         Nth::Nth(nth) => {
