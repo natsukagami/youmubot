@@ -194,11 +194,15 @@ pub fn handle_simulate_button<'a>(
             .unwrap();
         let b = &bm.0;
         let mode = bm.1;
+        let content = env.oppai.get_beatmap(b.beatmap_id).await?;
+        let info = content.get_info_with(mode, Mods::NOMOD)?;
 
         assert!(mode == Mode::Std);
 
-        fn mk_input(title: &str) -> CreateInputText {
-            CreateInputText::new(InputTextStyle::Short, title, "").required(false)
+        fn mk_input(title: &str, placeholder: impl Into<String>) -> CreateInputText {
+            CreateInputText::new(InputTextStyle::Short, title, "")
+                .placeholder(placeholder)
+                .required(false)
         }
 
         let Some(query) = comp
@@ -209,11 +213,11 @@ pub fn handle_simulate_button<'a>(
                     b.short_link(None, Mods::NOMOD)
                 ))
                 .timeout(Duration::from_secs(300))
-                .field(mk_input("Mods"))
-                .field(mk_input("Max Combo"))
-                .field(mk_input("100s"))
-                .field(mk_input("50s"))
-                .field(mk_input("Misses")),
+                .field(mk_input("Mods", "NM"))
+                .field(mk_input("Max Combo", info.max_combo.to_string()))
+                .field(mk_input("100s", "0"))
+                .field(mk_input("50s", "0"))
+                .field(mk_input("Misses", "0")),
                 // .short_field("Slider Ends Missed (Lazer Only)"), // too long LMAO
             )
             .await?

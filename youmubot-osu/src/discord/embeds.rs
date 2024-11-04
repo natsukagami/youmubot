@@ -480,12 +480,13 @@ pub(crate) struct FakeScore<'a> {
 }
 
 impl<'a> FakeScore<'a> {
-    fn is_ss(&self) -> bool {
-        self.count_100
-            + self.count_50
-            + self.count_miss
-            + self.count_slider_ends_missed.unwrap_or(0)
-            == 0
+    fn is_ss(&self, map_max_combo: usize) -> bool {
+        self.is_fc(map_max_combo)
+            && self.count_100
+                + self.count_50
+                + self.count_miss
+                + self.count_slider_ends_missed.unwrap_or(0)
+                == 0
     }
     fn is_fc(&self, map_max_combo: usize) -> bool {
         match self.max_combo {
@@ -507,7 +508,7 @@ impl<'a> FakeScore<'a> {
             info.max_combo - self.count_miss - self.count_slider_ends_missed.unwrap_or(0),
         );
         let acc = format!("{:.2}%", self.accuracy());
-        let score_line: Cow<str> = if self.is_ss() {
+        let score_line: Cow<str> = if self.is_ss(info.max_combo) {
             "SS".into()
         } else if self.is_fc(info.max_combo) {
             format!("{} FC", acc).into()
