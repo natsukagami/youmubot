@@ -244,7 +244,7 @@ pub fn handle_lb_button<'a>(
         let order = OrderBy::default();
         let guild = comp.guild_id.expect("Guild-only command");
 
-        let scores = get_leaderboard(ctx, &env, &bm, order, guild).await?;
+        let scores = get_leaderboard(ctx, &env, &bm, false, order, guild).await?;
 
         if scores.is_empty() {
             comp.create_followup(

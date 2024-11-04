@@ -1,4 +1,10 @@
-use std::{borrow::Cow, cmp::Ordering, collections::HashMap, str::FromStr, sync::Arc};
+use std::{
+    borrow::Cow,
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+    sync::Arc,
+};
 
 use chrono::DateTime;
 use pagination::paginate_with_first_message;
@@ -316,13 +322,26 @@ impl FromStr for OrderBy {
     }
 }
 
+struct AllLb;
+impl FromStr for AllLb {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "--all" => Ok(AllLb),
+            _ => Err(Error::msg("unknown value")),
+        }
+    }
+}
+
 #[command("leaderboard")]
 #[aliases("lb", "bmranks", "br", "cc", "updatelb")]
-#[usage = "[--score to sort by score, default to sort by pp] / [--table to show a table, --grid to show score by score] / [mods to filter]"]
+#[usage = "[--all to show all scores, not just ranked] / [--score to sort by score, default to sort by pp] / [--table to show a table, --grid to show score by score] / [mods to filter]"]
 #[description = "See the server's ranks on the last seen beatmap"]
 #[max_args(2)]
 #[only_in(guilds)]
 pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let show_all = args.single::<AllLb>().is_ok();
     let order = args.single::<OrderBy>().unwrap_or_default();
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
     let guild = msg.guild_id.expect("Guild-only command");
@@ -339,7 +358,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
 
     let scores = {
         let reaction = msg.react(ctx, '⌛').await?;
-        let s = get_leaderboard(ctx, &env, &bm, order, guild).await?;
+        let s = get_leaderboard(ctx, &env, &bm, show_all, order, guild).await?;
         reaction.delete(&ctx).await?;
         s
     };
@@ -399,6 +418,7 @@ pub async fn get_leaderboard(
     ctx: &Context,
     env: &OsuEnv,
     bm: &BeatmapWithMode,
+    show_unranked: bool,
     order: OrderBy,
     guild: GuildId,
 ) -> Result<Vec<Ranking>> {
@@ -461,6 +481,24 @@ pub async fn get_leaderboard(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+
+    if !show_unranked {
+        let mut mp = BTreeMap::<u64 /* user id */, Vec<Ranking>>::new();
+        for r in scores.drain(0..scores.len()) {
+            let rs = mp.entry(r.score.user_id).or_default();
+            match rs.iter_mut().find(|t| t.score.mods == r.score.mods) {
+                Some(t) => {
+                    if t.pp < r.pp {
+                        *t = r;
+                    }
+                }
+                None => {
+                    rs.push(r);
+                }
+            }
+        }
+        scores = mp.into_values().flatten().collect();
+    }
 
     match order {
         OrderBy::PP => scores.sort_by(|a, b| {

@@ -618,6 +618,11 @@ pub struct Score {
     pub max_combo: u64,
     pub perfect: bool,
 
+    /// Whether score would get pp
+    pub ranked: Option<bool>,
+    /// Whether score would be stored
+    pub preserved: Option<bool>,
+
     // Some APIv2 stats
     pub server_accuracy: f64,
     pub global_rank: Option<u32>,
