@@ -313,7 +313,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             &ctx,
             EditMessage::new()
                 .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, info))
-                .components(vec![beatmap_components(msg.guild_id)]),
+                .components(vec![beatmap_components(mode, msg.guild_id)]),
         )
         .await?;
     let reaction = reply.react(&ctx, '👌').await?;
@@ -835,7 +835,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     CreateMessage::new()
                         .content("Here is the beatmap you requested!")
                         .embed(beatmap_embed(&bm.0, bm.1, &mods, info))
-                        .components(vec![beatmap_components(msg.guild_id)])
+                        .components(vec![beatmap_components(bm.1, msg.guild_id)])
                         .reference_message(msg),
                 )
                 .await?;

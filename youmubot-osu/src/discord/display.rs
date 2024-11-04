@@ -459,7 +459,7 @@ mod beatmapset {
                                ))
                            })
                    )
-                   .components(vec![beatmap_components(self.guild_id)]),
+                   .components(vec![beatmap_components(map.mode, self.guild_id)]),
             )
                 .await?;
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();

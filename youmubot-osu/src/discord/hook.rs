@@ -288,6 +288,7 @@ async fn handle_beatmap<'a, 'b>(
     mods: Mods,
     reply_to: &Message,
 ) -> Result<()> {
+    let mode = mode.unwrap_or(beatmap.mode);
     reply_to
         .channel_id
         .send_message(
@@ -299,13 +300,8 @@ async fn handle_beatmap<'a, 'b>(
                         .push_mono_safe(link)
                         .build(),
                 )
-                .embed(beatmap_embed(
-                    beatmap,
-                    mode.unwrap_or(beatmap.mode),
-                    &mods,
-                    info,
-                ))
-                .components(vec![beatmap_components(reply_to.guild_id)])
+                .embed(beatmap_embed(beatmap, mode, &mods, info))
+                .components(vec![beatmap_components(mode, reply_to.guild_id)])
                 .reference_message(reply_to),
         )
         .await?;
