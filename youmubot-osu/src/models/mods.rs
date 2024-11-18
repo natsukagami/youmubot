@@ -23,7 +23,7 @@ lazy_static::lazy_static! {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct UnparsedMods {
     mods: Cow<'static, str>,
-    clock: Option<f32>,
+    clock: Option<f64>,
 }
 
 impl FromStr for UnparsedMods {
@@ -47,7 +47,7 @@ impl FromStr for UnparsedMods {
             mods: mods.map(|v| v.into()).unwrap_or("".into()),
             clock: ms
                 .name("clock")
-                .map(|v| v.as_str().parse::<f32>().unwrap())
+                .map(|v| v.as_str().parse::<_>().unwrap())
                 .filter(|v| *v > 0.0),
         })
     }
@@ -149,13 +149,8 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn from_f32(ar: Option<f32>, od: Option<f32>, hp: Option<f32>, cs: Option<f32>) -> Self {
-        Self {
-            ar: ar.map(|v| v as f64),
-            od: od.map(|v| v as f64),
-            hp: hp.map(|v| v as f64),
-            cs: cs.map(|v| v as f64),
-        }
+    pub fn from_option(ar: Option<f64>, od: Option<f64>, hp: Option<f64>, cs: Option<f64>) -> Self {
+        Self { ar, od, hp, cs }
     }
 
     pub fn has_any(&self) -> bool {
@@ -168,26 +163,20 @@ impl Mods {
         inner: GameMods::new(),
     };
 
-    pub fn strip_lazer(&self, mode: Mode) -> Self {
-        let mut m = self.clone();
-        m.inner.insert(Self::classic_mod_of(mode));
-        m
-    }
-
-    fn classic_mod_of(mode: Mode) -> rosu::GameMod {
-        match mode {
-            Mode::Std => rosu::GameMod::ClassicOsu(rosu::generated_mods::ClassicOsu::default()),
-            Mode::Taiko => {
-                rosu::GameMod::ClassicTaiko(rosu::generated_mods::ClassicTaiko::default())
-            }
-            Mode::Catch => {
-                rosu::GameMod::ClassicCatch(rosu::generated_mods::ClassicCatch::default())
-            }
-            Mode::Mania => {
-                rosu::GameMod::ClassicMania(rosu::generated_mods::ClassicMania::default())
-            }
-        }
-    }
+    // fn classic_mod_of(mode: Mode) -> rosu::GameMod {
+    //     match mode {
+    //         Mode::Std => rosu::GameMod::ClassicOsu(rosu::generated_mods::ClassicOsu::default()),
+    //         Mode::Taiko => {
+    //             rosu::GameMod::ClassicTaiko(rosu::generated_mods::ClassicTaiko::default())
+    //         }
+    //         Mode::Catch => {
+    //             rosu::GameMod::ClassicCatch(rosu::generated_mods::ClassicCatch::default())
+    //         }
+    //         Mode::Mania => {
+    //             rosu::GameMod::ClassicMania(rosu::generated_mods::ClassicMania::default())
+    //         }
+    //     }
+    // }
 
     pub fn overrides(&self) -> Stats {
         use rosu_v2::prelude::GameMod::*;
@@ -195,23 +184,23 @@ impl Mods {
             .iter()
             .find_map(|m| {
                 Some(match m {
-                    DifficultyAdjustOsu(da) => Stats::from_f32(
+                    DifficultyAdjustOsu(da) => Stats::from_option(
                         da.approach_rate,
                         da.overall_difficulty,
                         da.drain_rate,
                         da.circle_size,
                     ),
                     DifficultyAdjustTaiko(da) => {
-                        Stats::from_f32(None, da.overall_difficulty, da.drain_rate, None)
+                        Stats::from_option(None, da.overall_difficulty, da.drain_rate, None)
                     }
-                    DifficultyAdjustCatch(da) => Stats::from_f32(
+                    DifficultyAdjustCatch(da) => Stats::from_option(
                         da.approach_rate,
                         da.overall_difficulty,
                         da.drain_rate,
                         da.circle_size,
                     ),
                     DifficultyAdjustMania(da) => {
-                        Stats::from_f32(None, da.overall_difficulty, da.drain_rate, None)
+                        Stats::from_option(None, da.overall_difficulty, da.drain_rate, None)
                     }
                     _ => return None,
                 })
@@ -329,7 +318,7 @@ impl Mods {
         use rosu::GameMod::*;
         fn fmt_speed_change(
             mod_name: &str,
-            speed_change: &Option<f32>,
+            speed_change: &Option<f64>,
             adjust_pitch: &Option<bool>,
         ) -> Option<String> {
             if speed_change.is_none() && adjust_pitch.is_none() {
@@ -350,10 +339,10 @@ impl Mods {
             Some(s)
         }
         fn fmt_diff_adj(
-            ar: Option<f32>,
-            od: Option<f32>,
-            hp: Option<f32>,
-            cs: Option<f32>,
+            ar: Option<f64>,
+            od: Option<f64>,
+            hp: Option<f64>,
+            cs: Option<f64>,
         ) -> Option<String> {
             let stats = [("AR", ar), ("OD", od), ("HP", hp), ("CS", cs)];
             let mut output = String::with_capacity(4 * (2 + 3 + 4) + 3 * 2);
@@ -423,11 +412,11 @@ impl Mods {
         }
         let intermode =
             GameModsIntermode::try_from_acronyms(s).ok_or_else(|| error!("Invalid mods: {}", s))?;
-        let mut inner = intermode
+        let inner = intermode
             .try_with_mode(mode.into())
             .ok_or_else(|| error!("Invalid mods for `{}`: {}", mode, intermode))?;
         // Always add classic mod to `inner`
-        inner.insert(Self::classic_mod_of(mode));
+        // inner.insert(Self::classic_mod_of(mode));
         if !inner.is_valid() {
             return Err(error!("Incompatible mods found: {}", inner));
         }

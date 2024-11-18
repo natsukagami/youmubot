@@ -424,7 +424,7 @@ impl Beatmap {
                 Some(mode) if mode != self.mode => format!("/{}", mode.as_str_new_site()),
                 _ => "".to_owned(),
             },
-            mods.strip_lazer(override_mode.unwrap_or(Mode::Std))
+            mods
         )
     }
 
