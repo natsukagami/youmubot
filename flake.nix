@@ -2,10 +2,7 @@
   description = "A discord bot for Dự Tuyển Tổng Hợp server";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    crane = {
-      url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -23,7 +20,7 @@
           {
             inherit system; overlays = [ (import inputs.rust-overlay) ];
           };
-        craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable."1.79.0".default);
+        craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable."1.83.0".default);
         # craneLib = inputs.crane.mkLib pkgs;
       in
       rec {
