@@ -195,7 +195,7 @@ pub fn handle_simulate_button<'a>(
         let b = &bm.0;
         let mode = bm.1;
         let content = env.oppai.get_beatmap(b.beatmap_id).await?;
-        let info = content.get_info_with(mode, Mods::NOMOD)?;
+        let info = content.get_info_with(mode, Mods::NOMOD);
 
         assert!(mode == Mode::Std);
 
@@ -214,7 +214,7 @@ pub fn handle_simulate_button<'a>(
                 ))
                 .timeout(Duration::from_secs(300))
                 .field(mk_input("Mods", "NM"))
-                .field(mk_input("Max Combo", info.max_combo.to_string()))
+                .field(mk_input("Max Combo", info.attrs.max_combo().to_string()))
                 .field(mk_input("100s", "0"))
                 .field(mk_input("50s", "0"))
                 .field(mk_input("Misses", "0")),
@@ -254,30 +254,27 @@ async fn handle_simluate_query(
     let mode = bm.1;
     let content = env.oppai.get_beatmap(b.beatmap_id).await?;
 
-    let score = {
+    let score: FakeScore = {
         let inputs = &query.inputs;
-        let (mods, max_combo, c100, c50, cmiss, csliderends) = (
-            &inputs[0], &inputs[1], &inputs[2], &inputs[3], &inputs[4], "",
-        );
+        let (mods, max_combo, c100, c50, cmiss) =
+            (&inputs[0], &inputs[1], &inputs[2], &inputs[3], &inputs[4]);
         let mods = UnparsedMods::from_str(mods)
             .map_err(|v| Error::msg(v))?
             .to_mods(mode)?;
-        let info = content.get_info_with(mode, &mods)?;
-        let max_combo = max_combo.parse::<usize>().ok();
-        let c100 = c100.parse::<usize>().unwrap_or(0);
-        let c50 = c50.parse::<usize>().unwrap_or(0);
-        let cmiss = cmiss.parse::<usize>().unwrap_or(0);
-        let c300 = info.objects - c100 - c50 - cmiss;
-        let csliderends = csliderends.parse::<usize>().ok();
+        let info = content.get_info_with(mode, &mods);
+        let max_combo = max_combo.parse::<u32>().ok();
+        let n100 = c100.parse::<u32>().unwrap_or(0);
+        let n50 = c50.parse::<u32>().unwrap_or(0);
+        let nmiss = cmiss.parse::<u32>().unwrap_or(0);
+        let n300 = info.object_count as u32 - n100 - n50 - nmiss;
         FakeScore {
             bm: &bm,
             content: &content,
             mods,
-            count_300: c300,
-            count_100: c100,
-            count_50: c50,
-            count_miss: cmiss,
-            count_slider_ends_missed: csliderends,
+            n300,
+            n100,
+            n50,
+            nmiss,
             max_combo,
         }
     };
@@ -339,7 +336,7 @@ async fn handle_last_req(
             .oppai
             .get_beatmap(b.beatmap_id)
             .await?
-            .get_possible_pp_with(*m, &mods)?;
+            .get_possible_pp_with(*m, &mods);
         comp.create_followup(
             &ctx,
             serenity::all::CreateInteractionResponseFollowup::new()
@@ -347,7 +344,7 @@ async fn handle_last_req(
                     "Information for beatmap `{}`",
                     bm.short_link(&mods)
                 ))
-                .embed(beatmap_embed(b, *m, &mods, info))
+                .embed(beatmap_embed(b, *m, &mods, &info))
                 .components(vec![beatmap_components(bm.1, comp.guild_id)]),
         )
         .await?;

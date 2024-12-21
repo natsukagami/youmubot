@@ -3,8 +3,12 @@ use std::io::Read;
 use std::sync::Arc;
 
 use rosu_map::Beatmap as BeatmapMetadata;
-use rosu_pp::{Beatmap, GameMods};
+use rosu_pp::{
+    any::{PerformanceAttributes, ScoreState},
+    Beatmap,
+};
 
+use rosu_v2::prelude::ScoreStatistics;
 use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
 
@@ -28,100 +32,125 @@ pub struct BeatmapBackground {
 }
 
 /// the output of "one" oppai run.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone)]
 pub struct BeatmapInfo {
-    pub objects: usize,
-    pub max_combo: usize,
-    pub stars: f64,
+    pub attrs: PerformanceAttributes,
+    pub object_count: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum Accuracy {
-    ByCount(u64, u64, u64, u64),
-    // 300 / 100 / 50 / misses
-    #[allow(dead_code)]
-    ByValue(f64, u64),
-}
-
-impl From<Accuracy> for f64 {
-    fn from(val: Accuracy) -> Self {
-        match val {
-            Accuracy::ByValue(v, _) => v,
-            Accuracy::ByCount(n300, n100, n50, nmiss) => {
-                100.0 * ((6 * n300 + 2 * n100 + n50) as f64)
-                    / ((6 * (n300 + n100 + n50 + nmiss)) as f64)
-            }
-        }
-    }
-}
-
-impl Accuracy {
-    pub fn misses(&self) -> usize {
-        (match self {
-            Accuracy::ByCount(_, _, _, nmiss) => *nmiss,
-            Accuracy::ByValue(_, nmiss) => *nmiss,
-        }) as usize
-    }
+/// Stats to be consumed by [BeatmapContent::get_pp_from].
+pub enum Stats<'a> {
+    Raw(&'a ScoreStatistics),
+    AccOnly { acc: f64, misses: u32 },
 }
 
 /// Beatmap Info with attached 95/98/99/100% FC pp.
 pub type BeatmapInfoWithPP = (BeatmapInfo, [f64; 4]);
-
-fn apply_mods(
-    perf: rosu_pp::Performance<'_>,
-    mods: impl Into<GameMods>,
-) -> rosu_pp::Performance<'_> {
-    use rosu_pp::Performance::*;
-    match perf {
-        Osu(o) => Osu(o.mods(mods)),
-        Taiko(t) => Taiko(t.mods(mods)),
-        Catch(f) => Catch(f.mods(mods)),
-        Mania(m) => Mania(m.mods(mods)),
-    }
-}
 
 impl BeatmapContent {
     /// Get pp given the combo and accuracy.
     pub fn get_pp_from(
         &self,
         mode: Mode,
-        combo: Option<usize>,
-        accuracy: Accuracy,
+        combo: Option<u32>,
+        stats: Stats<'_>,
         mods: &Mods,
-    ) -> Result<f64> {
+    ) -> f64 {
         let perf = self
             .content
             .performance()
             .mode_or_ignore(mode.into())
-            .accuracy(accuracy.into())
-            .misses(accuracy.misses() as u32);
-        let mut perf = apply_mods(perf, mods.inner.clone());
-        if let Some(combo) = combo {
-            perf = perf.combo(combo as u32);
-        }
+            .lazer(mods.is_lazer)
+            .mods(mods.inner.clone());
+        let perf = match stats {
+            Stats::Raw(stats) => {
+                let max_combo =
+                    combo.unwrap_or_else(|| self.get_info_with(mode, mods).attrs.max_combo());
+                perf.state(Self::stats_to_state(stats, mode, max_combo))
+            }
+            Stats::AccOnly { acc, misses } => if let Some(combo) = combo {
+                perf.combo(combo)
+            } else {
+                perf
+            }
+            .accuracy(acc)
+            .misses(misses),
+        };
         let attrs = perf.calculate();
-        Ok(attrs.pp())
+        attrs.pp()
+    }
+
+    fn stats_to_state(stats: &ScoreStatistics, mode: Mode, max_combo: u32) -> ScoreState {
+        let legacy = stats.as_legacy(mode.into());
+        ScoreState {
+            max_combo,
+            osu_large_tick_hits: stats.large_tick_hit,
+            osu_small_tick_hits: stats.small_tick_hit,
+            slider_end_hits: stats.slider_tail_hit,
+            n_geki: stats.perfect,
+            n_katu: stats.good,
+            n300: legacy.count_300,
+            n100: legacy.count_100,
+            n50: legacy.count_50,
+            misses: legacy.count_miss,
+        }
     }
 
     /// Get info given mods.
-    pub fn get_info_with(&self, mode: Mode, mods: &Mods) -> Result<BeatmapInfo> {
-        let perf = self.content.performance().mode_or_ignore(mode.into());
-        let attrs = apply_mods(perf, mods.inner.clone()).calculate();
-        Ok(BeatmapInfo {
-            objects: self.content.hit_objects.len(),
-            max_combo: attrs.max_combo() as usize,
-            stars: attrs.stars(),
-        })
+    pub fn get_info_with(&self, mode: Mode, mods: &Mods) -> BeatmapInfo {
+        let attrs = self
+            .content
+            .performance()
+            .mode_or_ignore(mode.into())
+            .mods(mods.inner.clone())
+            .calculate();
+        let object_count = self.content.hit_objects.len();
+        BeatmapInfo {
+            attrs,
+            object_count,
+        }
     }
 
-    pub fn get_possible_pp_with(&self, mode: Mode, mods: &Mods) -> Result<BeatmapInfoWithPP> {
+    pub fn get_possible_pp_with(&self, mode: Mode, mods: &Mods) -> BeatmapInfoWithPP {
         let pp: [f64; 4] = [
-            self.get_pp_from(mode, None, Accuracy::ByValue(95.0, 0), mods)?,
-            self.get_pp_from(mode, None, Accuracy::ByValue(98.0, 0), mods)?,
-            self.get_pp_from(mode, None, Accuracy::ByValue(99.0, 0), mods)?,
-            self.get_pp_from(mode, None, Accuracy::ByValue(100.0, 0), mods)?,
+            self.get_pp_from(
+                mode,
+                None,
+                Stats::AccOnly {
+                    acc: 95.0,
+                    misses: 0,
+                },
+                mods,
+            ),
+            self.get_pp_from(
+                mode,
+                None,
+                Stats::AccOnly {
+                    acc: 98.0,
+                    misses: 0,
+                },
+                mods,
+            ),
+            self.get_pp_from(
+                mode,
+                None,
+                Stats::AccOnly {
+                    acc: 99.0,
+                    misses: 0,
+                },
+                mods,
+            ),
+            self.get_pp_from(
+                mode,
+                None,
+                Stats::AccOnly {
+                    acc: 100.0,
+                    misses: 0,
+                },
+                mods,
+            ),
         ];
-        Ok((self.get_info_with(mode, mods)?, pp))
+        (self.get_info_with(mode, mods), pp)
     }
 }
 

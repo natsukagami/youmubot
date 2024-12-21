@@ -149,7 +149,7 @@ mod scores {
         use youmubot_prelude::table_format::{table_formatting, Align};
         use youmubot_prelude::*;
 
-        use crate::discord::oppai_cache::Accuracy;
+        use crate::discord::oppai_cache::Stats;
         use crate::discord::{Beatmap, BeatmapInfo, OsuEnv};
         use crate::models::{Mode, Score};
 
@@ -211,9 +211,9 @@ mod scores {
                         let beatmap = meta_cache.get_beatmap(play.beatmap_id, mode).await?;
                         let info = {
                             let b = oppai.get_beatmap(beatmap.beatmap_id).await?;
-                            b.get_info_with(mode, &play.mods).ok()
+                            b.get_info_with(mode, &play.mods)
                         };
-                        Ok((beatmap, info)) as Result<(Beatmap, Option<BeatmapInfo>)>
+                        Ok((beatmap, info)) as Result<(Beatmap, BeatmapInfo)>
                     })
                     .collect::<stream::FuturesOrdered<_>>()
                     .map(|v| v.ok())
@@ -226,28 +226,18 @@ mod scores {
                             Some(v) => Ok(v),
                             None => {
                                 let b = oppai.get_beatmap(p.beatmap_id).await?;
-                                let r: Result<_> = Ok({
-                                    b.get_pp_from(
-                                        mode,
-                                        Some(p.max_combo as usize),
-                                        Accuracy::ByCount(
-                                            p.count_300,
-                                            p.count_100,
-                                            p.count_50,
-                                            p.count_miss,
-                                        ),
-                                        &p.mods,
-                                    )
-                                    .ok()
-                                    .map(|pp| format!("{:.2}[?]", pp))
-                                }
-                                .unwrap_or_else(|| "-".to_owned()));
-                                r
+                                let pp = b.get_pp_from(
+                                    mode,
+                                    Some(p.max_combo),
+                                    Stats::Raw(&p.statistics),
+                                    &p.mods,
+                                );
+                                Ok(format!("{:.2}[?]", pp))
                             }
                         }
                     })
                     .collect::<stream::FuturesOrdered<_>>()
-                    .map(|v| v.unwrap_or_else(|_| "-".to_owned()))
+                    .map(|v: Result<_>| v.unwrap_or_else(|_| "-".to_owned()))
                     .collect::<Vec<String>>();
 
                 let (beatmaps, pps) = future::join(beatmaps, pps).await;
@@ -259,7 +249,7 @@ mod scores {
                         match p.rank {
                             crate::models::Rank::F => beatmaps[i]
                                 .as_ref()
-                                .and_then(|(_, i)| i.map(|i| i.objects))
+                                .map(|(_, i)| i.object_count)
                                 .map(|total| {
                                     (p.count_300 + p.count_100 + p.count_50 + p.count_miss) as f64
                                         / (total as f64)
@@ -287,7 +277,7 @@ mod scores {
                         b.map(|(beatmap, info)| {
                             format!(
                                 "[{:.1}*] {} - {} [{}] ({})",
-                                info.map(|i| i.stars).unwrap_or(beatmap.difficulty.stars),
+                                info.attrs.stars(),
                                 beatmap.artist,
                                 beatmap.title,
                                 beatmap.difficulty_name,
@@ -406,7 +396,7 @@ mod beatmapset {
             env.oppai
                 .get_beatmap(b.beatmap_id)
                 .await
-                .and_then(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), &self.mods))
+                .map(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), &self.mods))
         }
     }
 
@@ -435,11 +425,10 @@ mod beatmapset {
 
             let map = &self.maps[page];
             let info = match &self.infos[page] {
-                Some(info) => *info,
+                Some(info) => info,
                 None => {
                     let info = self.get_beatmap_info(ctx, map).await?;
-                    self.infos[page] = Some(info);
-                    info
+                    self.infos[page].insert(info)
                 }
             };
             msg.edit(ctx,

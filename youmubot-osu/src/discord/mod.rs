@@ -306,13 +306,13 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .oppai
         .get_beatmap(beatmap.beatmap_id)
         .await?
-        .get_possible_pp_with(mode, Mods::NOMOD)?;
+        .get_possible_pp_with(mode, Mods::NOMOD);
     let mut reply = reply.await?;
     reply
         .edit(
             &ctx,
             EditMessage::new()
-                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, info))
+                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
                 .components(vec![beatmap_components(mode, msg.guild_id)]),
         )
         .await?;
@@ -492,7 +492,7 @@ impl UserExtras {
                 .oppai
                 .get_beatmap(s.beatmap_id)
                 .await?
-                .get_info_with(mode, &s.mods)?;
+                .get_info_with(mode, &s.mods);
             Some((s, BeatmapWithMode(beatmap, mode), info))
         } else {
             None
@@ -828,13 +828,13 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .oppai
                 .get_beatmap(bm.0.beatmap_id)
                 .await?
-                .get_possible_pp_with(bm.1, &mods)?;
+                .get_possible_pp_with(bm.1, &mods);
             msg.channel_id
                 .send_message(
                     &ctx,
                     CreateMessage::new()
                         .content("Here is the beatmap you requested!")
-                        .embed(beatmap_embed(&bm.0, bm.1, &mods, info))
+                        .embed(beatmap_embed(&bm.0, bm.1, &mods, &info))
                         .components(vec![beatmap_components(bm.1, msg.guild_id)])
                         .reference_message(msg),
                 )

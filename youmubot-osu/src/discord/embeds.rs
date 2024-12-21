@@ -1,9 +1,11 @@
-use super::{BeatmapWithMode, UserExtras};
+use super::{oppai_cache::Stats, BeatmapWithMode, UserExtras};
 use crate::{
-    discord::oppai_cache::{Accuracy, BeatmapContent, BeatmapInfoWithPP},
+    discord::oppai_cache::{BeatmapContent, BeatmapInfoWithPP},
     models::{Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
     UserHeader,
 };
+use rosu_pp::osu::{OsuPerformanceAttributes, OsuScoreOrigin};
+use rosu_v2::prelude::GameModIntermode;
 use serenity::{
     all::CreateAttachment,
     builder::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter},
@@ -80,7 +82,7 @@ pub fn beatmap_offline_embed(
 ) -> Result<(CreateEmbed, Vec<CreateAttachment>)> {
     let bm = b.content.clone();
     let metadata = b.metadata.clone();
-    let (info, pp) = b.get_possible_pp_with(m, mods)?;
+    let (info, pp) = b.get_possible_pp_with(m, mods);
 
     let total_length = if !bm.hit_objects.is_empty() {
         Duration::from_millis(
@@ -105,7 +107,7 @@ pub fn beatmap_offline_embed(
     };
 
     let diff = Difficulty {
-        stars: info.stars,
+        stars: info.attrs.stars(),
         aim: None,   // TODO: this is currently unused
         speed: None, // TODO: this is currently unused
         cs: bm.cs as f64,
@@ -115,12 +117,12 @@ pub fn beatmap_offline_embed(
         count_normal: circles,
         count_slider: sliders,
         count_spinner: spinners,
-        max_combo: Some(info.max_combo as u64),
+        max_combo: Some(info.attrs.max_combo() as u64),
         bpm: bm.bpm(),
         drain_length: total_length, // It's hard to calculate so maybe just skip...
         total_length,
     }
-    .apply_mods(mods, info.stars);
+    .apply_mods(mods, info.attrs.stars());
     let mut embed = CreateEmbed::new()
         .title(beatmap_title(
             &metadata.artist,
@@ -179,8 +181,13 @@ fn beatmap_title(
         .build()
 }
 
-pub fn beatmap_embed(b: &'_ Beatmap, m: Mode, mods: &Mods, info: BeatmapInfoWithPP) -> CreateEmbed {
-    let diff = b.difficulty.apply_mods(mods, info.0.stars);
+pub fn beatmap_embed(
+    b: &'_ Beatmap,
+    m: Mode,
+    mods: &Mods,
+    info: &BeatmapInfoWithPP,
+) -> CreateEmbed {
+    let diff = b.difficulty.apply_mods(mods, info.0.attrs.stars());
     CreateEmbed::new()
         .title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
         .author(
@@ -306,23 +313,18 @@ impl<'a> ScoreEmbedBuilder<'a> {
         let content = self.content;
         let u = &self.u;
         let accuracy = s.accuracy(mode);
-        let info = content.get_info_with(mode, &s.mods).ok();
-        let stars = info
-            .as_ref()
-            .map(|info| info.stars)
-            .unwrap_or(b.difficulty.stars);
+        let info = content.get_info_with(mode, &s.mods);
+        let stars = info.attrs.stars();
         let score_line = match s.rank {
             Rank::SS | Rank::SSH => "SS".to_string(),
             _ if s.perfect => format!("{:.2}% FC", accuracy),
             Rank::F => {
-                let display = info
-                    .map(|info| {
-                        ((s.count_300 + s.count_100 + s.count_50 + s.count_miss) as f64)
-                            / (info.objects as f64)
-                            * 100.0
-                    })
-                    .map(|p| format!("FAILED @ {:.2}%", p))
-                    .unwrap_or_else(|| "FAILED".to_owned());
+                let display = {
+                    let p = ((s.count_300 + s.count_100 + s.count_50 + s.count_miss) as f64)
+                        / (info.object_count as f64)
+                        * 100.0;
+                    format!("FAILED @ {:.2}%", p)
+                };
                 format!("{:.2}% {} combo [{}]", accuracy, s.max_combo, display)
             }
             v => format!(
@@ -330,34 +332,30 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 accuracy, s.max_combo, s.count_miss, v
             ),
         };
-        let pp = s.pp.map(|pp| (pp, format!("{:.2}pp", pp))).or_else(|| {
-            content
-                .get_pp_from(
-                    mode,
-                    Some(s.max_combo as usize),
-                    Accuracy::ByCount(s.count_300, s.count_100, s.count_50, s.count_miss),
-                    &s.mods,
-                )
-                .ok()
-                .map(|pp| (pp, format!("{:.2}pp [?]", pp)))
-        });
+        let pp =
+            s.pp.map(|pp| (pp, format!("{:.2}pp", pp)))
+                .unwrap_or_else(|| {
+                    let pp = content.get_pp_from(
+                        mode,
+                        Some(s.max_combo),
+                        Stats::Raw(&s.statistics),
+                        &s.mods,
+                    );
+                    (pp, format!("{:.2}pp [?]", pp))
+                });
         let pp = if !s.perfect {
-            content
-                .get_pp_from(
-                    mode,
-                    None,
-                    Accuracy::ByCount(s.count_300 + s.count_miss, s.count_100, s.count_50, 0),
-                    &s.mods,
-                )
-                .ok()
-                .filter(|&v| pp.as_ref().map(|&(origin, _)| origin < v).unwrap_or(false))
-                .and_then(|value| {
-                    pp.as_ref()
-                        .map(|(_, original)| format!("{} ({:.2}pp if FC?)", original, value))
+            let mut fc_stats = s.statistics.clone();
+            fc_stats.great += fc_stats.miss;
+            fc_stats.miss = 0;
+            Some(content.get_pp_from(mode, None, Stats::Raw(&fc_stats), &s.mods))
+                .filter(|&v| pp.0 < v) /* must be larger than real pp */
+                .map(|value| {
+                    let (_, original) = &pp;
+                    format!("{} ({:.2}pp if FC?)", original, value)
                 })
-                .or_else(|| pp.map(|v| v.1))
+                .unwrap_or(pp.1)
         } else {
-            pp.map(|v| v.1)
+            pp.1
         };
         let pp_gained = {
             let effective_pp = s.effective_pp.or_else(|| {
@@ -373,9 +371,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 _ => None,
             }
         };
-        let score_line = pp
-            .map(|pp| format!("{} | {}", &score_line, pp))
-            .unwrap_or(score_line);
+        let score_line = format!("{} | {}", &score_line, pp);
         let max_combo = b
             .difficulty
             .max_combo
@@ -438,7 +434,7 @@ impl<'a> ScoreEmbedBuilder<'a> {
                 "Score stats",
                 format!(
                     "**{}** | {} | **{:.2}%**",
-                    grouped_number(s.score.unwrap_or(s.normalized_score as u64)),
+                    grouped_number(s.score),
                     max_combo,
                     accuracy
                 ),
@@ -468,78 +464,90 @@ pub(crate) struct FakeScore<'a> {
     pub bm: &'a BeatmapWithMode,
     pub content: &'a BeatmapContent,
     pub mods: Mods,
-
-    pub count_300: usize,
-    pub count_100: usize,
-    pub count_50: usize,
-    pub count_miss: usize,
-
-    pub count_slider_ends_missed: Option<usize>, // lazer only
-
-    pub max_combo: Option<usize>,
+    pub n300: u32,
+    pub n100: u32,
+    pub n50: u32,
+    pub nmiss: u32,
+    pub max_combo: Option<u32>,
 }
 
 impl<'a> FakeScore<'a> {
-    fn is_ss(&self, map_max_combo: usize) -> bool {
-        self.is_fc(map_max_combo)
-            && self.count_100
-                + self.count_50
-                + self.count_miss
-                + self.count_slider_ends_missed.unwrap_or(0)
-                == 0
-    }
-    fn is_fc(&self, map_max_combo: usize) -> bool {
-        match self.max_combo {
-            None => self.count_miss == 0,
-            Some(combo) => combo == map_max_combo - self.count_slider_ends_missed.unwrap_or(0),
+    fn score_origin(&self, attrs: &OsuPerformanceAttributes) -> OsuScoreOrigin {
+        if !self.mods.is_lazer {
+            OsuScoreOrigin::Stable
+        } else if self
+            .mods
+            .inner
+            .contains_intermode(GameModIntermode::Classic)
+        {
+            OsuScoreOrigin::WithoutSliderAcc {
+                max_large_ticks: attrs.difficulty.n_large_ticks,
+                max_small_ticks: attrs.difficulty.n_sliders,
+            }
+        } else {
+            OsuScoreOrigin::WithSliderAcc {
+                max_large_ticks: attrs.difficulty.n_large_ticks,
+                max_slider_ends: attrs.difficulty.n_sliders,
+            }
         }
     }
-    fn accuracy(&self) -> f64 {
-        100.0
-            * (self.count_300 as f64 * 300.0
-                + self.count_100 as f64 * 100.0
-                + self.count_50 as f64 * 50.0)
-            / ((self.count_300 + self.count_100 + self.count_50 + self.count_miss) as f64 * 300.0)
+
+    fn is_ss(&self, map_max_combo: u32) -> bool {
+        self.is_fc(map_max_combo) && self.n100.max(self.n50).max(self.nmiss) == 0
     }
+
+    fn is_fc(&self, map_max_combo: u32) -> bool {
+        self.max_combo.is_none_or(|x| x == map_max_combo) && self.nmiss == 0
+    }
+
+    // fn accuracy(&self) -> f64 {
+    //     self.state.accuracy(self.score_origin())
+    // }
+
     pub fn embed(self, ctx: &Context) -> Result<CreateEmbed> {
         let BeatmapWithMode(b, mode) = self.bm;
-        let info = self.content.get_info_with(*mode, &self.mods)?;
-        let max_combo = self.max_combo.unwrap_or(
-            info.max_combo - self.count_miss - self.count_slider_ends_missed.unwrap_or(0),
-        );
-        let acc = format!("{:.2}%", self.accuracy());
-        let score_line: Cow<str> = if self.is_ss(info.max_combo) {
+        let info = self.content.get_info_with(*mode, &self.mods);
+        let attrs = match &info.attrs {
+            rosu_pp::any::PerformanceAttributes::Osu(osu_performance_attributes) => {
+                osu_performance_attributes
+            }
+            _ => unreachable!(),
+        };
+        let max_combo = self
+            .max_combo
+            .unwrap_or(info.attrs.max_combo() - self.nmiss);
+        let mut perf = attrs
+            .clone()
+            .performance()
+            .n300(self.n300)
+            .n100(self.n100)
+            .n50(self.n50)
+            .misses(self.nmiss)
+            .lazer(self.mods.is_lazer)
+            .mods(self.mods.inner.clone());
+        let state = perf.generate_state()?;
+        let accuracy = state.accuracy(self.score_origin(attrs)) * 100.0;
+        let acc = format!("{:.2}%", accuracy);
+        let score_line: Cow<str> = if self.is_ss(attrs.max_combo()) {
             "SS".into()
-        } else if self.is_fc(info.max_combo) {
+        } else if self.is_fc(attrs.max_combo()) {
             format!("{} FC", acc).into()
         } else {
-            format!("{} {}x {} miss", acc, max_combo, self.count_miss).into()
+            format!("{} {}x {} miss", acc, max_combo, self.nmiss).into()
         };
-        let pp = self.content.get_pp_from(
-            *mode,
-            self.max_combo,
-            Accuracy::ByCount(
-                self.count_300 as u64,
-                self.count_100 as u64,
-                self.count_50 as u64,
-                self.count_miss as u64,
-            ),
-            &self.mods,
-        )?;
-        let pp_if_fc: Cow<str> = if self.is_fc(info.max_combo) {
+        let pp = perf.calculate()?.pp;
+        let pp_if_fc: Cow<str> = if self.is_fc(attrs.max_combo()) {
             "".into()
         } else {
             let pp = self.content.get_pp_from(
                 *mode,
                 None,
-                Accuracy::ByCount(
-                    (self.count_300 + self.count_miss) as u64,
-                    self.count_100 as u64,
-                    self.count_50 as u64,
-                    0,
-                ),
+                Stats::AccOnly {
+                    acc: accuracy,
+                    misses: 0,
+                },
                 &self.mods,
-            )?;
+            );
             format!(" ({:.2}pp if fc)", pp).into()
         };
 
@@ -554,7 +562,7 @@ impl<'a> FakeScore<'a> {
                 MessageBuilder::new()
                     .push_safe(&youmu.name)
                     .push(" | ")
-                    .push(b.full_title(&self.mods, info.stars))
+                    .push(b.full_title(&self.mods, attrs.stars()))
                     .push(" | ")
                     .push(score_line)
                     .push(" | ")
@@ -566,21 +574,26 @@ impl<'a> FakeScore<'a> {
             .description(format!("**pp gained**: **{:.2}**pp", pp))
             .field(
                 "Score stats",
-                format!("**{}** combo | **{}**", max_combo, acc),
+                format!(
+                    "**{}**/{} combo | **{}**",
+                    max_combo,
+                    attrs.max_combo(),
+                    acc
+                ),
                 true,
             )
             .field(
                 "300s | 100s | 50s | misses",
                 format!(
                     "**{}** | **{}** | **{}** | **{}**",
-                    self.count_300, self.count_100, self.count_50, self.count_miss
+                    self.n300, self.n100, self.n50, self.nmiss
                 ),
                 true,
             )
             .field(
                 "Map stats",
                 b.difficulty
-                    .apply_mods(&self.mods, info.stars)
+                    .apply_mods(&self.mods, attrs.stars())
                     .format_info(*mode, &self.mods, b),
                 false,
             )
@@ -693,7 +706,7 @@ pub(crate) fn user_embed(u: User, ex: UserExtras) -> CreateEmbed {
                     .push(format!(
                         "> {}",
                         map.difficulty
-                            .apply_mods(&v.mods, info.stars)
+                            .apply_mods(&v.mods, info.attrs.stars())
                             .format_info(mode, &v.mods, &map)
                             .replace('\n', "\n> ")
                     ))

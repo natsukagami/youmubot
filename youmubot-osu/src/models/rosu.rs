@@ -112,13 +112,18 @@ impl From<rosu::event::Event> for UserEvent {
 impl From<rosu::score::Score> for Score {
     fn from(s: rosu::score::Score) -> Self {
         let legacy_stats = s.statistics.as_legacy(s.mode);
+        let score = if s.set_on_lazer {
+            s.score
+        } else {
+            s.classic_score
+        } as u64;
         Self {
             id: Some(s.id),
             user_id: s.user_id as u64,
             date: time_to_utc(s.ended_at),
             replay_available: s.replay,
             beatmap_id: s.map_id as u64,
-            score: Some(s.legacy_score as u64).filter(|v| *v > 0),
+            score,
             normalized_score: s.score,
             pp: s.pp.map(|v| v as f64),
             rank: if s.passed { s.grade.into() } else { Rank::F },
@@ -126,14 +131,15 @@ impl From<rosu::score::Score> for Score {
             global_rank: s.rank_global,
             effective_pp: s.weight.map(|w| w.pp as f64),
             mode: s.mode.into(),
-            mods: s.mods.into(),
+            mods: Mods::from_gamemods(s.mods, s.set_on_lazer),
             count_300: legacy_stats.count_300 as u64,
             count_100: legacy_stats.count_100 as u64,
             count_50: legacy_stats.count_50 as u64,
             count_miss: legacy_stats.count_miss as u64,
             count_katu: legacy_stats.count_katu as u64,
             count_geki: legacy_stats.count_geki as u64,
-            max_combo: s.max_combo as u64,
+            statistics: s.statistics,
+            max_combo: s.max_combo,
             perfect: s.is_perfect_combo,
             ranked: s.ranked,
             preserved: s.preserve,

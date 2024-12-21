@@ -23,13 +23,13 @@ pub struct ToPrint<'a> {
 lazy_static! {
     // Beatmap(set) hooks
     static ref OLD_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:\+(?P<mods>\S+\b))?"
+        r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?"
     ).unwrap();
     static ref NEW_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:\+(?P<mods>\S+\b))?"
+        r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?"
     ).unwrap();
     static ref SHORT_LINK_REGEX: Regex = Regex::new(
-        r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:\+(?P<mods>\S+\b))?)"
+        r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?)"
     ).unwrap();
 
     // Score hook
@@ -149,7 +149,7 @@ impl EmbedType {
             env.oppai
                 .get_beatmap(bm.beatmap_id)
                 .await
-                .and_then(|b| b.get_possible_pp_with(mode, &mods))?
+                .map(|b| b.get_possible_pp_with(mode, &mods))?
         };
         Ok(Self::Beatmap(Box::new(bm), info, mods))
     }

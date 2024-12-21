@@ -16,13 +16,14 @@ lazy_static::lazy_static! {
     // Beatmap(set) hooks
     static ref MODS: Regex = Regex::new(
         // r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:\+(?P<mods>[A-Z]+))?"
-        r"^((\+?)(?P<mods>([A-Za-z0-9][A-Za-z])+))?(@(?P<clock>\d(\.\d+)?)x)?(?P<stats>(@(ar|AR|od|OD|cs|CS|hp|HP)\d(\.\d)?)+)?(v2)?$"
+        r"^((\+?)(?P<mods>([A-Za-z0-9][A-Za-z])+))?(@(?P<clock>\d(\.\d+)?)x)?(?P<stats>(@(ar|AR|od|OD|cs|CS|hp|HP)\d(\.\d)?)+)?(?P<lazer>v2)?$"
     ).unwrap();
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct UnparsedMods {
     mods: Cow<'static, str>,
+    is_lazer: bool,
     clock: Option<f64>,
 }
 
@@ -43,8 +44,10 @@ impl FromStr for UnparsedMods {
                 return Err(format!("invalid mod sequence: {}", mods));
             }
         }
+        let is_lazer = ms.name("lazer").is_some();
         Ok(Self {
             mods: mods.map(|v| v.into()).unwrap_or("".into()),
+            is_lazer,
             clock: ms
                 .name("clock")
                 .map(|v| v.as_str().parse::<_>().unwrap())
@@ -57,7 +60,7 @@ impl UnparsedMods {
     /// Convert to [Mods].
     pub fn to_mods(&self, mode: Mode) -> Result<Mods> {
         use rosu_v2::prelude::*;
-        let mut mods = Mods::from_str(&self.mods, mode)?;
+        let mut mods = Mods::from_str(&self.mods, mode, self.is_lazer)?;
         if let Some(clock) = self.clock {
             let has_night_day_core = mods.inner.contains_intermode(GameModIntermode::Nightcore)
                 || mods.inner.contains_intermode(GameModIntermode::Daycore);
@@ -71,6 +74,9 @@ impl UnparsedMods {
             let adjust_pitch: Option<bool> = None;
             if clock < 1.0 {
                 speed_change = speed_change.filter(|v| *v != 0.75);
+                if speed_change.is_some() {
+                    mods.is_lazer = true;
+                }
                 mods.inner.insert(if has_night_day_core {
                     match mode {
                         Mode::Std => GameMod::DaycoreOsu(DaycoreOsu { speed_change }),
@@ -101,6 +107,9 @@ impl UnparsedMods {
             }
             if clock > 1.0 {
                 speed_change = speed_change.filter(|v| *v != 1.5);
+                if speed_change.is_some() {
+                    mods.is_lazer = true;
+                }
                 mods.inner.insert(if has_night_day_core {
                     match mode {
                         Mode::Std => GameMod::NightcoreOsu(NightcoreOsu { speed_change }),
@@ -137,6 +146,7 @@ impl UnparsedMods {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Mods {
     pub inner: GameMods,
+    pub is_lazer: bool,
 }
 
 /// Store overrides to the stats.
@@ -161,6 +171,7 @@ impl Stats {
 impl Mods {
     pub const NOMOD: &'static Mods = &Mods {
         inner: GameMods::new(),
+        is_lazer: false,
     };
 
     // fn classic_mod_of(mode: Mode) -> rosu::GameMod {
@@ -209,11 +220,11 @@ impl Mods {
     }
 }
 
-impl From<GameMods> for Mods {
-    fn from(inner: GameMods) -> Self {
-        Self { inner }
-    }
-}
+// impl From<GameMods> for Mods {
+//     fn from(inner: GameMods) -> Self {
+//         Self { inner }
+//     }
+// }
 
 // bitflags::bitflags! {
 //     /// The mods available to osu!
@@ -405,7 +416,18 @@ impl Mods {
 }
 
 impl Mods {
-    pub fn from_str(mut s: &str, mode: Mode) -> Result<Self> {
+    pub fn from_gamemods(mods: GameMods, is_lazer: bool) -> Self {
+        let is_lazer = is_lazer || {
+            let mut mm = mods.clone();
+            mm.remove_intermode(GameModIntermode::Classic);
+            mm.try_as_legacy().is_none()
+        };
+        Self {
+            inner: mods,
+            is_lazer,
+        }
+    }
+    pub fn from_str(mut s: &str, mode: Mode, is_lazer: bool) -> Result<Self> {
         // Strip leading +
         if s.starts_with('+') {
             s = &s[1..];
@@ -420,7 +442,7 @@ impl Mods {
         if !inner.is_valid() {
             return Err(error!("Incompatible mods found: {}", inner));
         }
-        Ok(Self { inner })
+        Ok(Self::from_gamemods(inner, is_lazer))
         // let mut res = GameModsIntermode::default();
         // while s.len() >= 2 {
         //     let (m, nw) = s.split_at(2);
@@ -463,8 +485,7 @@ impl Mods {
 
 impl fmt::Display for Mods {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let is_lazer = !self.inner.contains_intermode(GameModIntermode::Classic);
-        let mods = if !is_lazer {
+        let mods = if !self.is_lazer {
             let mut v = self.inner.clone();
             v.remove_intermode(GameModIntermode::Classic);
             Cow::Owned(v)
@@ -479,7 +500,7 @@ impl fmt::Display for Mods {
                 write!(f, "@{:.2}x", clock)?;
             }
         }
-        if is_lazer {
+        if self.is_lazer {
             write!(f, "{}", LAZER_TEXT)?;
         }
         Ok(())
