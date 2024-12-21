@@ -417,7 +417,11 @@ impl Mods {
 
 impl Mods {
     pub fn from_gamemods(mods: GameMods, is_lazer: bool) -> Self {
-        let is_lazer = is_lazer || mods.try_as_legacy().is_none();
+        let is_lazer = is_lazer || {
+            let mut mm = mods.clone();
+            mm.remove_intermode(GameModIntermode::Classic);
+            mm.try_as_legacy().is_none()
+        };
         Self {
             inner: mods,
             is_lazer,

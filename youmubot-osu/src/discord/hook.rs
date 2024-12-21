@@ -301,7 +301,7 @@ async fn handle_beatmap<'a, 'b>(
                         .push_mono_safe(link)
                         .build(),
                 )
-                .embed(beatmap_embed(beatmap, mode, &mods, info))
+                .embed(beatmap_embed(beatmap, mode, &mods, &info))
                 .components(vec![beatmap_components(mode, reply_to.guild_id)])
                 .reference_message(reply_to),
         )

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use mods::Stats;
-use rosu_v2::prelude::GameModIntermode;
+use rosu_v2::prelude::{GameModIntermode, ScoreStatistics};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
@@ -636,7 +636,7 @@ pub struct Score {
     pub replay_available: bool,
     pub beatmap_id: u64,
 
-    pub score: Option<u64>,
+    pub score: u64,
     pub normalized_score: u32,
     pub pp: Option<f64>,
     pub rank: Rank,
@@ -649,8 +649,11 @@ pub struct Score {
     pub count_miss: u64,
     pub count_katu: u64,
     pub count_geki: u64,
-    pub max_combo: u64,
+    pub max_combo: u32,
     pub perfect: bool,
+
+    // lazer stats
+    pub statistics: ScoreStatistics,
 
     /// Whether score would get pp
     pub ranked: Option<bool>,

@@ -24,7 +24,7 @@ use youmubot_prelude::{
 };
 
 use crate::{
-    discord::{db::OsuUser, display::ScoreListStyle, oppai_cache::Accuracy, BeatmapWithMode},
+    discord::{db::OsuUser, display::ScoreListStyle, oppai_cache::Stats, BeatmapWithMode},
     models::{Mode, Mods},
     request::UserID,
     Score,
@@ -454,29 +454,24 @@ pub async fn get_leaderboard(
             let mem = Arc::new(mem);
             scores
                 .into_iter()
-                .filter_map(|score| {
-                    let pp = score.pp.map(|v| (true, v)).or_else(|| {
-                        oppai_map
-                            .get_pp_from(
+                .map(|score| {
+                    let pp = score.pp.map(|v| (true, v)).unwrap_or_else(|| {
+                        (
+                            false,
+                            oppai_map.get_pp_from(
                                 *mode,
-                                Some(score.max_combo as usize),
-                                Accuracy::ByCount(
-                                    score.count_300,
-                                    score.count_100,
-                                    score.count_50,
-                                    score.count_miss,
-                                ),
+                                Some(score.max_combo),
+                                Stats::Raw(&score.statistics),
                                 &score.mods,
-                            )
-                            .ok()
-                            .map(|v| (false, v))
-                    })?;
-                    Some(Ranking {
+                            ),
+                        )
+                    });
+                    Ranking {
                         pp: pp.1,
                         official: pp.0,
                         member: mem.clone(),
                         score,
-                    })
+                    }
                 })
                 .collect::<Vec<_>>()
         })
@@ -520,7 +515,7 @@ pub async fn display_rankings_table(
     bm: &BeatmapWithMode,
     order: OrderBy,
 ) -> Result<()> {
-    let has_lazer_score = scores.iter().any(|v| v.score.score.is_none());
+    let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
 
     const ITEMS_PER_PAGE: usize = 5;
     let total_len = scores.len();
@@ -565,7 +560,7 @@ pub async fn display_rankings_table(
                                         crate::discord::embeds::grouped_number(if has_lazer_score {
                                             score.normalized_score as u64
                                         } else {
-                                            score.score.unwrap()
+                                            score.score
                                         })
                                     }
                                 },

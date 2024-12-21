@@ -149,7 +149,7 @@ impl EmbedType {
             env.oppai
                 .get_beatmap(bm.beatmap_id)
                 .await
-                .and_then(|b| b.get_possible_pp_with(mode, &mods))?
+                .map(|b| b.get_possible_pp_with(mode, &mods))?
         };
         Ok(Self::Beatmap(Box::new(bm), info, mods))
     }
