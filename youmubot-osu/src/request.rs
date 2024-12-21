@@ -210,7 +210,9 @@ pub mod builders {
                     match self.mods {
                         Some(mods) => r.await.map(|mut ss| {
                             // let mods = GameModsIntermode::from(mods.inner);
-                            ss.retain(|s| Mods::from(s.mods.clone()).contains(&mods));
+                            ss.retain(|s| {
+                                Mods::from_gamemods(s.mods.clone(), s.set_on_lazer).contains(&mods)
+                            });
                             ss
                         }),
                         None => r.await,
