@@ -3,7 +3,7 @@ use mods::Stats;
 use rosu_v2::prelude::{GameModIntermode, ScoreStatistics};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::time::Duration;
 
 pub mod mods;
@@ -561,6 +561,10 @@ pub struct User {
 }
 
 impl User {
+    pub fn mention<'a>(&'a self) -> impl Display + 'a {
+        UserHeaderLink(&self.username, self.id)
+    }
+
     pub fn link(&self) -> String {
         format!("https://osu.ppy.sh/users/{}", self.id)
     }
@@ -570,7 +574,20 @@ impl User {
     }
 }
 
+#[derive(Debug, Clone)]
+struct UserHeaderLink<'a>(&'a String, u64);
+
+impl<'a> Display for UserHeaderLink<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}](<https://osu.ppy.sh/users/{}>)", self.0, self.1)
+    }
+}
+
 impl UserHeader {
+    pub fn mention<'a>(&'a self) -> impl Display + 'a {
+        UserHeaderLink(&self.username, self.id)
+    }
+
     pub fn link(&self) -> String {
         format!("https://osu.ppy.sh/users/{}", self.id)
     }
