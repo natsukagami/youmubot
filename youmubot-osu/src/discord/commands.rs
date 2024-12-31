@@ -1,11 +1,14 @@
 use super::*;
+use display::display_beatmapset;
+use embeds::ScoreEmbedBuilder;
+use link_parser::EmbedType;
 use poise::CreateReply;
 use serenity::all::User;
 
 /// osu!-related command group.
 #[poise::command(
     slash_command,
-    subcommands("profile", "top", "recent", "pinned", "save", "forcesave")
+    subcommands("profile", "top", "recent", "pinned", "save", "forcesave", "beatmap")
 )]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
     Ok(())
@@ -46,7 +49,7 @@ async fn top<U: HasOsuEnv>(
 
     plays.sort_unstable_by(|a, b| b.pp.partial_cmp(&a.pp).unwrap());
 
-    handle_listing(ctx, plays, args, "top").await
+    handle_listing(ctx, plays, args, |nth, b| b.top_record(nth), "top").await
 }
 
 /// Get an user's profile.
@@ -116,7 +119,7 @@ async fn recent<U: HasOsuEnv>(
         .user_recent(UserID::ID(args.user.id), |f| f.mode(args.mode).limit(50))
         .await?;
 
-    handle_listing(ctx, plays, args, "recent").await
+    handle_listing(ctx, plays, args, |_, b| b, "recent").await
 }
 
 /// Returns pinned plays from a given player.
@@ -147,7 +150,7 @@ async fn pinned<U: HasOsuEnv>(
         .user_pins(UserID::ID(args.user.id), |f| f.mode(args.mode).limit(50))
         .await?;
 
-    handle_listing(ctx, plays, args, "pinned").await
+    handle_listing(ctx, plays, args, |_, b| b, "pinned").await
 }
 
 /// Save your osu! profile into Youmu's database for tracking and quick commands.
@@ -229,6 +232,7 @@ async fn handle_listing<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
     plays: Vec<Score>,
     listing_args: ListingArgs,
+    transform: impl for<'a> Fn(u8, ScoreEmbedBuilder<'a>) -> ScoreEmbedBuilder<'a>,
     listing_kind: &'static str,
 ) -> Result<()> {
     let env = ctx.data().osu_env();
@@ -257,11 +261,14 @@ async fn handle_listing<U: HasOsuEnv>(
                         listing_kind,
                         user.mention()
                     ))
-                    .embed(
-                        score_embed(&play, &beatmap, &content, user)
-                            .top_record(nth + 1)
-                            .build(),
-                    )
+                    .embed({
+                        let mut b =
+                            transform(nth + 1, score_embed(&play, &beatmap, &content, user));
+                        if let Some(rank) = play.global_rank {
+                            b = b.world_record(rank as u16);
+                        }
+                        b.build()
+                    })
                     .components(vec![score_components(ctx.guild_id())])
             })
             .await?;
@@ -285,6 +292,130 @@ async fn handle_listing<U: HasOsuEnv>(
                 .await?;
         }
     }
+    Ok(())
+}
+
+/// Get information about a beatmap, or the last beatmap mentioned in the channel.
+#[poise::command(slash_command)]
+async fn beatmap<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "A link or shortlink to the beatmap or beatmapset"] map: Option<String>,
+    #[description = "Override the mods on the map"] mods: Option<UnparsedMods>,
+    #[description = "Override the mode of the map"] mode: Option<Mode>,
+    #[description = "Load the beatmapset instead"] beatmapset: Option<bool>,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+
+    ctx.defer().await?;
+
+    let beatmap = match map {
+        None => {
+            let Some((BeatmapWithMode(b, mode), bmmods)) =
+                load_beatmap(env, ctx.channel_id(), None as Option<&'_ Message>).await
+            else {
+                return Err(Error::msg("no beatmap mentioned in this channel"));
+            };
+            let mods = bmmods.unwrap_or_else(|| Mods::NOMOD.clone());
+            let info = env
+                .oppai
+                .get_beatmap(b.beatmap_id)
+                .await?
+                .get_possible_pp_with(mode, &mods);
+            EmbedType::Beatmap(Box::new(b), info, mods)
+        }
+        Some(map) => {
+            let Some(results) = stream::select(
+                link_parser::parse_new_links(env, &map),
+                stream::select(
+                    link_parser::parse_old_links(env, &map),
+                    link_parser::parse_short_links(env, &map),
+                ),
+            )
+            .next()
+            .await
+            else {
+                return Err(Error::msg("no beatmap detected in the argument"));
+            };
+            results.embed
+        }
+    };
+
+    // override into beatmapset if needed
+    let beatmap = if beatmapset == Some(true) {
+        match beatmap {
+            EmbedType::Beatmap(beatmap, _, _) => {
+                let beatmaps = env.beatmaps.get_beatmapset(beatmap.beatmapset_id).await?;
+                EmbedType::Beatmapset(beatmaps)
+            }
+            bm @ EmbedType::Beatmapset(_) => bm,
+        }
+    } else {
+        beatmap
+    };
+
+    // override mods and mode if needed
+    match beatmap {
+        EmbedType::Beatmap(beatmap, info, bmmods) => {
+            let (beatmap, info, mods) = if mods.is_none() && mode.is_none_or(|v| v == beatmap.mode)
+            {
+                (*beatmap, info, bmmods)
+            } else {
+                let mode = mode.unwrap_or(beatmap.mode);
+                let mods = match mods {
+                    None => bmmods,
+                    Some(mods) => mods.to_mods(mode)?,
+                };
+                let beatmap = env.beatmaps.get_beatmap(beatmap.beatmap_id, mode).await?;
+                let info = env
+                    .oppai
+                    .get_beatmap(beatmap.beatmap_id)
+                    .await?
+                    .get_possible_pp_with(mode, &mods);
+                (beatmap, info, mods)
+            };
+            ctx.send(
+                CreateReply::default()
+                    .content(format!(
+                        "Information for beatmap `{}`",
+                        beatmap.short_link(mode, &mods)
+                    ))
+                    .embed(beatmap_embed(
+                        &beatmap,
+                        mode.unwrap_or(beatmap.mode),
+                        &mods,
+                        &info,
+                    ))
+                    .components(vec![beatmap_components(
+                        mode.unwrap_or(beatmap.mode),
+                        ctx.guild_id(),
+                    )]),
+            )
+            .await?;
+        }
+        EmbedType::Beatmapset(vec) => {
+            let b0 = &vec[0];
+            let msg = ctx
+                .clone()
+                .reply(format!(
+                    "Information for beatmapset [`/s/{}`](<{}>)",
+                    b0.beatmapset_id,
+                    b0.beatmapset_link()
+                ))
+                .await?
+                .into_message()
+                .await?;
+            display_beatmapset(
+                ctx.serenity_context().clone(),
+                vec,
+                mode,
+                mods,
+                ctx.guild_id(),
+                msg,
+            )
+            .await?;
+        }
+    };
+
     Ok(())
 }
 

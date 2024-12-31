@@ -325,7 +325,7 @@ async fn handle_last_req(
             ctx.clone(),
             beatmapset,
             None,
-            mods,
+            None,
             comp.guild_id,
             reply,
         )

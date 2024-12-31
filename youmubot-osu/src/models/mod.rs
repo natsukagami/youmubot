@@ -341,6 +341,14 @@ impl Mode {
             Mode::Mania => "mania",
         }
     }
+
+    pub fn with_override(self, opt_mode: impl Into<Option<Mode>>) -> Self {
+        if self == Mode::Std {
+            opt_mode.into().unwrap_or(self)
+        } else {
+            self
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
