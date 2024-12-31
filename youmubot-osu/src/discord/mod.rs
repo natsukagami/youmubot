@@ -675,7 +675,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             let reply = msg
                 .reply(
                     ctx,
-                    format!("Here are the recent plays by `{}`!", user.username),
+                    format!("Here are the recent plays by {}!", user.mention()),
                 )
                 .await?;
             style
@@ -699,7 +699,11 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .send_message(
                     &ctx,
                     CreateMessage::new()
-                        .content("Here is the play that you requested".to_string())
+                        .content(format!(
+                            "Here is the #{} recent play by {}!",
+                            nth + 1,
+                            user.mention()
+                        ))
                         .embed(
                             score_embed(play, &beatmap_mode, &content, user)
                                 .footer(format!("Attempt #{}", attempts))
@@ -1007,7 +1011,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .send_message(&ctx, {
                     CreateMessage::new()
                         .content(format!(
-                            "Here is the #{} top play by {}",
+                            "Here is the #{} top play by {}!",
                             nth + 1,
                             user.mention()
                         ))

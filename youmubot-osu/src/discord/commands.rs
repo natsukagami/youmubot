@@ -1,10 +1,9 @@
 use super::*;
 use poise::CreateReply;
 use serenity::all::User;
-use youmubot_prelude::*;
 
 /// osu!-related command group.
-#[poise::command(slash_command, subcommands("profile", "top"))]
+#[poise::command(slash_command, subcommands("profile", "top", "recent"))]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
     Ok(())
 }
@@ -64,7 +63,7 @@ async fn top<U: HasOsuEnv>(
             ctx.send({
                 CreateReply::default()
                     .content(format!(
-                        "Here is the #{} top play by {}",
+                        "Here is the #{} top play by {}!",
                         nth + 1,
                         user.mention()
                     ))
@@ -131,6 +130,86 @@ async fn profile<U: HasOsuEnv>(
             ctx.reply("🔍 user not found!").await?;
         }
     };
+    Ok(())
+}
+
+/// Returns recent plays from a given player.
+///
+/// If no osu! username is given, defaults to the currently registered user.
+#[poise::command(slash_command)]
+async fn recent<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "Index of the score"]
+    #[min = 1]
+    #[max = 50]
+    index: Option<u8>,
+    #[description = "Score listing style"] style: Option<ScoreListStyle>,
+    #[description = "Game mode"] mode: Option<Mode>,
+    #[description = "osu! username"] username: Option<String>,
+    #[description = "Discord username"] discord_name: Option<User>,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+    let args = arg_from_username_or_discord(username, discord_name);
+    let style = style.unwrap_or(ScoreListStyle::Table);
+
+    let ListingArgs {
+        nth,
+        style,
+        mode,
+        user,
+    } = ListingArgs::from_params(env, index, style, mode, args, ctx.author().id).await?;
+
+    ctx.defer().await?;
+
+    let osu_client = &env.client;
+    let plays = osu_client
+        .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))
+        .await?;
+    match nth {
+        Nth::All => {
+            let reply = ctx
+                .clone()
+                .reply(format!("Here are the recent plays by {}!", user.mention()))
+                .await?
+                .into_message()
+                .await?;
+            style
+                .display_scores(plays, mode, ctx.serenity_context(), reply.guild_id, reply)
+                .await?;
+        }
+        Nth::Nth(nth) => {
+            let Some(play) = plays.get(nth as usize) else {
+                Err(Error::msg("No such play"))?
+            };
+            let attempts = plays
+                .iter()
+                .skip(nth as usize)
+                .take_while(|p| p.beatmap_id == play.beatmap_id && p.mods == play.mods)
+                .count();
+            let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
+            let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
+            let beatmap_mode = BeatmapWithMode(beatmap, mode);
+
+            ctx.send(
+                CreateReply::default()
+                    .content(format!(
+                        "Here is the #{} recent play by {}!",
+                        nth + 1,
+                        user.mention()
+                    ))
+                    .embed(
+                        score_embed(play, &beatmap_mode, &content, user)
+                            .footer(format!("Attempt #{}", attempts))
+                            .build(),
+                    )
+                    .components(vec![score_components(ctx.guild_id())]),
+            )
+            .await?;
+
+            // Save the beatmap...
+            cache::save_beatmap(&env, ctx.channel_id(), &beatmap_mode).await?;
+        }
+    }
     Ok(())
 }
 
