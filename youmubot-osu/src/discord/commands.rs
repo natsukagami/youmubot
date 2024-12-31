@@ -19,7 +19,8 @@ use serenity::all::User;
         "save",
         "forcesave",
         "beatmap",
-        "check"
+        "check",
+        "ranks"
     )
 )]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
@@ -519,6 +520,33 @@ async fn check<U: HasOsuEnv>(
         )
         .await?;
 
+    Ok(())
+}
+
+/// Display the rankings of members in the server.
+#[poise::command(slash_command, guild_only)]
+async fn ranks<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "Sort users by"] sort: Option<server_rank::RankQuery>,
+    #[description = "Reverse the ordering"] reverse: Option<bool>,
+    #[description = "The gamemode for the rankings"] mode: Option<Mode>,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+    let guild = ctx.partial_guild().await.unwrap();
+    ctx.defer().await?;
+    server_rank::do_server_ranks(
+        ctx.clone().serenity_context(),
+        env,
+        &guild,
+        mode,
+        sort,
+        reverse.unwrap_or(false),
+        |s| async move {
+            let m = ctx.reply(s).await?;
+            Ok(m.into_message().await?)
+        },
+    )
+    .await?;
     Ok(())
 }
 
