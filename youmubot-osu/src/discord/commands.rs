@@ -4,7 +4,7 @@ use serenity::all::User;
 use youmubot_prelude::*;
 
 /// osu!-related command group.
-#[poise::command(slash_command, subcommands("top"))]
+#[poise::command(slash_command, subcommands("profile", "top"))]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
     Ok(())
 }
@@ -22,14 +22,10 @@ async fn top<U: HasOsuEnv>(
     #[description = "Score listing style"] style: Option<ScoreListStyle>,
     #[description = "Game mode"] mode: Option<Mode>,
     #[description = "osu! username"] username: Option<String>,
-    #[description = "Discord username"] user: Option<User>,
+    #[description = "Discord username"] discord_name: Option<User>,
 ) -> Result<()> {
     let env = ctx.data().osu_env();
-    let username_arg = match (username, user) {
-        (Some(v), _) => Some(UsernameArg::Raw(v)),
-        (_, Some(u)) => Some(UsernameArg::Tagged(u.id)),
-        (None, None) => None,
-    };
+    let username_arg = arg_from_username_or_discord(username, discord_name);
     let ListingArgs {
         nth,
         style,
@@ -68,10 +64,9 @@ async fn top<U: HasOsuEnv>(
             ctx.send({
                 CreateReply::default()
                     .content(format!(
-                        "Here is the #{} top play by [`{}`](<{}>)",
+                        "Here is the #{} top play by {}",
                         nth + 1,
-                        user.username,
-                        user.link()
+                        user.mention()
                     ))
                     .embed(
                         score_embed(&play, &beatmap, &content, user)
@@ -88,11 +83,7 @@ async fn top<U: HasOsuEnv>(
         Nth::All => {
             let reply = ctx
                 .clone()
-                .reply(format!(
-                    "Here are the top plays by [`{}`](<{}>)!",
-                    user.username,
-                    user.link()
-                ))
+                .reply(format!("Here are the top plays by {}!", user.mention()))
                 .await?
                 .into_message()
                 .await?;
@@ -102,4 +93,54 @@ async fn top<U: HasOsuEnv>(
         }
     }
     Ok(())
+}
+
+/// Get an user's profile.
+#[poise::command(slash_command)]
+async fn profile<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "Game mode"]
+    #[rename = "mode"]
+    mode_override: Option<Mode>,
+    #[description = "osu! username"] username: Option<String>,
+    #[description = "Discord username"] discord_name: Option<User>,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+    let username_arg = arg_from_username_or_discord(username, discord_name);
+    let (mode, user) = user_header_or_default_id(username_arg, env, ctx.author().id).await?;
+    let mode = mode_override.unwrap_or(mode);
+
+    ctx.defer().await?;
+
+    let user = env
+        .client
+        .user(&UserID::ID(user.id), |f| f.mode(mode))
+        .await?;
+
+    match user {
+        Some(u) => {
+            let ex = UserExtras::from_user(env, &u, mode).await?;
+            ctx.send(
+                CreateReply::default()
+                    .content(format!("Here is {}'s **{}** profile!", u.mention(), mode))
+                    .embed(user_embed(u, ex)),
+            )
+            .await?;
+        }
+        None => {
+            ctx.reply("🔍 user not found!").await?;
+        }
+    };
+    Ok(())
+}
+
+fn arg_from_username_or_discord(
+    username: Option<String>,
+    discord_name: Option<User>,
+) -> Option<UsernameArg> {
+    match (username, discord_name) {
+        (Some(v), _) => Some(UsernameArg::Raw(v)),
+        (_, Some(u)) => Some(UsernameArg::Tagged(u.id)),
+        (None, None) => None,
+    }
 }
