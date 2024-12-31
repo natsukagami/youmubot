@@ -859,10 +859,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     match b {
         Some((bm, mods_def)) => {
-            let mods = match args.find::<UnparsedMods>().ok() {
-                Some(m) => m.to_mods(bm.mode())?,
-                None => mods_def.unwrap_or_default(),
-            };
+            let mods = args.find::<UnparsedMods>().ok();
             if beatmapset {
                 let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
                 let reply = msg
@@ -879,6 +876,10 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .await?;
                 return Ok(());
             }
+            let mods = match mods {
+                Some(m) => m.to_mods(bm.mode())?,
+                None => mods_def.unwrap_or_default(),
+            };
             let info = env
                 .oppai
                 .get_beatmap(bm.0.beatmap_id)

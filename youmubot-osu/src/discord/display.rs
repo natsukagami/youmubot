@@ -346,23 +346,34 @@ mod beatmapset {
 
     use youmubot_prelude::*;
 
-    use crate::discord::{interaction::beatmap_components, OsuEnv};
     use crate::{
         discord::{cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapWithMode},
         models::{Beatmap, Mode, Mods},
+    };
+    use crate::{
+        discord::{interaction::beatmap_components, OsuEnv},
+        mods::UnparsedMods,
     };
 
     const SHOW_ALL_EMOTE: &str = "🗒️";
 
     pub async fn display_beatmapset(
         ctx: Context,
-        beatmapset: Vec<Beatmap>,
+        mut beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
-        mods: Mods,
+        mods: Option<UnparsedMods>,
         guild_id: Option<GuildId>,
         target: Message,
     ) -> Result<bool> {
         assert!(!beatmapset.is_empty(), "Beatmapset should not be empty");
+
+        beatmapset.sort_unstable_by(|a, b| {
+            if a.mode != b.mode {
+                (a.mode as u8).cmp(&(b.mode as u8))
+            } else {
+                a.difficulty.stars.partial_cmp(&b.difficulty.stars).unwrap()
+            }
+        });
 
         let p = Paginate {
             infos: vec![None; beatmapset.len()],
@@ -392,20 +403,25 @@ mod beatmapset {
         maps: Vec<Beatmap>,
         infos: Vec<Option<BeatmapInfoWithPP>>,
         mode: Option<Mode>,
-        mods: Mods,
+        mods: Option<UnparsedMods>,
         guild_id: Option<GuildId>,
 
         all_reaction: Option<Reaction>,
     }
 
     impl Paginate {
-        async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Result<BeatmapInfoWithPP> {
+        async fn get_beatmap_info(
+            &self,
+            ctx: &Context,
+            b: &Beatmap,
+            mods: &Mods,
+        ) -> Result<BeatmapInfoWithPP> {
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
             env.oppai
                 .get_beatmap(b.beatmap_id)
                 .await
-                .map(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), &self.mods))
+                .map(move |v| v.get_possible_pp_with(b.mode.with_override(self.mode), &mods))
         }
     }
 
@@ -433,10 +449,16 @@ mod beatmapset {
             }
 
             let map = &self.maps[page];
+            let mods = self
+                .mods
+                .clone()
+                .and_then(|v| v.to_mods(map.mode.with_override(self.mode)).ok())
+                .unwrap_or_default();
+
             let info = match &self.infos[page] {
                 Some(info) => info,
                 None => {
-                    let info = self.get_beatmap_info(ctx, map).await?;
+                    let info = self.get_beatmap_info(ctx, map, &mods).await?;
                     self.infos[page].insert(info)
                 }
             };
@@ -445,7 +467,7 @@ mod beatmapset {
                        crate::discord::embeds::beatmap_embed(
                            map,
                            self.mode.unwrap_or(map.mode),
-                           &self.mods,
+                           &mods,
                            info,
                        )
                            .footer({
