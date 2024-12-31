@@ -1,14 +1,26 @@
+use std::cmp::Ordering;
+
 use super::*;
+use cache::save_beatmap;
 use display::display_beatmapset;
 use embeds::ScoreEmbedBuilder;
 use link_parser::EmbedType;
-use poise::CreateReply;
+use poise::{ChoiceParameter, CreateReply};
 use serenity::all::User;
 
 /// osu!-related command group.
 #[poise::command(
     slash_command,
-    subcommands("profile", "top", "recent", "pinned", "save", "forcesave", "beatmap")
+    subcommands(
+        "profile",
+        "top",
+        "recent",
+        "pinned",
+        "save",
+        "forcesave",
+        "beatmap",
+        "check"
+    )
 )]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
     Ok(())
@@ -308,20 +320,7 @@ async fn beatmap<U: HasOsuEnv>(
 
     ctx.defer().await?;
 
-    let beatmap = parse_map_input(ctx.channel_id(), env, map, mode).await?;
-
-    // override into beatmapset if needed
-    let beatmap = if beatmapset == Some(true) {
-        match beatmap {
-            EmbedType::Beatmap(beatmap, _, _) => {
-                let beatmaps = env.beatmaps.get_beatmapset(beatmap.beatmapset_id).await?;
-                EmbedType::Beatmapset(beatmaps)
-            }
-            bm @ EmbedType::Beatmapset(_) => bm,
-        }
-    } else {
-        beatmap
-    };
+    let beatmap = parse_map_input(ctx.channel_id(), env, map, mode, beatmapset).await?;
 
     // override mods and mode if needed
     match beatmap {
@@ -361,6 +360,8 @@ async fn beatmap<U: HasOsuEnv>(
                     )]),
             )
             .await?;
+            let bmode = beatmap.mode.with_override(mode);
+            save_beatmap(env, ctx.channel_id(), &BeatmapWithMode(beatmap, bmode)).await?;
         }
         EmbedType::Beatmapset(vec) => {
             let b0 = &vec[0];
@@ -389,6 +390,138 @@ async fn beatmap<U: HasOsuEnv>(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ChoiceParameter, Default)]
+enum SortScoreBy {
+    #[default]
+    PP,
+    Score,
+    #[name = "Maximum Combo"]
+    Combo,
+    #[name = "Miss Count"]
+    Miss,
+    Accuracy,
+}
+
+impl SortScoreBy {
+    fn compare(self, a: &Score, b: &Score) -> Ordering {
+        match self {
+            SortScoreBy::PP => {
+                b.pp.unwrap_or(0.0)
+                    .partial_cmp(&a.pp.unwrap_or(0.0))
+                    .unwrap()
+            }
+            SortScoreBy::Score => b.normalized_score.cmp(&a.normalized_score),
+            SortScoreBy::Combo => b.max_combo.cmp(&a.max_combo),
+            SortScoreBy::Miss => b.count_miss.cmp(&a.count_miss),
+            SortScoreBy::Accuracy => b.server_accuracy.partial_cmp(&a.server_accuracy).unwrap(),
+        }
+    }
+}
+
+/// Display your or a player's scores for a certain beatmap/beatmapset.
+#[poise::command(slash_command)]
+async fn check<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "A link or shortlink to the beatmap or beatmapset"] map: Option<String>,
+    #[description = "osu! username"] username: Option<String>,
+    #[description = "Discord username"] discord_name: Option<User>,
+    #[description = "Sort scores by"] sort: Option<SortScoreBy>,
+    #[description = "Reverse the sorting order"] reverse: Option<bool>,
+    #[description = "Filter the mods on the scores"] mods: Option<UnparsedMods>,
+    #[description = "Filter the mode of the scores"] mode: Option<Mode>,
+    #[description = "Find all scores in the beatmapset instead"] beatmapset: Option<bool>,
+    #[description = "Score listing style"] style: Option<ScoreListStyle>,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+
+    let user = arg_from_username_or_discord(username, discord_name);
+    let args = ListingArgs::from_params(
+        env,
+        None,
+        style.unwrap_or(ScoreListStyle::Grid),
+        mode,
+        user,
+        ctx.author().id,
+    )
+    .await?;
+
+    ctx.defer().await?;
+
+    let embed = parse_map_input(ctx.channel_id(), env, map, mode, beatmapset).await?;
+    let beatmaps = match embed {
+        EmbedType::Beatmap(beatmap, _, _) => {
+            let nmode = beatmap.mode.with_override(mode);
+            vec![BeatmapWithMode(*beatmap, nmode)]
+        }
+        EmbedType::Beatmapset(vec) => match mode {
+            None => {
+                let default_mode = vec[0].mode;
+                vec.into_iter()
+                    .filter(|b| b.mode == default_mode)
+                    .map(|b| BeatmapWithMode(b, default_mode))
+                    .collect()
+            }
+            Some(m) => vec
+                .into_iter()
+                .filter(|b| b.mode == Mode::Std || b.mode == m)
+                .map(|b| BeatmapWithMode(b, m))
+                .collect(),
+        },
+    };
+
+    let display = if beatmaps.len() == 1 {
+        format!(
+            "[{}](<{}>)",
+            beatmaps[0].0.short_link(None, Mods::NOMOD),
+            beatmaps[0].0.link()
+        )
+    } else {
+        format!(
+            "[/s/{}](<{}>)",
+            beatmaps[0].0.beatmapset_id,
+            beatmaps[0].0.beatmapset_link()
+        )
+    };
+
+    let ordering = sort.unwrap_or_default();
+    let mut scores = do_check(env, &beatmaps, mods, &args.user).await?;
+    if scores.is_empty() {
+        ctx.reply(format!(
+            "No plays found for {} on {} with the required criteria.",
+            args.user.mention(),
+            display
+        ))
+        .await?;
+        return Ok(());
+    }
+    scores.sort_unstable_by(|a, b| ordering.compare(a, b));
+    if reverse == Some(true) {
+        scores.reverse();
+    }
+
+    let msg = ctx
+        .clone()
+        .reply(format!(
+            "Here are the plays by {} on {}!",
+            args.user.mention(),
+            display
+        ))
+        .await?
+        .into_message()
+        .await?;
+    args.style
+        .display_scores(
+            scores,
+            beatmaps[0].1,
+            ctx.serenity_context(),
+            ctx.guild_id(),
+            msg,
+        )
+        .await?;
+
+    Ok(())
+}
+
 fn arg_from_username_or_discord(
     username: Option<String>,
     discord_name: Option<User>,
@@ -405,8 +538,9 @@ async fn parse_map_input(
     env: &OsuEnv,
     input: Option<String>,
     mode: Option<Mode>,
+    beatmapset: Option<bool>,
 ) -> Result<EmbedType> {
-    Ok(match input {
+    let output = match input {
         None => {
             let Some((BeatmapWithMode(b, mode), bmmods)) =
                 load_beatmap(env, channel_id, None as Option<&'_ Message>).await
@@ -452,5 +586,20 @@ async fn parse_map_input(
             };
             results.embed
         }
-    })
+    };
+
+    // override into beatmapset if needed
+    let output = if beatmapset == Some(true) {
+        match output {
+            EmbedType::Beatmap(beatmap, _, _) => {
+                let beatmaps = env.beatmaps.get_beatmapset(beatmap.beatmapset_id).await?;
+                EmbedType::Beatmapset(beatmaps)
+            }
+            bm @ EmbedType::Beatmapset(_) => bm,
+        }
+    } else {
+        output
+    };
+
+    Ok(output)
 }

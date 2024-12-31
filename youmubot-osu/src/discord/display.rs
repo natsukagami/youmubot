@@ -194,7 +194,7 @@ mod scores {
             }
         }
 
-        const ITEMS_PER_PAGE: usize = 5;
+        const ITEMS_PER_PAGE: usize = 10;
 
         #[async_trait]
         impl pagination::Paginate for Paginate {
