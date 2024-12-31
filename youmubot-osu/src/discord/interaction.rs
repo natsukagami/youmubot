@@ -79,7 +79,7 @@ pub fn handle_check_button<'a>(
         };
         let header = UserHeader::from(user.clone());
 
-        let scores = super::do_check(&env, &bm, Mods::NOMOD, &header).await?;
+        let scores = super::do_check(&env, &vec![bm.clone()], None, &header).await?;
         if scores.is_empty() {
             comp.create_followup(
                 &ctx,

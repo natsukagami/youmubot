@@ -21,7 +21,7 @@ use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserMode};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
-use stream::FuturesOrdered;
+use stream::{FuturesOrdered, FuturesUnordered};
 use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::*;
 
@@ -925,18 +925,15 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         }
     };
     let mode = bm.1;
-    let mods = args
-        .find::<UnparsedMods>()
-        .ok()
-        .unwrap_or_default()
-        .to_mods(mode)?;
+    let umods = args.find::<UnparsedMods>().ok();
+    let mods = umods.clone().unwrap_or_default().to_mods(mode)?;
     let style = args
         .single::<ScoreListStyle>()
         .unwrap_or(ScoreListStyle::Grid);
     let username_arg = args.single::<UsernameArg>().ok();
     let (_, user) = user_header_from_args(username_arg, &env, msg).await?;
 
-    let scores = do_check(&env, &bm, &mods, &user).await?;
+    let scores = do_check(&env, &vec![bm.clone()], umods, &user).await?;
 
     if scores.is_empty() {
         msg.reply(&ctx, "No scores found").await?;
@@ -961,19 +958,29 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 
 pub(crate) async fn do_check(
     env: &OsuEnv,
-    bm: &BeatmapWithMode,
-    mods: &Mods,
+    bm: &[BeatmapWithMode],
+    mods: Option<UnparsedMods>,
     user: &UserHeader,
 ) -> Result<Vec<Score>> {
-    let BeatmapWithMode(b, m) = bm;
-
     let osu_client = &env.client;
 
-    let mut scores = osu_client
-        .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(*m))
+    let mut scores = bm
+        .iter()
+        .map(|bm| {
+            let BeatmapWithMode(b, m) = bm;
+            let mods = mods.clone().and_then(|t| t.to_mods(*m).ok());
+            osu_client
+                .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(*m))
+                .map_ok(move |mut v| {
+                    v.retain(|s| mods.as_ref().is_none_or(|m| m.contains(&s.mods)));
+                    v
+                })
+        })
+        .collect::<FuturesUnordered<_>>()
+        .try_collect::<Vec<_>>()
         .await?
         .into_iter()
-        .filter(|s| s.mods.contains(mods))
+        .flatten()
         .collect::<Vec<_>>();
     scores.sort_by(|a, b| {
         b.pp.unwrap_or(-1.0)
