@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
+    future::Future,
     str::FromStr,
     sync::Arc,
 };
@@ -9,7 +10,7 @@ use std::{
 use chrono::DateTime;
 use pagination::paginate_with_first_message;
 use serenity::{
-    all::{GuildId, Member},
+    all::{GuildId, Member, PartialGuild},
     builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
@@ -32,15 +33,16 @@ use crate::{
 
 use super::{ModeArg, OsuEnv};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-enum RankQuery {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, poise::ChoiceParameter)]
+pub(crate) enum RankQuery {
     #[default]
     PP,
+    #[name = "Total PP"]
     TotalPP,
+    #[name = "Weighted Map Length"]
     MapLength,
-    MapAge {
-        newest_first: bool,
-    },
+    #[name = "Map Age"]
+    MapAge,
 }
 
 impl RankQuery {
@@ -49,13 +51,13 @@ impl RankQuery {
             RankQuery::PP => "pp",
             RankQuery::TotalPP => "Total pp",
             RankQuery::MapLength => "Map length",
-            RankQuery::MapAge { newest_first: _ } => "Map age",
+            RankQuery::MapAge => "Map age",
         }
     }
     fn pass_pp_limit(&self, mode: Mode, ou: &OsuUser) -> bool {
         match self {
             RankQuery::PP | RankQuery::TotalPP => true,
-            RankQuery::MapAge { newest_first: _ } | RankQuery::MapLength => {
+            RankQuery::MapAge | RankQuery::MapLength => {
                 ou.modes.get(&mode).is_some_and(|v| v.pp >= 500.0)
             }
         }
@@ -81,7 +83,7 @@ impl RankQuery {
                     format!("{}m{:05.2}s", minutes, seconds).into()
                 })
                 .unwrap_or_else(|| "-".into()),
-            RankQuery::MapAge { newest_first: _ } => ou
+            RankQuery::MapAge => ou
                 .modes
                 .get(&mode)
                 .and_then(|v| DateTime::from_timestamp(v.map_age, 0))
@@ -99,10 +101,7 @@ impl FromStr for RankQuery {
             "pp" => Ok(RankQuery::PP),
             "total" | "total-pp" => Ok(RankQuery::TotalPP),
             "map-length" => Ok(RankQuery::MapLength),
-            "age" | "map-age" => Ok(RankQuery::MapAge { newest_first: true }),
-            "old" | "age-old" | "map-age-old" => Ok(RankQuery::MapAge {
-                newest_first: false,
-            }),
+            "age" | "map-age" => Ok(RankQuery::MapAge),
             _ => Err(format!("not a query: {}", s)),
         }
     }
@@ -115,10 +114,38 @@ impl FromStr for RankQuery {
 #[only_in(guilds)]
 pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let mode = args.find::<ModeArg>().map(|v| v.0).unwrap_or(Mode::Std);
-    let query = args.find::<RankQuery>().unwrap_or_default();
-    let guild = m.guild_id.expect("Guild-only command");
+    let mode = args.find::<ModeArg>().map(|v| v.0).ok();
+    let query = args.find::<RankQuery>().ok();
+    let guild = m
+        .guild_id
+        .expect("Guild-only command")
+        .to_partial_guild(&ctx)
+        .await?;
 
+    let ctxc = ctx.clone();
+    do_server_ranks(ctx, &env, &guild, mode, query, false, |msg| async {
+        let m = m.reply(&ctxc, msg).await?;
+        Ok(m) as Result<_>
+    })
+    .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn do_server_ranks<T>(
+    ctx: &Context,
+    env: &OsuEnv,
+    guild: &PartialGuild,
+    mode: Option<Mode>,
+    query: Option<RankQuery>,
+    reverse: bool,
+    mk_initial_message: impl FnOnce(String) -> T,
+) -> Result<()>
+where
+    T: Future<Output = Result<Message>>,
+{
+    let mode = mode.unwrap_or(Mode::Std);
+    let query = query.unwrap_or(RankQuery::PP);
     let mut users = env
         .saved_users
         .all()
@@ -130,7 +157,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
     let mut users = env
         .prelude
         .members
-        .query_members(&ctx, guild)
+        .query_members(&ctx, guild.id)
         .await?
         .iter()
         .filter_map(|m| users.remove(&m.user.id).map(|ou| (m.clone(), ou)))
@@ -173,35 +200,41 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 .unwrap()
                 .reverse()
         }),
-        RankQuery::MapAge { newest_first } => Box::new(move |(_, a), (_, b)| {
-            let r = a
-                .modes
+        RankQuery::MapAge => Box::new(move |(_, a), (_, b)| {
+            a.modes
                 .get(&mode)
                 .map(|v| v.map_age)
                 .partial_cmp(&b.modes.get(&mode).map(|v| v.map_age))
-                .unwrap();
-            if newest_first {
-                r.reverse()
-            } else {
-                r
-            }
+                .unwrap()
         }),
     };
     users.sort_unstable_by(sort_fn);
+    if reverse {
+        users.reverse();
+    }
 
     if users.is_empty() {
-        m.reply(&ctx, "No saved users in the current server...")
-            .await?;
+        mk_initial_message("No saved users in the current server...".to_owned()).await?;
         return Ok(());
     }
+
+    let header = format!(
+        "Rankings for **{}**, ordered by _{}{}_",
+        guild.name,
+        query.col_name(),
+        if reverse { " (reversed)" } else { "" },
+    );
+
+    let msg = mk_initial_message(header.clone()).await?;
 
     const ITEMS_PER_PAGE: usize = 10;
     let users = Arc::new(users);
     let last_update = last_update.unwrap();
     let total_len = users.len();
     let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    paginate_reply(
+    paginate_with_first_message(
         paginate_from_fn(move |page: u8, ctx: &Context, m: &mut Message| {
+            let header = header.clone();
             use Align::*;
             let users = users.clone();
             Box::pin(async move {
@@ -212,7 +245,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                 }
                 let users = &users[start..end];
                 let table = match query {
-                    RankQuery::MapAge { newest_first: _ } | RankQuery::MapLength => {
+                    RankQuery::MapAge | RankQuery::MapLength => {
                         let headers = ["#", query.col_name(), "pp", "Username", "Member"];
                         const ALIGNS: [Align; 5] = [Right, Right, Right, Left, Left];
 
@@ -244,11 +277,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                                     format!("{}", 1 + i + start),
                                     RankQuery::PP.extract_row(mode, ou).to_string(),
                                     RankQuery::MapLength.extract_row(mode, ou).to_string(),
-                                    (RankQuery::MapAge {
-                                        newest_first: false,
-                                    })
-                                    .extract_row(mode, ou)
-                                    .to_string(),
+                                    RankQuery::MapAge.extract_row(mode, ou).to_string(),
                                     ou.username.to_string(),
                                     mem.distinct(),
                                 ]
@@ -276,6 +305,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
                     }
                 };
                 let content = MessageBuilder::new()
+                    .push_line(header)
                     .push_line(table)
                     .push_line(format!(
                         "Page **{}**/**{}**. Last updated: {}",
@@ -290,7 +320,7 @@ pub async fn server_rank(ctx: &Context, m: &Message, mut args: Args) -> CommandR
         })
         .with_page_count(total_pages),
         ctx,
-        m,
+        msg,
         std::time::Duration::from_secs(60),
     )
     .await?;
