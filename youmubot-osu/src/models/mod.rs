@@ -10,6 +10,7 @@ pub mod mods;
 pub(crate) mod rosu;
 
 pub use mods::Mods;
+use poise::ChoiceParameter;
 use serenity::utils::MessageBuilder;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -266,11 +267,17 @@ impl fmt::Display for Language {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, std::hash::Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, std::hash::Hash, ChoiceParameter,
+)]
 pub enum Mode {
+    #[name = "osu!"]
     Std,
+    #[name = "osu!taiko"]
     Taiko,
+    #[name = "osu!catch"]
     Catch,
+    #[name = "osu!mania"]
     Mania,
 }
 

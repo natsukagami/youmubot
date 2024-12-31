@@ -569,6 +569,28 @@ struct ListingArgs {
 }
 
 impl ListingArgs {
+    pub async fn from_params(
+        env: &OsuEnv,
+        index: Option<u8>,
+        style: ScoreListStyle,
+        mode_override: Option<Mode>,
+        user: Option<UsernameArg>,
+        sender: serenity::all::UserId,
+    ) -> Result<Self> {
+        let nth = index
+            .filter(|&v| 1 <= v && v <= 100)
+            .map(|v| v - 1)
+            .map(Nth::Nth)
+            .unwrap_or_default();
+        let (mode, user) = user_header_or_default_id(user, env, sender).await?;
+        let mode = mode_override.unwrap_or(mode);
+        Ok(Self {
+            nth,
+            style,
+            mode,
+            user,
+        })
+    }
     pub async fn parse(
         env: &OsuEnv,
         msg: &Message,
@@ -590,10 +612,10 @@ impl ListingArgs {
     }
 }
 
-async fn user_header_from_args(
+async fn user_header_or_default_id(
     arg: Option<UsernameArg>,
     env: &OsuEnv,
-    msg: &Message,
+    default_user: serenity::all::UserId,
 ) -> Result<(Mode, UserHeader)> {
     let (mode, user) = match arg {
         Some(UsernameArg::Raw(r)) => {
@@ -611,12 +633,20 @@ async fn user_header_from_args(
             (user.preferred_mode, user.into())
         }
         None => {
-            let user = env.saved_users.by_user_id(msg.author.id).await?
+            let user = env.saved_users.by_user_id(default_user).await?
                         .ok_or(Error::msg("You do not have a saved account! Use `osu save` command to save your osu! account."))?;
             (user.preferred_mode, user.into())
         }
     };
     Ok((mode, user))
+}
+
+async fn user_header_from_args(
+    arg: Option<UsernameArg>,
+    env: &OsuEnv,
+    msg: &Message,
+) -> Result<(Mode, UserHeader)> {
+    user_header_or_default_id(arg, env, msg.author.id).await
 }
 
 #[command]
@@ -977,8 +1007,10 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .send_message(&ctx, {
                     CreateMessage::new()
                         .content(format!(
-                            "{}: here is the play that you requested",
-                            msg.author
+                            "Here is the #{} top play by [`{}`](<{}>)",
+                            nth + 1,
+                            user.username,
+                            user.link()
                         ))
                         .embed(
                             score_embed(&play, &beatmap, &content, user)
@@ -996,7 +1028,11 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let reply = msg
                 .reply(
                     &ctx,
-                    format!("Here are the top plays by `{}`!", user.username),
+                    format!(
+                        "Here are the top plays by [`{}`](<{}>)!",
+                        user.username,
+                        user.link()
+                    ),
                 )
                 .await?;
             style

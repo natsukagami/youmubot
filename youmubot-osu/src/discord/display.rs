@@ -2,16 +2,19 @@ pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
 mod scores {
+    use poise::ChoiceParameter;
     use serenity::{all::GuildId, model::channel::Message};
 
     use youmubot_prelude::*;
 
     use crate::models::{Mode, Score};
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, ChoiceParameter)]
     /// The style for the scores list to be displayed.
     pub enum ScoreListStyle {
+        #[name = "ASCII Table"]
         Table,
+        #[name = "List of Embeds"]
         Grid,
     }
 
@@ -166,7 +169,11 @@ mod scores {
             }
 
             paginate_with_first_message(
-                Paginate { scores, mode },
+                Paginate {
+                    header: on.content.clone(),
+                    scores,
+                    mode,
+                },
                 ctx,
                 on,
                 std::time::Duration::from_secs(60),
@@ -176,6 +183,7 @@ mod scores {
         }
 
         pub struct Paginate {
+            header: String,
             scores: Vec<Score>,
             mode: Mode,
         }
@@ -311,6 +319,7 @@ mod scores {
                 let score_table = table_formatting(&SCORE_HEADERS, &SCORE_ALIGNS, score_arr);
 
                 let content = serenity::utils::MessageBuilder::new()
+                    .push_line(&self.header)
                     .push_line(score_table)
                     .push_line(format!("Page **{}/{}**", page + 1, self.total_pages()))
                     .push_line("[?] means pp was predicted by oppai-rs.")
