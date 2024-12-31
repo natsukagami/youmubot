@@ -15,6 +15,7 @@ use serenity::{
     utils::MessageBuilder,
 };
 
+pub use commands::osu as osu_command;
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserMode};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::{dot_osu_hook, hook, score_hook};
@@ -38,6 +39,7 @@ use crate::{
 mod announcer;
 pub(crate) mod beatmap_cache;
 mod cache;
+mod commands;
 mod db;
 pub(crate) mod display;
 pub(crate) mod embeds;
@@ -65,6 +67,17 @@ pub struct OsuEnv {
     pub(crate) client: Arc<crate::OsuClient>,
     pub(crate) oppai: BeatmapCache,
     pub(crate) beatmaps: BeatmapMetaCache,
+}
+
+/// Gets an [OsuEnv] from the current environment.
+pub trait HasOsuEnv: Send + Sync {
+    fn osu_env(&self) -> &OsuEnv;
+}
+
+impl<T: AsRef<OsuEnv> + Send + Sync> HasOsuEnv for T {
+    fn osu_env(&self) -> &OsuEnv {
+        self.as_ref()
+    }
 }
 
 impl std::fmt::Debug for OsuEnv {

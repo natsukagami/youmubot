@@ -61,6 +61,7 @@ impl AsRef<youmubot_prelude::Env> for Env {
     }
 }
 
+#[cfg(feature = "osu")]
 impl AsRef<youmubot_osu::discord::OsuEnv> for Env {
     fn as_ref(&self) -> &youmubot_osu::discord::OsuEnv {
         &self.osu
@@ -257,7 +258,11 @@ async fn main() {
                     }
                 })
             },
-            commands: vec![poise_register()],
+            commands: vec![
+                poise_register(),
+                #[cfg(feature = "osu")]
+                youmubot_osu::discord::osu_command(),
+            ],
             ..Default::default()
         })
         .build();

@@ -3313,6 +3313,7 @@ dependencies = [
  "dashmap 5.5.3",
  "futures-util",
  "lazy_static",
+ "poise",
  "rand",
  "regex",
  "reqwest",
