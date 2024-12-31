@@ -20,7 +20,8 @@ use serenity::all::User;
         "forcesave",
         "beatmap",
         "check",
-        "ranks"
+        "ranks",
+        "leaderboard"
     )
 )]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
@@ -429,7 +430,7 @@ async fn check<U: HasOsuEnv>(
     #[description = "Sort scores by"] sort: Option<SortScoreBy>,
     #[description = "Reverse the sorting order"] reverse: Option<bool>,
     #[description = "Filter the mods on the scores"] mods: Option<UnparsedMods>,
-    #[description = "Filter the mode of the scores"] mode: Option<Mode>,
+    #[description = "Filter the gamemode of the scores"] mode: Option<Mode>,
     #[description = "Find all scores in the beatmapset instead"] beatmapset: Option<bool>,
     #[description = "Score listing style"] style: Option<ScoreListStyle>,
 ) -> Result<()> {
@@ -510,7 +511,14 @@ async fn check<U: HasOsuEnv>(
         .await?
         .into_message()
         .await?;
-    args.style
+
+    let style = style.unwrap_or(if scores.len() <= 5 {
+        ScoreListStyle::Grid
+    } else {
+        ScoreListStyle::Table
+    });
+
+    style
         .display_scores(
             scores,
             beatmaps[0].1,
@@ -547,6 +555,90 @@ async fn ranks<U: HasOsuEnv>(
         },
     )
     .await?;
+    Ok(())
+}
+
+/// Display the leaderboard on a single map of members in the server.
+#[poise::command(slash_command, guild_only)]
+async fn leaderboard<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "The link or shortlink of the map"] map: Option<String>,
+    #[description = "Sort scores by"] sort: Option<server_rank::OrderBy>,
+    #[description = "Reverse the ordering"] reverse: Option<bool>,
+    #[description = "Include unranked scores"] unranked: Option<bool>,
+    #[description = "Filter the gamemode of the scores"] mode: Option<Mode>,
+    #[description = "Score listing style"] style: Option<ScoreListStyle>,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+    let guild = ctx.partial_guild().await.unwrap();
+    let style = style.unwrap_or_default();
+
+    let bm = match parse_map_input(ctx.channel_id(), env, map, mode, None).await? {
+        EmbedType::Beatmap(beatmap, _, _) => {
+            let nmode = beatmap.mode.with_override(mode);
+            BeatmapWithMode(*beatmap, nmode)
+        }
+        EmbedType::Beatmapset(_) => return Err(Error::msg("invalid map link")),
+    };
+
+    ctx.defer().await?;
+
+    let mut scores = server_rank::get_leaderboard(
+        ctx.serenity_context(),
+        env,
+        &bm,
+        unranked.unwrap_or(false),
+        sort.unwrap_or(server_rank::OrderBy::PP),
+        guild.id,
+    )
+    .await?;
+    if reverse == Some(true) {
+        scores.reverse();
+    }
+
+    let beatmap = &bm.0;
+    if scores.is_empty() {
+        ctx.reply(format!(
+            "No scores have been recorded in **{}** on [`{}`]({}).",
+            guild.name,
+            beatmap.short_link(mode, Mods::NOMOD),
+            beatmap.link()
+        ))
+        .await?;
+        return Ok(());
+    }
+
+    let header = format!(
+        "Here are the top scores of **{}** on {}",
+        guild.name,
+        beatmap.mention(mode, Mods::NOMOD),
+    );
+
+    match style {
+        ScoreListStyle::Table => {
+            let reply = ctx.reply(header).await?.into_message().await?;
+            server_rank::display_rankings_table(
+                ctx.serenity_context(),
+                reply,
+                scores,
+                &bm,
+                sort.unwrap_or_default(),
+            )
+            .await?;
+        }
+        ScoreListStyle::Grid => {
+            let reply = ctx.reply(header).await?.into_message().await?;
+            style
+                .display_scores(
+                    scores.into_iter().map(|s| s.score).collect(),
+                    bm.1,
+                    ctx.serenity_context(),
+                    Some(guild.id),
+                    reply,
+                )
+                .await?;
+        }
+    }
     Ok(())
 }
 

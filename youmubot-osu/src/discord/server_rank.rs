@@ -328,7 +328,7 @@ where
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, poise::ChoiceParameter)]
 pub enum OrderBy {
     PP,
     Score,
@@ -376,14 +376,12 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
     let guild = msg.guild_id.expect("Guild-only command");
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let bm = match super::load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await
-    {
-        Some((bm, _)) => bm,
-        None => {
-            msg.reply(&ctx, "No beatmap queried on this channel.")
-                .await?;
-            return Ok(());
-        }
+    let Some((bm, _)) =
+        super::load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await
+    else {
+        msg.reply(&ctx, "No beatmap queried on this channel.")
+            .await?;
+        return Ok(());
     };
 
     let scores = {

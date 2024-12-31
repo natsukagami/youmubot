@@ -414,9 +414,16 @@ impl Beatmap {
 
     /// Gets a link pointing to the beatmap, in the new format.
     pub fn link(&self) -> String {
+        self.mode_link(None)
+    }
+
+    /// Gets a link pointing to the beatmap, in the new format, with overridable mode.
+    pub fn mode_link(&self, mode: Option<Mode>) -> String {
         format!(
             "https://osu.ppy.sh/beatmapsets/{}#{}/{}",
-            self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize], self.beatmap_id
+            self.beatmapset_id,
+            NEW_MODE_NAMES[self.mode.with_override(mode) as usize],
+            self.beatmap_id
         )
     }
 
@@ -440,6 +447,14 @@ impl Beatmap {
                 _ => "".to_owned(),
             },
             mods
+        )
+    }
+
+    pub fn mention(&self, override_mode: Option<Mode>, mods: &Mods) -> String {
+        format!(
+            "[`{}`]({})",
+            self.short_link(override_mode, mods),
+            self.mode_link(override_mode),
         )
     }
 
