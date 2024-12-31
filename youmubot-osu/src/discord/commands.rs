@@ -308,37 +308,7 @@ async fn beatmap<U: HasOsuEnv>(
 
     ctx.defer().await?;
 
-    let beatmap = match map {
-        None => {
-            let Some((BeatmapWithMode(b, mode), bmmods)) =
-                load_beatmap(env, ctx.channel_id(), None as Option<&'_ Message>).await
-            else {
-                return Err(Error::msg("no beatmap mentioned in this channel"));
-            };
-            let mods = bmmods.unwrap_or_else(|| Mods::NOMOD.clone());
-            let info = env
-                .oppai
-                .get_beatmap(b.beatmap_id)
-                .await?
-                .get_possible_pp_with(mode, &mods);
-            EmbedType::Beatmap(Box::new(b), info, mods)
-        }
-        Some(map) => {
-            let Some(results) = stream::select(
-                link_parser::parse_new_links(env, &map),
-                stream::select(
-                    link_parser::parse_old_links(env, &map),
-                    link_parser::parse_short_links(env, &map),
-                ),
-            )
-            .next()
-            .await
-            else {
-                return Err(Error::msg("no beatmap detected in the argument"));
-            };
-            results.embed
-        }
-    };
+    let beatmap = parse_map_input(ctx.channel_id(), env, map, mode).await?;
 
     // override into beatmapset if needed
     let beatmap = if beatmapset == Some(true) {
@@ -428,4 +398,59 @@ fn arg_from_username_or_discord(
         (_, Some(u)) => Some(UsernameArg::Tagged(u.id)),
         (None, None) => None,
     }
+}
+
+async fn parse_map_input(
+    channel_id: serenity::all::ChannelId,
+    env: &OsuEnv,
+    input: Option<String>,
+    mode: Option<Mode>,
+) -> Result<EmbedType> {
+    Ok(match input {
+        None => {
+            let Some((BeatmapWithMode(b, mode), bmmods)) =
+                load_beatmap(env, channel_id, None as Option<&'_ Message>).await
+            else {
+                return Err(Error::msg("no beatmap mentioned in this channel"));
+            };
+            let mods = bmmods.unwrap_or_else(|| Mods::NOMOD.clone());
+            let info = env
+                .oppai
+                .get_beatmap(b.beatmap_id)
+                .await?
+                .get_possible_pp_with(mode, &mods);
+            EmbedType::Beatmap(Box::new(b), info, mods)
+        }
+        Some(map) => {
+            if let Ok(id) = map.parse::<u64>() {
+                let beatmap = match mode {
+                    None => env.beatmaps.get_beatmap_default(id).await,
+                    Some(mode) => env.beatmaps.get_beatmap(id, mode).await,
+                }?;
+                let info = env
+                    .oppai
+                    .get_beatmap(beatmap.beatmap_id)
+                    .await?
+                    .get_possible_pp_with(beatmap.mode, Mods::NOMOD);
+                return Ok(EmbedType::Beatmap(
+                    Box::new(beatmap),
+                    info,
+                    Mods::NOMOD.clone(),
+                ));
+            }
+            let Some(results) = stream::select(
+                link_parser::parse_new_links(env, &map),
+                stream::select(
+                    link_parser::parse_old_links(env, &map),
+                    link_parser::parse_short_links(env, &map),
+                ),
+            )
+            .next()
+            .await
+            else {
+                return Err(Error::msg("no beatmap detected in the argument"));
+            };
+            results.embed
+        }
+    })
 }
