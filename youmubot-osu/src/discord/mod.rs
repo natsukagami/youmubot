@@ -407,40 +407,36 @@ pub(crate) async fn handle_save_respond(
 #[num_args(2)]
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-
     let osu_client = &env.client;
 
     let target = args.single::<UserId>()?.0;
 
     let username = args.quoted().trimmed().single::<String>()?;
-    let user: Option<User> = osu_client
+    let Some(u) = osu_client
         .user(&UserID::from_string(username.clone()), |f| f)
-        .await?;
-    match user {
-        Some(u) => {
-            add_user(target, &u, &env).await?;
-            let ex = UserExtras::from_user(&env, &u, u.preferred_mode).await?;
-            msg.channel_id
-                .send_message(
-                    &ctx,
-                    CreateMessage::new()
-                        .reference_message(msg)
-                        .content(
-                            MessageBuilder::new()
-                                .push("Youmu is now tracking user ")
-                                .push(target.mention().to_string())
-                                .push(" with osu! account ")
-                                .push_bold_safe(username)
-                                .build(),
-                        )
-                        .embed(user_embed(u, ex)),
+        .await?
+    else {
+        msg.reply(&ctx, "user not found...").await?;
+        return Ok(());
+    };
+    add_user(target, &u, &env).await?;
+    let ex = UserExtras::from_user(&env, &u, u.preferred_mode).await?;
+    msg.channel_id
+        .send_message(
+            &ctx,
+            CreateMessage::new()
+                .reference_message(msg)
+                .content(
+                    MessageBuilder::new()
+                        .push("Youmu is now tracking user ")
+                        .push(target.mention().to_string())
+                        .push(" with osu! account ")
+                        .push_bold_safe(username)
+                        .build(),
                 )
-                .await?;
-        }
-        None => {
-            msg.reply(&ctx, "user not found...").await?;
-        }
-    }
+                .embed(user_embed(u, ex)),
+        )
+        .await?;
     Ok(())
 }
 

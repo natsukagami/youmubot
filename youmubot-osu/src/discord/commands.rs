@@ -3,7 +3,10 @@ use poise::CreateReply;
 use serenity::all::User;
 
 /// osu!-related command group.
-#[poise::command(slash_command, subcommands("profile", "top", "recent", "save"))]
+#[poise::command(
+    slash_command,
+    subcommands("profile", "top", "recent", "save", "forcesave")
+)]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
     Ok(())
 }
@@ -249,6 +252,40 @@ pub async fn save<U: HasOsuEnv>(
         &beatmap,
         u,
         mode,
+    )
+    .await?;
+    Ok(())
+}
+
+/// Force-save an osu! profile into Youmu's database for tracking and quick commands.
+#[poise::command(slash_command, owners_only)]
+pub async fn forcesave<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "The osu! username to set to"] username: String,
+    #[description = "The discord user to assign to"] discord_name: User,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+    let osu_client = &env.client;
+    ctx.defer().await?;
+    let Some(u) = osu_client
+        .user(&UserID::from_string(username.clone()), |f| f)
+        .await?
+    else {
+        return Err(Error::msg("osu! user not found"));
+    };
+    add_user(discord_name.id, &u, &env).await?;
+    let ex = UserExtras::from_user(&env, &u, u.preferred_mode).await?;
+    ctx.send(
+        CreateReply::default()
+            .content(
+                MessageBuilder::new()
+                    .push("Youmu is now tracking user ")
+                    .push(discord_name.mention().to_string())
+                    .push(" with osu! account ")
+                    .push_bold_safe(username)
+                    .build(),
+            )
+            .embed(user_embed(u, ex)),
     )
     .await?;
     Ok(())
