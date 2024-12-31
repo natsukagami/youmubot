@@ -1007,10 +1007,9 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .send_message(&ctx, {
                     CreateMessage::new()
                         .content(format!(
-                            "Here is the #{} top play by [`{}`](<{}>)",
+                            "Here is the #{} top play by {}",
                             nth + 1,
-                            user.username,
-                            user.link()
+                            user.mention()
                         ))
                         .embed(
                             score_embed(&play, &beatmap, &content, user)
@@ -1028,11 +1027,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let reply = msg
                 .reply(
                     &ctx,
-                    format!(
-                        "Here are the top plays by [`{}`](<{}>)!",
-                        user.username,
-                        user.link()
-                    ),
+                    format!("Here are the top plays by {}!", user.mention()),
                 )
                 .await?;
             style
@@ -1080,10 +1075,7 @@ async fn get_user(
                 .send_message(
                     &ctx,
                     CreateMessage::new()
-                        .content(format!(
-                            "{}: here is the user that you requested",
-                            msg.author
-                        ))
+                        .content(format!("Here is {}'s **{}** profile!", u.mention(), mode))
                         .embed(user_embed(u, ex)),
                 )
                 .await?;
