@@ -21,7 +21,8 @@ use serenity::all::User;
         "beatmap",
         "check",
         "ranks",
-        "leaderboard"
+        "leaderboard",
+        "clear_cache"
     )
 )]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
@@ -639,6 +640,24 @@ async fn leaderboard<U: HasOsuEnv>(
                 .await?;
         }
     }
+    Ok(())
+}
+
+/// Clear youmu's cache.
+#[poise::command(slash_command, owners_only)]
+pub async fn clear_cache<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "Also clear oppai cache"] clear_oppai: bool,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+    ctx.defer_ephemeral().await?;
+
+    env.beatmaps.clear().await?;
+
+    if clear_oppai {
+        env.oppai.clear().await?;
+    }
+    ctx.reply("Beatmap cache cleared!").await?;
     Ok(())
 }
 
