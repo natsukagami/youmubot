@@ -3,6 +3,7 @@ use std::{borrow::Borrow, collections::HashMap as Map, str::FromStr, sync::Arc};
 use chrono::Utc;
 use futures_util::join;
 use interaction::{beatmap_components, score_components};
+use oppai_cache::BeatmapInfoWithPP;
 use rand::seq::IteratorRandom;
 use serenity::{
     builder::{CreateMessage, EditMessage},
@@ -247,15 +248,42 @@ impl AsRef<Beatmap> for BeatmapWithMode {
 #[num_args(1)]
 pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let osu_client = &env.client;
 
     let user = args.single::<String>()?;
-    let u = match osu_client.user(&UserID::from_string(user), |f| f).await? {
-        Some(u) => u,
-        None => {
-            msg.reply(&ctx, "user not found...").await?;
-            return Ok(());
-        }
+
+    let (u, mode, score, beatmap, info) = find_save_requirements(&env, user).await?;
+    let reply = msg
+        .channel_id
+        .send_message(
+            &ctx,
+            CreateMessage::new()
+                .content(format!(
+                    "To set your osu username to **{}**, please make your most recent play \
+            be the following map: `/b/{}` in **{}** mode! \
+        It does **not** have to be a pass, and **NF** can be used! \
+        React to this message with 👌 within 5 minutes when you're done!",
+                    u.username,
+                    score.beatmap_id,
+                    mode.as_str_new_site()
+                ))
+                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
+                .components(vec![beatmap_components(mode, msg.guild_id)]),
+        )
+        .await?;
+    handle_save_respond(ctx, &env, msg.author.id, reply, &beatmap, u, mode).await?;
+    Ok(())
+}
+
+pub(crate) async fn find_save_requirements(
+    env: &OsuEnv,
+    username: String,
+) -> Result<(User, Mode, Score, Beatmap, BeatmapInfoWithPP)> {
+    let osu_client = &env.client;
+    let Some(u) = osu_client
+        .user(&UserID::from_string(username), |f| f)
+        .await?
+    else {
+        return Err(Error::msg("user not found"));
     };
     async fn find_score(client: &OsuHttpClient, u: &User) -> Result<Option<(Score, Mode)>> {
         for mode in &[
@@ -274,39 +302,11 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         }
         Ok(None)
     }
-    let (score, mode) = match find_score(osu_client, &u).await? {
-        Some(v) => v,
-        None => {
-            msg.reply(
-                &ctx,
-                "No plays found in this account! Play something first...!",
-            )
-            .await?;
-            return Ok(());
-        }
+    let Some((score, mode)) = find_score(osu_client, &u).await? else {
+        return Err(Error::msg(
+            "No plays found in this account! Play something first...!",
+        ));
     };
-
-    async fn check(client: &OsuHttpClient, u: &User, map_id: u64) -> Result<bool> {
-        Ok(client
-            .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
-            .await?
-            .into_iter()
-            .take(1)
-            .any(|s| s.beatmap_id == map_id))
-    }
-
-    let reply = msg.reply(
-        &ctx,
-        format!(
-            "To set your osu username to **{}**, please make your most recent play \
-            be the following map: `/b/{}` in **{}** mode! \
-        It does **not** have to be a pass, and **NF** can be used! \
-        React to this message with 👌 within 5 minutes when you're done!",
-            u.username,
-            score.beatmap_id,
-            mode.as_str_new_site()
-        ),
-    );
     let beatmap = osu_client
         .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| {
             f.mode(mode, true)
@@ -320,27 +320,39 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .get_beatmap(beatmap.beatmap_id)
         .await?
         .get_possible_pp_with(mode, Mods::NOMOD);
-    let mut reply = reply.await?;
-    reply
-        .edit(
-            &ctx,
-            EditMessage::new()
-                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
-                .components(vec![beatmap_components(mode, msg.guild_id)]),
-        )
-        .await?;
+    Ok((u, mode, score, beatmap, info))
+}
+
+pub(crate) async fn handle_save_respond(
+    ctx: &Context,
+    env: &OsuEnv,
+    sender: serenity::all::UserId,
+    mut reply: Message,
+    beatmap: &Beatmap,
+    user: crate::models::User,
+    mode: Mode,
+) -> Result<()> {
+    let osu_client = &env.client;
+    async fn check(client: &OsuHttpClient, u: &User, map_id: u64) -> Result<bool> {
+        Ok(client
+            .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
+            .await?
+            .into_iter()
+            .take(1)
+            .any(|s| s.beatmap_id == map_id))
+    }
     let reaction = reply.react(&ctx, '👌').await?;
     let completed = loop {
         let emoji = reaction.emoji.clone();
         let user_reaction = collector::ReactionCollector::new(ctx)
             .message_id(reply.id)
-            .author_id(msg.author.id)
+            .author_id(sender)
             .filter(move |r| r.emoji == emoji)
             .timeout(std::time::Duration::from_secs(300) + beatmap.difficulty.total_length)
             .next()
             .await;
         if let Some(ur) = user_reaction {
-            if check(osu_client, &u, score.beatmap_id).await? {
+            if check(osu_client, &user, beatmap.beatmap_id).await? {
                 break true;
             }
             ur.delete(&ctx).await?;
@@ -355,7 +367,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 EditMessage::new()
                     .content(format!(
                         "Setting username to **{}** failed due to timeout. Please try again!",
-                        u.username
+                        user.username
                     ))
                     .embeds(vec![])
                     .components(vec![]),
@@ -365,23 +377,23 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         return Ok(());
     }
 
-    let username = u.username.clone();
-    add_user(msg.author.id, &u, &env).await?;
-    let ex = UserExtras::from_user(&env, &u, mode).await?;
-    msg.channel_id
+    add_user(sender, &user, &env).await?;
+    let ex = UserExtras::from_user(env, &user, mode).await?;
+    reply
+        .channel_id
         .send_message(
             &ctx,
             CreateMessage::new()
-                .reference_message(msg)
+                .reference_message(&reply)
                 .content(
                     MessageBuilder::new()
                         .push("Youmu is now tracking user ")
-                        .push(msg.author.mention().to_string())
+                        .push(sender.mention().to_string())
                         .push(" with osu! account ")
-                        .push_bold_safe(username)
+                        .push(user.mention().to_string())
                         .build(),
                 )
-                .add_embed(user_embed(u, ex)),
+                .add_embed(user_embed(user.clone(), ex)),
         )
         .await?;
     Ok(())

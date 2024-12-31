@@ -3,7 +3,7 @@ use poise::CreateReply;
 use serenity::all::User;
 
 /// osu!-related command group.
-#[poise::command(slash_command, subcommands("profile", "top", "recent"))]
+#[poise::command(slash_command, subcommands("profile", "top", "recent", "save"))]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
     Ok(())
 }
@@ -210,6 +210,47 @@ async fn recent<U: HasOsuEnv>(
             cache::save_beatmap(&env, ctx.channel_id(), &beatmap_mode).await?;
         }
     }
+    Ok(())
+}
+
+/// Save your osu! profile into Youmu's database for tracking and quick commands.
+#[poise::command(slash_command)]
+pub async fn save<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "The osu! username to set to"] username: String,
+) -> Result<()> {
+    let env = ctx.data().osu_env();
+    ctx.defer().await?;
+    let (u, mode, score, beatmap, info) = find_save_requirements(env, username).await?;
+    let reply = ctx
+        .clone()
+        .send(
+            CreateReply::default()
+                .content(format!(
+                    "To set your osu username to **{}**, please make your most recent play \
+            be the following map: `/b/{}` in **{}** mode! \
+        It does **not** have to be a pass, and **NF** can be used! \
+        React to this message with 👌 within 5 minutes when you're done!",
+                    u.username,
+                    score.beatmap_id,
+                    mode.as_str_new_site()
+                ))
+                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
+                .components(vec![beatmap_components(mode, ctx.guild_id())]),
+        )
+        .await?
+        .into_message()
+        .await?;
+    handle_save_respond(
+        ctx.serenity_context(),
+        &env,
+        ctx.author().id,
+        reply,
+        &beatmap,
+        u,
+        mode,
+    )
+    .await?;
     Ok(())
 }
 
