@@ -23,7 +23,9 @@ use serenity::all::User;
         "ranks",
         "leaderboard",
         "clear_cache"
-    )
+    ),
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn osu<U: HasOsuEnv>(_ctx: CmdContext<'_, U>) -> Result<()> {
     Ok(())
