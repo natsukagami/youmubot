@@ -400,7 +400,7 @@ pub fn handle_lb_button<'a>(
             .create_followup(
                 &ctx,
                 CreateInteractionResponseFollowup::new().content(format!(
-                    "⌛ Loading top scores on beatmap `{}`...",
+                    "Here are the top scores on beatmap `{}`!",
                     bm.short_link(Mods::NOMOD)
                 )),
             )

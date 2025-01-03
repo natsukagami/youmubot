@@ -548,6 +548,7 @@ pub async fn display_rankings_table(
     const ITEMS_PER_PAGE: usize = 5;
     let total_len = scores.len();
     let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+    let header = Arc::new(to.content.clone());
 
     paginate_with_first_message(
         paginate_from_fn(move |page: u8, ctx: &Context, m: &mut Message| {
@@ -558,6 +559,7 @@ pub async fn display_rankings_table(
             }
             let scores = scores[start..end].to_vec();
             let bm = (bm.0.clone(), bm.1);
+            let header = header.clone();
             Box::pin(async move {
                 const SCORE_HEADERS: [&str; 8] =
                     ["#", "Score", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
@@ -608,6 +610,7 @@ pub async fn display_rankings_table(
                     OrderBy::Score => table_formatting(&SCORE_HEADERS, &ALIGNS, score_arr),
                 };
                 let content = MessageBuilder::new()
+                    .push_line(header.as_ref())
                     .push_line(score_table)
                     .push_line(format!(
                         "Page **{}**/**{}**. Not seeing your scores? Run `osu check` to update.",
