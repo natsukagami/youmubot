@@ -18,7 +18,7 @@ chrono = "0.4.19"
 flume = "0.10.13"
 dashmap = "5.3.4"
 thiserror = "1"
-poise = "0.6"
+poise = { git = "https://github.com/serenity-rs/poise", branch = "current" }
 
 [dependencies.serenity]
 version = "0.12"
