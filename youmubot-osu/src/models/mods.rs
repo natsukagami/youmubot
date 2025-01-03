@@ -27,8 +27,16 @@ pub struct UnparsedMods {
     clock: Option<f64>,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum ModParseError {
+    #[error("invalid mods `{0}`")]
+    Invalid(String),
+    #[error("not a mod: `{0}`")]
+    NotAMod(String),
+}
+
 impl FromStr for UnparsedMods {
-    type Err = String;
+    type Err = ModParseError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         if s.is_empty() {
@@ -36,12 +44,12 @@ impl FromStr for UnparsedMods {
         }
         let ms = match MODS.captures(s) {
             Some(m) => m,
-            None => return Err(format!("invalid mods: {}", s)),
+            None => return Err(ModParseError::Invalid(s.to_owned())),
         };
         let mods = ms.name("mods").map(|v| v.as_str().to_owned());
         if let Some(mods) = &mods {
             if GameModsIntermode::try_from_acronyms(mods).is_none() {
-                return Err(format!("invalid mod sequence: {}", mods));
+                return Err(ModParseError::NotAMod(mods.to_owned()));
             }
         }
         let is_lazer = ms.name("lazer").is_some();

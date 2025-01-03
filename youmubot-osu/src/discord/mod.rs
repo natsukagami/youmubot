@@ -3,6 +3,7 @@ use std::{borrow::Borrow, collections::HashMap as Map, str::FromStr, sync::Arc};
 use chrono::Utc;
 use futures_util::join;
 use interaction::{beatmap_components, score_components};
+use oppai_cache::BeatmapInfoWithPP;
 use rand::seq::IteratorRandom;
 use serenity::{
     builder::{CreateMessage, EditMessage},
@@ -15,11 +16,12 @@ use serenity::{
     utils::MessageBuilder,
 };
 
+pub use commands::osu as osu_command;
 use db::{OsuLastBeatmap, OsuSavedUsers, OsuUser, OsuUserMode};
 use embeds::{beatmap_embed, score_embed, user_embed};
 pub use hook::{dot_osu_hook, hook, score_hook};
 use server_rank::{SERVER_RANK_COMMAND, SHOW_LEADERBOARD_COMMAND};
-use stream::FuturesOrdered;
+use stream::{FuturesOrdered, FuturesUnordered};
 use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::*;
 
@@ -38,6 +40,7 @@ use crate::{
 mod announcer;
 pub(crate) mod beatmap_cache;
 mod cache;
+mod commands;
 mod db;
 pub(crate) mod display;
 pub(crate) mod embeds;
@@ -65,6 +68,17 @@ pub struct OsuEnv {
     pub(crate) client: Arc<crate::OsuClient>,
     pub(crate) oppai: BeatmapCache,
     pub(crate) beatmaps: BeatmapMetaCache,
+}
+
+/// Gets an [OsuEnv] from the current environment.
+pub trait HasOsuEnv: Send + Sync {
+    fn osu_env(&self) -> &OsuEnv;
+}
+
+impl<T: AsRef<OsuEnv> + Send + Sync> HasOsuEnv for T {
+    fn osu_env(&self) -> &OsuEnv {
+        self.as_ref()
+    }
 }
 
 impl std::fmt::Debug for OsuEnv {
@@ -234,15 +248,42 @@ impl AsRef<Beatmap> for BeatmapWithMode {
 #[num_args(1)]
 pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let osu_client = &env.client;
 
     let user = args.single::<String>()?;
-    let u = match osu_client.user(&UserID::from_string(user), |f| f).await? {
-        Some(u) => u,
-        None => {
-            msg.reply(&ctx, "user not found...").await?;
-            return Ok(());
-        }
+
+    let (u, mode, score, beatmap, info) = find_save_requirements(&env, user).await?;
+    let reply = msg
+        .channel_id
+        .send_message(
+            &ctx,
+            CreateMessage::new()
+                .content(format!(
+                    "To set your osu username to **{}**, please make your most recent play \
+            be the following map: `/b/{}` in **{}** mode! \
+        It does **not** have to be a pass, and **NF** can be used! \
+        React to this message with 👌 within 5 minutes when you're done!",
+                    u.username,
+                    score.beatmap_id,
+                    mode.as_str_new_site()
+                ))
+                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
+                .components(vec![beatmap_components(mode, msg.guild_id)]),
+        )
+        .await?;
+    handle_save_respond(ctx, &env, msg.author.id, reply, &beatmap, u, mode).await?;
+    Ok(())
+}
+
+pub(crate) async fn find_save_requirements(
+    env: &OsuEnv,
+    username: String,
+) -> Result<(User, Mode, Score, Beatmap, BeatmapInfoWithPP)> {
+    let osu_client = &env.client;
+    let Some(u) = osu_client
+        .user(&UserID::from_string(username), |f| f)
+        .await?
+    else {
+        return Err(Error::msg("user not found"));
     };
     async fn find_score(client: &OsuHttpClient, u: &User) -> Result<Option<(Score, Mode)>> {
         for mode in &[
@@ -261,39 +302,11 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         }
         Ok(None)
     }
-    let (score, mode) = match find_score(osu_client, &u).await? {
-        Some(v) => v,
-        None => {
-            msg.reply(
-                &ctx,
-                "No plays found in this account! Play something first...!",
-            )
-            .await?;
-            return Ok(());
-        }
+    let Some((score, mode)) = find_score(osu_client, &u).await? else {
+        return Err(Error::msg(
+            "No plays found in this account! Play something first...!",
+        ));
     };
-
-    async fn check(client: &OsuHttpClient, u: &User, map_id: u64) -> Result<bool> {
-        Ok(client
-            .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
-            .await?
-            .into_iter()
-            .take(1)
-            .any(|s| s.beatmap_id == map_id))
-    }
-
-    let reply = msg.reply(
-        &ctx,
-        format!(
-            "To set your osu username to **{}**, please make your most recent play \
-            be the following map: `/b/{}` in **{}** mode! \
-        It does **not** have to be a pass, and **NF** can be used! \
-        React to this message with 👌 within 5 minutes when you're done!",
-            u.username,
-            score.beatmap_id,
-            mode.as_str_new_site()
-        ),
-    );
     let beatmap = osu_client
         .beatmaps(BeatmapRequestKind::Beatmap(score.beatmap_id), |f| {
             f.mode(mode, true)
@@ -307,27 +320,39 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .get_beatmap(beatmap.beatmap_id)
         .await?
         .get_possible_pp_with(mode, Mods::NOMOD);
-    let mut reply = reply.await?;
-    reply
-        .edit(
-            &ctx,
-            EditMessage::new()
-                .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
-                .components(vec![beatmap_components(mode, msg.guild_id)]),
-        )
-        .await?;
+    Ok((u, mode, score, beatmap, info))
+}
+
+pub(crate) async fn handle_save_respond(
+    ctx: &Context,
+    env: &OsuEnv,
+    sender: serenity::all::UserId,
+    mut reply: Message,
+    beatmap: &Beatmap,
+    user: crate::models::User,
+    mode: Mode,
+) -> Result<()> {
+    let osu_client = &env.client;
+    async fn check(client: &OsuHttpClient, u: &User, map_id: u64) -> Result<bool> {
+        Ok(client
+            .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
+            .await?
+            .into_iter()
+            .take(1)
+            .any(|s| s.beatmap_id == map_id))
+    }
     let reaction = reply.react(&ctx, '👌').await?;
     let completed = loop {
         let emoji = reaction.emoji.clone();
         let user_reaction = collector::ReactionCollector::new(ctx)
             .message_id(reply.id)
-            .author_id(msg.author.id)
+            .author_id(sender)
             .filter(move |r| r.emoji == emoji)
             .timeout(std::time::Duration::from_secs(300) + beatmap.difficulty.total_length)
             .next()
             .await;
         if let Some(ur) = user_reaction {
-            if check(osu_client, &u, score.beatmap_id).await? {
+            if check(osu_client, &user, beatmap.beatmap_id).await? {
                 break true;
             }
             ur.delete(&ctx).await?;
@@ -342,7 +367,7 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 EditMessage::new()
                     .content(format!(
                         "Setting username to **{}** failed due to timeout. Please try again!",
-                        u.username
+                        user.username
                     ))
                     .embeds(vec![])
                     .components(vec![]),
@@ -352,23 +377,23 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         return Ok(());
     }
 
-    let username = u.username.clone();
-    add_user(msg.author.id, &u, &env).await?;
-    let ex = UserExtras::from_user(&env, &u, mode).await?;
-    msg.channel_id
+    add_user(sender, &user, &env).await?;
+    let ex = UserExtras::from_user(env, &user, mode).await?;
+    reply
+        .channel_id
         .send_message(
             &ctx,
             CreateMessage::new()
-                .reference_message(msg)
+                .reference_message(&reply)
                 .content(
                     MessageBuilder::new()
                         .push("Youmu is now tracking user ")
-                        .push(msg.author.mention().to_string())
+                        .push(sender.mention().to_string())
                         .push(" with osu! account ")
-                        .push_bold_safe(username)
+                        .push(user.mention().to_string())
                         .build(),
                 )
-                .add_embed(user_embed(u, ex)),
+                .add_embed(user_embed(user.clone(), ex)),
         )
         .await?;
     Ok(())
@@ -382,40 +407,36 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[num_args(2)]
 pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-
     let osu_client = &env.client;
 
     let target = args.single::<UserId>()?.0;
 
     let username = args.quoted().trimmed().single::<String>()?;
-    let user: Option<User> = osu_client
+    let Some(u) = osu_client
         .user(&UserID::from_string(username.clone()), |f| f)
-        .await?;
-    match user {
-        Some(u) => {
-            add_user(target, &u, &env).await?;
-            let ex = UserExtras::from_user(&env, &u, u.preferred_mode).await?;
-            msg.channel_id
-                .send_message(
-                    &ctx,
-                    CreateMessage::new()
-                        .reference_message(msg)
-                        .content(
-                            MessageBuilder::new()
-                                .push("Youmu is now tracking user ")
-                                .push(target.mention().to_string())
-                                .push(" with osu! account ")
-                                .push_bold_safe(username)
-                                .build(),
-                        )
-                        .embed(user_embed(u, ex)),
+        .await?
+    else {
+        msg.reply(&ctx, "user not found...").await?;
+        return Ok(());
+    };
+    add_user(target, &u, &env).await?;
+    let ex = UserExtras::from_user(&env, &u, u.preferred_mode).await?;
+    msg.channel_id
+        .send_message(
+            &ctx,
+            CreateMessage::new()
+                .reference_message(msg)
+                .content(
+                    MessageBuilder::new()
+                        .push("Youmu is now tracking user ")
+                        .push(target.mention().to_string())
+                        .push(" with osu! account ")
+                        .push_bold_safe(username)
+                        .build(),
                 )
-                .await?;
-        }
-        None => {
-            msg.reply(&ctx, "user not found...").await?;
-        }
-    }
+                .embed(user_embed(u, ex)),
+        )
+        .await?;
     Ok(())
 }
 
@@ -556,6 +577,28 @@ struct ListingArgs {
 }
 
 impl ListingArgs {
+    pub async fn from_params(
+        env: &OsuEnv,
+        index: Option<u8>,
+        style: ScoreListStyle,
+        mode_override: Option<Mode>,
+        user: Option<UsernameArg>,
+        sender: serenity::all::UserId,
+    ) -> Result<Self> {
+        let nth = index
+            .filter(|&v| 1 <= v && v <= 100)
+            .map(|v| v - 1)
+            .map(Nth::Nth)
+            .unwrap_or_default();
+        let (mode, user) = user_header_or_default_id(user, env, sender).await?;
+        let mode = mode_override.unwrap_or(mode);
+        Ok(Self {
+            nth,
+            style,
+            mode,
+            user,
+        })
+    }
     pub async fn parse(
         env: &OsuEnv,
         msg: &Message,
@@ -577,10 +620,10 @@ impl ListingArgs {
     }
 }
 
-async fn user_header_from_args(
+async fn user_header_or_default_id(
     arg: Option<UsernameArg>,
     env: &OsuEnv,
-    msg: &Message,
+    default_user: serenity::all::UserId,
 ) -> Result<(Mode, UserHeader)> {
     let (mode, user) = match arg {
         Some(UsernameArg::Raw(r)) => {
@@ -598,12 +641,20 @@ async fn user_header_from_args(
             (user.preferred_mode, user.into())
         }
         None => {
-            let user = env.saved_users.by_user_id(msg.author.id).await?
+            let user = env.saved_users.by_user_id(default_user).await?
                         .ok_or(Error::msg("You do not have a saved account! Use `osu save` command to save your osu! account."))?;
             (user.preferred_mode, user.into())
         }
     };
     Ok((mode, user))
+}
+
+async fn user_header_from_args(
+    arg: Option<UsernameArg>,
+    env: &OsuEnv,
+    msg: &Message,
+) -> Result<(Mode, UserHeader)> {
+    user_header_or_default_id(arg, env, msg.author.id).await
 }
 
 #[command]
@@ -632,7 +683,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             let reply = msg
                 .reply(
                     ctx,
-                    format!("Here are the recent plays by `{}`!", user.username),
+                    format!("Here are the recent plays by {}!", user.mention()),
                 )
                 .await?;
             style
@@ -656,7 +707,11 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .send_message(
                     &ctx,
                     CreateMessage::new()
-                        .content("Here is the play that you requested".to_string())
+                        .content(format!(
+                            "Here is the #{} recent play by {}!",
+                            nth + 1,
+                            user.mention()
+                        ))
                         .embed(
                             score_embed(play, &beatmap_mode, &content, user)
                                 .footer(format!("Attempt #{}", attempts))
@@ -804,10 +859,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     match b {
         Some((bm, mods_def)) => {
-            let mods = match args.find::<UnparsedMods>().ok() {
-                Some(m) => m.to_mods(bm.mode())?,
-                None => mods_def.unwrap_or_default(),
-            };
+            let mods = args.find::<UnparsedMods>().ok();
             if beatmapset {
                 let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
                 let reply = msg
@@ -824,6 +876,10 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .await?;
                 return Ok(());
             }
+            let mods = match mods {
+                Some(m) => m.to_mods(bm.mode())?,
+                None => mods_def.unwrap_or_default(),
+            };
             let info = env
                 .oppai
                 .get_beatmap(bm.0.beatmap_id)
@@ -869,18 +925,15 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         }
     };
     let mode = bm.1;
-    let mods = args
-        .find::<UnparsedMods>()
-        .ok()
-        .unwrap_or_default()
-        .to_mods(mode)?;
+    let umods = args.find::<UnparsedMods>().ok();
+    let mods = umods.clone().unwrap_or_default().to_mods(mode)?;
     let style = args
         .single::<ScoreListStyle>()
         .unwrap_or(ScoreListStyle::Grid);
     let username_arg = args.single::<UsernameArg>().ok();
     let (_, user) = user_header_from_args(username_arg, &env, msg).await?;
 
-    let scores = do_check(&env, &bm, &mods, &user).await?;
+    let scores = do_check(&env, &vec![bm.clone()], umods, &user).await?;
 
     if scores.is_empty() {
         msg.reply(&ctx, "No scores found").await?;
@@ -905,19 +958,29 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 
 pub(crate) async fn do_check(
     env: &OsuEnv,
-    bm: &BeatmapWithMode,
-    mods: &Mods,
+    bm: &[BeatmapWithMode],
+    mods: Option<UnparsedMods>,
     user: &UserHeader,
 ) -> Result<Vec<Score>> {
-    let BeatmapWithMode(b, m) = bm;
-
     let osu_client = &env.client;
 
-    let mut scores = osu_client
-        .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(*m))
+    let mut scores = bm
+        .iter()
+        .map(|bm| {
+            let BeatmapWithMode(b, m) = bm;
+            let mods = mods.clone().and_then(|t| t.to_mods(*m).ok());
+            osu_client
+                .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(*m))
+                .map_ok(move |mut v| {
+                    v.retain(|s| mods.as_ref().is_none_or(|m| m.contains(&s.mods)));
+                    v
+                })
+        })
+        .collect::<FuturesUnordered<_>>()
+        .try_collect::<Vec<_>>()
         .await?
         .into_iter()
-        .filter(|s| s.mods.contains(mods))
+        .flatten()
         .collect::<Vec<_>>();
     scores.sort_by(|a, b| {
         b.pp.unwrap_or(-1.0)
@@ -964,8 +1027,9 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .send_message(&ctx, {
                     CreateMessage::new()
                         .content(format!(
-                            "{}: here is the play that you requested",
-                            msg.author
+                            "Here is the #{} top play by {}!",
+                            nth + 1,
+                            user.mention()
                         ))
                         .embed(
                             score_embed(&play, &beatmap, &content, user)
@@ -983,7 +1047,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let reply = msg
                 .reply(
                     &ctx,
-                    format!("Here are the top plays by `{}`!", user.username),
+                    format!("Here are the top plays by {}!", user.mention()),
                 )
                 .await?;
             style
@@ -1031,10 +1095,7 @@ async fn get_user(
                 .send_message(
                     &ctx,
                     CreateMessage::new()
-                        .content(format!(
-                            "{}: here is the user that you requested",
-                            msg.author
-                        ))
+                        .content(format!("Here is {}'s **{}** profile!", u.mention(), mode))
                         .embed(user_embed(u, ex)),
                 )
                 .await?;

@@ -337,11 +337,11 @@ impl<'a> CollectedScore<'a> {
                 CreateMessage::new()
                     .content(self.kind.announcement_msg(self.mode, &member))
                     .embed({
-                        let mut b = score_embed(&self.score, bm, content, self.user);
+                        let b = score_embed(&self.score, bm, content, self.user);
                         let b = if let Some(rank) = self.kind.top_record {
                             b.top_record(rank)
                         } else {
-                            &mut b
+                            b
                         };
                         let b = if let Some(rank) = self.kind.world_record {
                             b.world_record(rank)

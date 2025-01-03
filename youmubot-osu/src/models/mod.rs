@@ -3,13 +3,14 @@ use mods::Stats;
 use rosu_v2::prelude::{GameModIntermode, ScoreStatistics};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::time::Duration;
 
 pub mod mods;
 pub(crate) mod rosu;
 
 pub use mods::Mods;
+use poise::ChoiceParameter;
 use serenity::utils::MessageBuilder;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -266,11 +267,17 @@ impl fmt::Display for Language {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, std::hash::Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, std::hash::Hash, ChoiceParameter,
+)]
 pub enum Mode {
+    #[name = "osu!"]
     Std,
+    #[name = "osu!taiko"]
     Taiko,
+    #[name = "osu!catch"]
     Catch,
+    #[name = "osu!mania"]
     Mania,
 }
 
@@ -332,6 +339,14 @@ impl Mode {
             Mode::Taiko => "taiko",
             Mode::Catch => "fruits",
             Mode::Mania => "mania",
+        }
+    }
+
+    pub fn with_override(self, opt_mode: impl Into<Option<Mode>>) -> Self {
+        if self == Mode::Std {
+            opt_mode.into().unwrap_or(self)
+        } else {
+            self
         }
     }
 }
@@ -399,9 +414,16 @@ impl Beatmap {
 
     /// Gets a link pointing to the beatmap, in the new format.
     pub fn link(&self) -> String {
+        self.mode_link(None)
+    }
+
+    /// Gets a link pointing to the beatmap, in the new format, with overridable mode.
+    pub fn mode_link(&self, mode: Option<Mode>) -> String {
         format!(
             "https://osu.ppy.sh/beatmapsets/{}#{}/{}",
-            self.beatmapset_id, NEW_MODE_NAMES[self.mode as usize], self.beatmap_id
+            self.beatmapset_id,
+            NEW_MODE_NAMES[self.mode.with_override(mode) as usize],
+            self.beatmap_id
         )
     }
 
@@ -425,6 +447,14 @@ impl Beatmap {
                 _ => "".to_owned(),
             },
             mods
+        )
+    }
+
+    pub fn mention(&self, override_mode: Option<Mode>, mods: &Mods) -> String {
+        format!(
+            "[`{}`]({})",
+            self.short_link(override_mode, mods),
+            self.mode_link(override_mode),
         )
     }
 
@@ -554,6 +584,10 @@ pub struct User {
 }
 
 impl User {
+    pub fn mention<'a>(&'a self) -> impl Display + 'a {
+        UserHeaderLink(&self.username, self.id)
+    }
+
     pub fn link(&self) -> String {
         format!("https://osu.ppy.sh/users/{}", self.id)
     }
@@ -563,7 +597,20 @@ impl User {
     }
 }
 
+#[derive(Debug, Clone)]
+struct UserHeaderLink<'a>(&'a String, u64);
+
+impl<'a> Display for UserHeaderLink<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}](<https://osu.ppy.sh/users/{}>)", self.0, self.1)
+    }
+}
+
 impl UserHeader {
+    pub fn mention<'a>(&'a self) -> impl Display + 'a {
+        UserHeaderLink(&self.username, self.id)
+    }
+
     pub fn link(&self) -> String {
         format!("https://osu.ppy.sh/users/{}", self.id)
     }

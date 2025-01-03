@@ -61,6 +61,7 @@ impl AsRef<youmubot_prelude::Env> for Env {
     }
 }
 
+#[cfg(feature = "osu")]
 impl AsRef<youmubot_osu::discord::OsuEnv> for Env {
     fn as_ref(&self) -> &youmubot_osu::discord::OsuEnv {
         &self.osu
@@ -264,18 +265,24 @@ async fn main() {
                 Box::pin(async move {
                     if let poise::FrameworkError::Command { error, ctx, .. } = err {
                         let reply = format!(
-                            "Command '{}' returned error {:?}",
+                            "Command '{}' returned error: {:?}",
                             ctx.invoked_command_name(),
                             error
                         );
-                        ctx.reply(&reply).await.pls_ok();
-                        println!("{}", reply)
+                        println!("{}", reply);
+                        ctx.send(poise::CreateReply::default().content(reply).ephemeral(true))
+                            .await
+                            .pls_ok();
                     } else {
                         eprintln!("Poise error: {:?}", err)
                     }
                 })
             },
-            commands: vec![poise_register()],
+            commands: vec![
+                poise_register(),
+                #[cfg(feature = "osu")]
+                youmubot_osu::discord::osu_command(),
+            ],
             ..Default::default()
         })
         .build();

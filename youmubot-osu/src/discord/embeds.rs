@@ -270,15 +270,15 @@ pub(crate) struct ScoreEmbedBuilder<'a> {
 }
 
 impl<'a> ScoreEmbedBuilder<'a> {
-    pub fn top_record(&mut self, rank: u8) -> &mut Self {
+    pub fn top_record(mut self, rank: u8) -> Self {
         self.top_record = Some(rank);
         self
     }
-    pub fn world_record(&mut self, rank: u16) -> &mut Self {
+    pub fn world_record(mut self, rank: u16) -> Self {
         self.world_record = Some(rank);
         self
     }
-    pub fn footer(&mut self, footer: impl Into<String>) -> &mut Self {
+    pub fn footer(mut self, footer: impl Into<String>) -> Self {
         self.footer = Some(match self.footer.take() {
             None => footer.into(),
             Some(pre) => format!("{} | {}", pre, footer.into()),
@@ -306,7 +306,7 @@ pub(crate) fn score_embed<'a>(
 
 impl<'a> ScoreEmbedBuilder<'a> {
     #[allow(clippy::many_single_char_names)]
-    pub fn build(&mut self) -> CreateEmbed {
+    pub fn build(mut self) -> CreateEmbed {
         let mode = self.bm.mode();
         let b = &self.bm.0;
         let s = self.s;

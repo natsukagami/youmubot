@@ -323,7 +323,7 @@ async fn handle_beatmapset<'a, 'b>(
         ctx.clone(),
         beatmaps,
         mode,
-        Mods::default(),
+        None,
         reply_to.guild_id,
         reply,
     )

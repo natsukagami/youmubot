@@ -11,7 +11,7 @@
   };
   nixConfig = {
     extra-substituters = [ "https://natsukagami.cachix.org" ];
-    trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" "natsukagami.cachix.org-1:3U6GV8i8gWEaXRUuXd2S4ASfYgdl2QFPWg4BKPbmYiQ=" ];
+    extra-trusted-public-keys = [ "natsukagami.cachix.org-1:3U6GV8i8gWEaXRUuXd2S4ASfYgdl2QFPWg4BKPbmYiQ=" ];
   };
   outputs = { self, nixpkgs, flake-utils, ... }@inputs:
     let

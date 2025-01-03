@@ -2,16 +2,19 @@ pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
 mod scores {
+    use poise::ChoiceParameter;
     use serenity::{all::GuildId, model::channel::Message};
 
     use youmubot_prelude::*;
 
     use crate::models::{Mode, Score};
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, ChoiceParameter)]
     /// The style for the scores list to be displayed.
     pub enum ScoreListStyle {
+        #[name = "ASCII Table"]
         Table,
+        #[name = "List of Embeds"]
         Grid,
     }
 
@@ -166,7 +169,11 @@ mod scores {
             }
 
             paginate_with_first_message(
-                Paginate { scores, mode },
+                Paginate {
+                    header: on.content.clone(),
+                    scores,
+                    mode,
+                },
                 ctx,
                 on,
                 std::time::Duration::from_secs(60),
@@ -176,6 +183,7 @@ mod scores {
         }
 
         pub struct Paginate {
+            header: String,
             scores: Vec<Score>,
             mode: Mode,
         }
@@ -311,6 +319,7 @@ mod scores {
                 let score_table = table_formatting(&SCORE_HEADERS, &SCORE_ALIGNS, score_arr);
 
                 let content = serenity::utils::MessageBuilder::new()
+                    .push_line(&self.header)
                     .push_line(score_table)
                     .push_line(format!("Page **{}/{}**", page + 1, self.total_pages()))
                     .push_line("[?] means pp was predicted by oppai-rs.")
@@ -337,23 +346,34 @@ mod beatmapset {
 
     use youmubot_prelude::*;
 
-    use crate::discord::{interaction::beatmap_components, OsuEnv};
     use crate::{
         discord::{cache::save_beatmap, oppai_cache::BeatmapInfoWithPP, BeatmapWithMode},
         models::{Beatmap, Mode, Mods},
+    };
+    use crate::{
+        discord::{interaction::beatmap_components, OsuEnv},
+        mods::UnparsedMods,
     };
 
     const SHOW_ALL_EMOTE: &str = "🗒️";
 
     pub async fn display_beatmapset(
         ctx: Context,
-        beatmapset: Vec<Beatmap>,
+        mut beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
-        mods: Mods,
+        mods: Option<UnparsedMods>,
         guild_id: Option<GuildId>,
         target: Message,
     ) -> Result<bool> {
         assert!(!beatmapset.is_empty(), "Beatmapset should not be empty");
+
+        beatmapset.sort_unstable_by(|a, b| {
+            if a.mode != b.mode {
+                (a.mode as u8).cmp(&(b.mode as u8))
+            } else {
+                a.difficulty.stars.partial_cmp(&b.difficulty.stars).unwrap()
+            }
+        });
 
         let p = Paginate {
             infos: vec![None; beatmapset.len()],
@@ -383,20 +403,25 @@ mod beatmapset {
         maps: Vec<Beatmap>,
         infos: Vec<Option<BeatmapInfoWithPP>>,
         mode: Option<Mode>,
-        mods: Mods,
+        mods: Option<UnparsedMods>,
         guild_id: Option<GuildId>,
 
         all_reaction: Option<Reaction>,
     }
 
     impl Paginate {
-        async fn get_beatmap_info(&self, ctx: &Context, b: &Beatmap) -> Result<BeatmapInfoWithPP> {
+        async fn get_beatmap_info(
+            &self,
+            ctx: &Context,
+            b: &Beatmap,
+            mods: &Mods,
+        ) -> Result<BeatmapInfoWithPP> {
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
             env.oppai
                 .get_beatmap(b.beatmap_id)
                 .await
-                .map(move |v| v.get_possible_pp_with(self.mode.unwrap_or(b.mode), &self.mods))
+                .map(move |v| v.get_possible_pp_with(b.mode.with_override(self.mode), &mods))
         }
     }
 
@@ -424,10 +449,16 @@ mod beatmapset {
             }
 
             let map = &self.maps[page];
+            let mods = self
+                .mods
+                .clone()
+                .and_then(|v| v.to_mods(map.mode.with_override(self.mode)).ok())
+                .unwrap_or_default();
+
             let info = match &self.infos[page] {
                 Some(info) => info,
                 None => {
-                    let info = self.get_beatmap_info(ctx, map).await?;
+                    let info = self.get_beatmap_info(ctx, map, &mods).await?;
                     self.infos[page].insert(info)
                 }
             };
@@ -436,7 +467,7 @@ mod beatmapset {
                        crate::discord::embeds::beatmap_embed(
                            map,
                            self.mode.unwrap_or(map.mode),
-                           &self.mods,
+                           &mods,
                            info,
                        )
                            .footer({

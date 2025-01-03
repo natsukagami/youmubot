@@ -79,7 +79,7 @@ pub fn handle_check_button<'a>(
         };
         let header = UserHeader::from(user.clone());
 
-        let scores = super::do_check(&env, &bm, Mods::NOMOD, &header).await?;
+        let scores = super::do_check(&env, &vec![bm.clone()], None, &header).await?;
         if scores.is_empty() {
             comp.create_followup(
                 &ctx,
@@ -325,7 +325,7 @@ async fn handle_last_req(
             ctx.clone(),
             beatmapset,
             None,
-            mods,
+            None,
             comp.guild_id,
             reply,
         )
@@ -400,7 +400,7 @@ pub fn handle_lb_button<'a>(
             .create_followup(
                 &ctx,
                 CreateInteractionResponseFollowup::new().content(format!(
-                    "⌛ Loading top scores on beatmap `{}`...",
+                    "Here are the top scores on beatmap `{}`!",
                     bm.short_link(Mods::NOMOD)
                 )),
             )
