@@ -22,4 +22,6 @@ youmubot-prelude = { path = "../youmubot-prelude" }
 youmubot-core = { path = "../youmubot-core" }
 youmubot-osu = { path = "../youmubot-osu", optional = true }
 youmubot-cf = { path = "../youmubot-cf", optional = true }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
