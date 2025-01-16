@@ -333,7 +333,7 @@ pub(crate) async fn handle_save_respond(
     mode: Mode,
 ) -> Result<()> {
     let osu_client = &env.client;
-    async fn check(client: &OsuHttpClient, u: &User, map_id: u64) -> Result<bool> {
+    async fn check(client: &OsuHttpClient, u: &User, mode: Mode, map_id: u64) -> Result<bool> {
         Ok(client
             .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
             .await?
@@ -352,7 +352,7 @@ pub(crate) async fn handle_save_respond(
             .next()
             .await;
         if let Some(ur) = user_reaction {
-            if check(osu_client, &user, beatmap.beatmap_id).await? {
+            if check(osu_client, &user, mode, beatmap.beatmap_id).await? {
                 break true;
             }
             ur.delete(&ctx).await?;
