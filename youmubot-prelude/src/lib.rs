@@ -15,6 +15,7 @@ pub use tokio::spawn as spawn_future;
 pub use announcer::{Announcer, AnnouncerRunner};
 pub use args::{ChannelId, Duration, RoleId, UserId, UsernameArg};
 pub use debugging_ok::OkPrint;
+pub use editable::{editable_message, editable_reply_handle, Editable};
 pub use flags::Flags;
 pub use hook::Hook;
 pub use member_cache::MemberCache;
@@ -22,6 +23,7 @@ pub use pagination::{paginate, paginate_from_fn, paginate_reply, Paginate};
 
 pub mod announcer;
 pub mod args;
+pub mod editable;
 pub mod flags;
 pub mod hook;
 pub mod member_cache;
