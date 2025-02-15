@@ -457,6 +457,9 @@ impl Beatmap {
             self.mode_link(override_mode),
         )
     }
+    pub fn beatmapset_mention(&self) -> String {
+        format!("[/s/{}](<{}>)", self.beatmapset_id, self.beatmapset_link())
+    }
 
     /// Link to the cover image of the beatmap.
     pub fn cover_url(&self) -> String {

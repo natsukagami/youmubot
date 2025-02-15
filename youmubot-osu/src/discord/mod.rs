@@ -257,21 +257,25 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .send_message(
             &ctx,
             CreateMessage::new()
-                .content(format!(
-                    "To set your osu username to **{}**, please make your most recent play \
-            be the following map: `/b/{}` in **{}** mode! \
-        It does **not** have to be a pass, and **NF** can be used! \
-        React to this message with 👌 within 5 minutes when you're done!",
-                    u.username,
-                    score.beatmap_id,
-                    mode.as_str_new_site()
-                ))
+                .content(save_request_message(&u.username, score.beatmap_id, mode))
                 .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
                 .components(vec![beatmap_components(mode, msg.guild_id)]),
         )
         .await?;
     handle_save_respond(ctx, &env, msg.author.id, reply, &beatmap, u, mode).await?;
     Ok(())
+}
+
+pub(crate) fn save_request_message(username: &str, beatmap_id: u64, mode: Mode) -> String {
+    format!(
+        "To set your osu username to **{}**, please make your most recent play \
+            be the following map: `/b/{}` in **{}** mode! \
+        It does **not** have to be a pass, and **NF** can be used! \
+        React to this message with 👌 within 5 minutes when you're done!",
+        username,
+        beatmap_id,
+        mode.as_str_new_site()
+    )
 }
 
 pub(crate) async fn find_save_requirements(
@@ -943,9 +947,9 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         .reply(
             &ctx,
             format!(
-                "Here are the scores by `{}` on `{}`!",
+                "Here are the scores by `{}` on {}!",
                 &user.username,
-                bm.short_link(&mods)
+                bm.0.mention(Some(bm.1), &mods)
             ),
         )
         .await?;
