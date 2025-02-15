@@ -183,15 +183,7 @@ pub async fn save<U: HasOsuEnv>(
         .clone()
         .send(
             CreateReply::default()
-                .content(format!(
-                    "To set your osu username to **{}**, please make your most recent play \
-            be the following map: `/b/{}` in **{}** mode! \
-        It does **not** have to be a pass, and **NF** can be used! \
-        React to this message with 👌 within 5 minutes when you're done!",
-                    u.username,
-                    score.beatmap_id,
-                    mode.as_str_new_site()
-                ))
+                .content(save_request_message(&u.username, score.beatmap_id, mode))
                 .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
                 .components(vec![beatmap_components(mode, ctx.guild_id())]),
         )
@@ -349,10 +341,7 @@ async fn beatmap<U: HasOsuEnv>(
             };
             ctx.send(
                 CreateReply::default()
-                    .content(format!(
-                        "Information for beatmap `{}`",
-                        beatmap.short_link(mode, &mods)
-                    ))
+                    .content(format!("Information for {}", beatmap.mention(mode, &mods)))
                     .embed(beatmap_embed(
                         &beatmap,
                         mode.unwrap_or(beatmap.mode),
@@ -372,11 +361,7 @@ async fn beatmap<U: HasOsuEnv>(
             let b0 = &vec[0];
             let msg = ctx
                 .clone()
-                .reply(format!(
-                    "Information for beatmapset [`/s/{}`](<{}>)",
-                    b0.beatmapset_id,
-                    b0.beatmapset_link()
-                ))
+                .reply(format!("Information for {}", b0.beatmapset_mention()))
                 .await?
                 .into_message()
                 .await?;
@@ -475,17 +460,9 @@ async fn check<U: HasOsuEnv>(
     };
 
     let display = if beatmaps.len() == 1 {
-        format!(
-            "[{}](<{}>)",
-            beatmaps[0].0.short_link(None, Mods::NOMOD),
-            beatmaps[0].0.link()
-        )
+        beatmaps[0].0.mention(None, Mods::NOMOD)
     } else {
-        format!(
-            "[/s/{}](<{}>)",
-            beatmaps[0].0.beatmapset_id,
-            beatmaps[0].0.beatmapset_link()
-        )
+        beatmaps[0].0.beatmapset_mention()
     };
 
     let ordering = sort.unwrap_or_default();
@@ -602,10 +579,9 @@ async fn leaderboard<U: HasOsuEnv>(
     let beatmap = &bm.0;
     if scores.is_empty() {
         ctx.reply(format!(
-            "No scores have been recorded in **{}** on [`{}`]({}).",
+            "No scores have been recorded in **{}** on {}.",
             guild.name,
-            beatmap.short_link(mode, Mods::NOMOD),
-            beatmap.link()
+            beatmap.mention(mode, Mods::NOMOD),
         ))
         .await?;
         return Ok(());
