@@ -43,7 +43,7 @@ mod scores {
             mode: Mode,
             ctx: &Context,
             guild_id: Option<GuildId>,
-            m: Message,
+            m: impl Editable,
         ) -> Result<()> {
             match self {
                 ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
@@ -56,6 +56,7 @@ mod scores {
 
     mod grid {
         use pagination::paginate_with_first_message;
+        use poise::CreateReply;
         use serenity::all::GuildId;
         use serenity::builder::EditMessage;
         use serenity::model::channel::Message;
@@ -71,10 +72,10 @@ mod scores {
             mode: Mode,
             ctx: &Context,
             guild_id: Option<GuildId>,
-            mut on: Message,
+            mut on: impl Editable,
         ) -> Result<()> {
             if scores.is_empty() {
-                on.edit(&ctx, EditMessage::new().content("No plays found"))
+                on.edit_msg(CreateReply::default().content("No plays found"))
                     .await?;
                 return Ok(());
             }
@@ -160,7 +161,7 @@ mod scores {
             scores: Vec<Score>,
             mode: Mode,
             ctx: &Context,
-            mut on: Message,
+            mut on: impl Editable,
         ) -> Result<()> {
             if scores.is_empty() {
                 on.edit(&ctx, EditMessage::new().content("No plays found"))

@@ -1,4 +1,4 @@
-use crate::{Context, OkPrint, Result};
+use crate::{editable_message, Context, Editable, OkPrint, Result};
 use futures_util::{future::Future, StreamExt as _};
 use serenity::{
     builder::CreateMessage,
@@ -20,15 +20,15 @@ const FAST_FORWARD: &str = "⏩";
 #[async_trait::async_trait]
 pub trait Paginate: Send + Sized {
     /// Render the given page.
-    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
+    async fn render(&mut self, page: u8, ctx: &Context, m: &mut impl Editable) -> Result<bool>;
 
     /// Any setting-up before the rendering stage.
-    async fn prerender(&mut self, _ctx: &Context, _m: &mut Message) -> Result<()> {
+    async fn prerender(&mut self, _ctx: &Context, _m: &mut impl Editable) -> Result<()> {
         Ok(())
     }
 
     /// Cleans up after the pagination has timed out.
-    async fn cleanup(&mut self, _ctx: &Context, _m: &mut Message) -> () {}
+    async fn cleanup(&mut self, _ctx: &Context, _m: &mut impl Editable) -> () {}
 
     /// Handle the incoming reaction. Defaults to calling `handle_pagination_reaction`, but you can do some additional handling
     /// before handing the functionality over.
@@ -38,7 +38,7 @@ pub trait Paginate: Send + Sized {
         &mut self,
         page: u8,
         ctx: &Context,
-        message: &mut Message,
+        message: &mut impl Editable,
         reaction: &Reaction,
     ) -> Result<Option<u8>> {
         handle_pagination_reaction(page, self, ctx, message, reaction)
@@ -65,16 +65,17 @@ pub trait Paginate: Send + Sized {
     }
 }
 
-pub fn paginate_from_fn(
-    pager: impl for<'m> FnMut(
-            u8,
-            &'m Context,
-            &'m mut Message,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
-        + Send,
-) -> impl Paginate {
-    pager
-}
+// pub fn paginate_from_fn(
+//     pager: impl for<'m, M: Editable> FnMut(
+//             u8,
+//             &'m Context,
+//             &'m mut M,
+//         ) -> std::pin::Pin<
+//             Box<dyn Future<Output = Result<bool>> + Send + 'm>,
+//         > + Send,
+// ) -> impl Paginate {
+//     pager
+// }
 
 struct WithPageCount<Inner> {
     inner: Inner,
@@ -83,13 +84,13 @@ struct WithPageCount<Inner> {
 
 #[async_trait::async_trait]
 impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
-    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool> {
+    async fn render(&mut self, page: u8, ctx: &Context, m: &mut impl Editable) -> Result<bool> {
         if page as usize >= self.page_count {
             return Ok(false);
         }
         self.inner.render(page, ctx, m).await
     }
-    async fn prerender(&mut self, ctx: &Context, m: &mut Message) -> Result<()> {
+    async fn prerender(&mut self, ctx: &Context, m: &mut impl Editable) -> Result<()> {
         self.inner.prerender(ctx, m).await
     }
 
@@ -97,7 +98,7 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
         &mut self,
         page: u8,
         ctx: &Context,
-        message: &mut Message,
+        message: &mut impl Editable,
         reaction: &Reaction,
     ) -> Result<Option<u8>> {
         // handle normal reactions first, then fallback to the inner one
@@ -120,25 +121,25 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
         Some(self.page_count == 0)
     }
 
-    async fn cleanup(&mut self, ctx: &Context, msg: &mut Message) {
+    async fn cleanup(&mut self, ctx: &Context, msg: &mut impl Editable) {
         self.inner.cleanup(ctx, msg).await;
     }
 }
 
-#[async_trait::async_trait]
-impl<T> Paginate for T
-where
-    T: for<'m> FnMut(
-            u8,
-            &'m Context,
-            &'m mut Message,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
-        + Send,
-{
-    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool> {
-        self(page, ctx, m).await
-    }
-}
+// #[async_trait::async_trait]
+// impl<T> Paginate for T
+// where
+//     T: for<'m> FnMut(
+//             u8,
+//             &'m Context,
+//             &'m mut Message,
+//         ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
+//         + Send,
+// {
+//     async fn render(&mut self, page: u8, ctx: &Context, m: &mut impl Editable) -> Result<bool> {
+//         self(page, ctx, m).await
+//     }
+// }
 
 // Paginate! with a pager function, and replying to a message.
 /// If awaited, will block until everything is done.
@@ -151,7 +152,8 @@ pub async fn paginate_reply(
     let message = reply_to
         .reply(&ctx, "Youmu is loading the first page...")
         .await?;
-    paginate_with_first_message(pager, ctx, message, timeout).await
+    let mut edit = editable_message(message, ctx.clone());
+    paginate_with_first_message(pager, ctx, edit, timeout).await
 }
 
 // Paginate! with a pager function.
@@ -168,14 +170,15 @@ pub async fn paginate(
             CreateMessage::new().content("Youmu is loading the first page..."),
         )
         .await?;
-    paginate_with_first_message(pager, ctx, message, timeout).await
+    let mut edit = editable_message(message, ctx.clone());
+    paginate_with_first_message(pager, ctx, edit, timeout).await
 }
 
 /// Paginate with the first message already created.
 pub async fn paginate_with_first_message(
     mut pager: impl Paginate,
     ctx: &Context,
-    mut message: Message,
+    message: impl Editable,
     timeout: std::time::Duration,
 ) -> Result<()> {
     pager.prerender(ctx, &mut message).await?;
@@ -188,28 +191,28 @@ pub async fn paginate_with_first_message(
     let large_count = pager.len().filter(|&p| p > 10).is_some();
     let reactions = {
         let mut rs = Vec::<Reaction>::with_capacity(4);
-        if large_count {
-            // add >> and << buttons
-            rs.push(message.react(&ctx, ReactionType::try_from(REWIND)?).await?);
-        }
-        rs.push(
-            message
-                .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
-                .await?,
-        );
-        rs.push(
-            message
-                .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
-                .await?,
-        );
-        if large_count {
-            // add >> and << buttons
-            rs.push(
-                message
-                    .react(&ctx, ReactionType::try_from(FAST_FORWARD)?)
-                    .await?,
-            );
-        }
+        // if large_count {
+        //     // add >> and << buttons
+        //     rs.push(message.react(&ctx, ReactionType::try_from(REWIND)?).await?);
+        // }
+        // rs.push(
+        //     message
+        //         .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
+        //         .await?,
+        // );
+        // rs.push(
+        //     message
+        //         .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
+        //         .await?,
+        // );
+        // if large_count {
+        //     // add >> and << buttons
+        //     rs.push(
+        //         message
+        //             .react(&ctx, ReactionType::try_from(FAST_FORWARD)?)
+        //             .await?,
+        //     );
+        // }
         rs
     };
     // Build a reaction collector
@@ -264,7 +267,7 @@ pub async fn handle_pagination_reaction(
     page: u8,
     pager: &mut impl Paginate,
     ctx: &Context,
-    message: &mut Message,
+    message: &mut impl Editable,
     reaction: &Reaction,
 ) -> Result<u8> {
     let pages = pager.len();

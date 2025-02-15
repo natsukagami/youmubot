@@ -5,7 +5,7 @@ use crate::CmdContext;
 use core::future::Future;
 
 /// Represents an editable message context.
-pub trait Editable {
+pub trait Editable: Send {
     /// Edits the underlying message.
     fn edit_msg(&mut self, reply: CreateReply) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
