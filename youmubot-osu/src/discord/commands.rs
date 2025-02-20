@@ -519,6 +519,7 @@ async fn ranks<U: HasOsuEnv>(
 async fn leaderboard<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
     #[description = "The link or shortlink of the map"] map: Option<String>,
+    #[description = "Load the scoreboard for the entire beatmapset"] beatmapset: Option<bool>,
     #[description = "Sort scores by"] sort: Option<server_rank::OrderBy>,
     #[description = "Reverse the ordering"] reverse: Option<bool>,
     #[description = "Include unranked scores"] unranked: Option<bool>,
@@ -530,7 +531,7 @@ async fn leaderboard<U: HasOsuEnv>(
     let style = style.unwrap_or_default();
     let order = sort.unwrap_or_default();
 
-    let embed = parse_map_input(ctx.channel_id(), env, map, mode, None).await?;
+    let embed = parse_map_input(ctx.channel_id(), env, map, mode, beatmapset).await?;
 
     ctx.defer().await?;
 
