@@ -274,7 +274,7 @@ async fn main() {
                             ctx.invoked_command_name(),
                             error
                         );
-                        println!("{}", reply);
+                        eprintln!("{}\n{:?}", reply, error);
                         ctx.send(poise::CreateReply::default().content(reply).ephemeral(true))
                             .await
                             .pls_ok();

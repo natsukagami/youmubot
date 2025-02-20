@@ -102,7 +102,6 @@ mod scores {
                 let page = page as usize;
                 let score = &self.scores[page];
 
-                let hourglass = msg.react(ctx, '⌛').await?;
                 let beatmap = env
                     .beatmaps
                     .get_beatmap(score.beatmap_id, score.mode)
@@ -120,7 +119,6 @@ mod scores {
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
 
-                hourglass.delete(ctx).await?;
                 save_beatmap(&env, msg.channel_id, &bm).await?;
                 Ok(Some(
                     EditMessage::new()
@@ -197,7 +195,7 @@ mod scores {
                 &mut self,
                 page: u8,
                 ctx: &Context,
-                msg: &Message,
+                _: &Message,
             ) -> Result<Option<EditMessage>> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
@@ -210,7 +208,6 @@ mod scores {
                     return Ok(None);
                 }
 
-                let hourglass = msg.react(ctx, '⌛').await?;
                 let plays = &self.scores[start..end];
                 let beatmaps = plays
                     .iter()
@@ -326,7 +323,6 @@ mod scores {
                     .push_line("[?] means pp was predicted by oppai-rs.")
                     .build();
 
-                hourglass.delete(ctx).await?;
                 Ok(Some(
                     EditMessage::new()
                         .content(content)

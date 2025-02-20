@@ -392,11 +392,9 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
             .await?;
         return Ok(());
     };
-    let reaction = msg.react(ctx, '⌛').await?;
     let scoreboard_msg = beatmap.mention();
     let (scores, show_diff) =
         get_leaderboard_from_embed(ctx, &env, beatmap, None, show_all, order, guild).await?;
-    reaction.delete(&ctx).await?;
 
     if scores.is_empty() {
         msg.reply(&ctx, "No scores have been recorded for this beatmap.")
