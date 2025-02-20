@@ -313,12 +313,15 @@ async fn handle_last_req(
     let mods = mods_def.unwrap_or_default();
 
     if is_beatmapset_req {
-        let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
+        let beatmapset = env
+            .beatmaps
+            .get_beatmapset(bm.0.beatmapset_id, None)
+            .await?;
         let reply = comp
             .create_followup(
                 &ctx,
                 CreateInteractionResponseFollowup::new()
-                    .content(format!("Beatmapset of `{}`", bm.short_link(&mods))),
+                    .content(format!("Beatmapset `{}`", bm.0.beatmapset_mention())),
             )
             .await?;
         super::display::display_beatmapset(

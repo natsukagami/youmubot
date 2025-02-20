@@ -865,7 +865,13 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         Some((bm, mods_def)) => {
             let mods = args.find::<UnparsedMods>().ok();
             if beatmapset {
-                let beatmapset = env.beatmaps.get_beatmapset(bm.0.beatmapset_id).await?;
+                let beatmapset = env
+                    .beatmaps
+                    .get_beatmapset(
+                        bm.0.beatmapset_id,
+                        None, /* Note that we cannot know, so don't force that */
+                    )
+                    .await?;
                 let reply = msg
                     .reply(&ctx, "Here is the beatmapset you requested!")
                     .await?;

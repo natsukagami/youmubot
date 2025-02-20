@@ -709,7 +709,10 @@ async fn parse_map_input(
     let output = if beatmapset == Some(true) {
         match output {
             EmbedType::Beatmap(beatmap, _, _) => {
-                let beatmaps = env.beatmaps.get_beatmapset(beatmap.beatmapset_id).await?;
+                let beatmaps = env
+                    .beatmaps
+                    .get_beatmapset(beatmap.beatmapset_id, mode)
+                    .await?;
                 EmbedType::Beatmapset(beatmaps)
             }
             bm @ EmbedType::Beatmapset(_) => bm,
