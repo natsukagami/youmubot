@@ -9,3 +9,5 @@ members = [
 	"youmubot-osu",
 	"youmubot",
 ]
+[workspace.lints.rust]
+deprecated = "allow"
