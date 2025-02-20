@@ -317,9 +317,7 @@ where
                         last_update.format("<t:%s:R>"),
                     ))
                     .build();
-                Ok(Some(
-                    EditMessage::new().content(content).components(vec![btns]),
-                ))
+                Ok(Some(EditMessage::new().content(content).components(btns)))
             })
         })
         .with_page_count(total_pages),
@@ -719,9 +717,7 @@ pub async fn display_rankings_table(
                     ))
                     .build();
 
-                Ok(Some(
-                    EditMessage::new().content(content).components(vec![btns]),
-                ))
+                Ok(Some(EditMessage::new().content(content).components(btns)))
             })
         })
         .with_page_count(total_pages),

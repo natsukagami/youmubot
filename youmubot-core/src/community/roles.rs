@@ -77,9 +77,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
                             .push_line(format!("Page **{}/{}**", page + 1, pages))
                             .build();
 
-                        Ok(Some(
-                            EditMessage::new().content(content).components(vec![btns]),
-                        ))
+                        Ok(Some(EditMessage::new().content(content).components(btns)))
                     })
                 })
                 .with_page_count(pages),

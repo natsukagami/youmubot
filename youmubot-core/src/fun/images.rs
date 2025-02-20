@@ -81,7 +81,7 @@ async fn message_command(
                                 images.len(),
                                 images[page]
                             ))
-                            .components(vec![btns]),
+                            .components(btns),
                     ))
                 }
             })

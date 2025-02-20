@@ -199,7 +199,7 @@ pub fn dot_osu_hook<'a>(
                             let mut edit = EditMessage::new()
                                 .content(format!("Attached beatmaps ({}/{})", page + 1, embed_len))
                                 .embed(embed.clone())
-                                .components(vec![btns]);
+                                .components(btns);
                             for att in attachments {
                                 edit = edit.new_attachment(att.clone());
                             }

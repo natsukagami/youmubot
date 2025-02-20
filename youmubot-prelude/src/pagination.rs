@@ -1,4 +1,4 @@
-use crate::{Context, Result};
+use crate::{Context, OkPrint, Result};
 use futures_util::future::Future;
 use serenity::{
     all::{
@@ -30,13 +30,17 @@ const FAST_PREV: &str = "youmubot_pagination_fast_prev";
 pub trait Paginate: Send + Sized {
     /// Render the given page.
     /// Remember to add the [[interaction_buttons]] as an action row!
-    async fn render(&mut self, page: u8, ctx: &Context, m: &Message)
-        -> Result<Option<EditMessage>>;
+    async fn render(
+        &mut self,
+        page: u8,
+        ctx: &Context,
+        m: &Message,
+        btns: Vec<CreateActionRow>,
+    ) -> Result<Option<EditMessage>>;
 
-    /// The [[CreateActionRow]] for pagination.
-    fn pagination_row(&self) -> CreateActionRow {
-        CreateActionRow::Buttons(self.interaction_buttons())
-    }
+    // /// The [[CreateActionRow]] for pagination.
+    // fn pagination_row(&self) -> CreateActionRow {
+    // }
 
     /// A list of buttons to create that would interact with pagination logic.
     fn interaction_buttons(&self) -> Vec<CreateButton> {
@@ -84,7 +88,18 @@ pub async fn do_render(
     ctx: &Context,
     m: &mut Message,
 ) -> Result<bool> {
-    if let Some(edit) = p.render(page, ctx, m).await? {
+    let btns = vec![CreateActionRow::Buttons(p.interaction_buttons())];
+    do_render_with_btns(p, page, ctx, m, btns).await
+}
+
+async fn do_render_with_btns(
+    p: &mut impl Paginate,
+    page: u8,
+    ctx: &Context,
+    m: &mut Message,
+    btns: Vec<CreateActionRow>,
+) -> Result<bool> {
+    if let Some(edit) = p.render(page, ctx, m, btns).await? {
         m.edit(ctx, edit).await?;
         Ok(true)
     } else {
@@ -97,7 +112,7 @@ pub fn paginate_from_fn(
             u8,
             &'m Context,
             &'m Message,
-            CreateActionRow,
+            Vec<CreateActionRow>,
         ) -> std::pin::Pin<
             Box<dyn Future<Output = Result<Option<EditMessage>>> + Send + 'm>,
         > + Send,
@@ -132,11 +147,12 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
         page: u8,
         ctx: &Context,
         m: &Message,
+        btns: Vec<CreateActionRow>,
     ) -> Result<Option<EditMessage>> {
         if page as usize >= self.page_count {
             return Ok(None);
         }
-        self.inner.render(page, ctx, m).await
+        self.inner.render(page, ctx, m, btns).await
     }
 
     async fn handle_reaction(
@@ -167,7 +183,7 @@ where
             u8,
             &'m Context,
             &'m Message,
-            CreateActionRow,
+            Vec<CreateActionRow>,
         ) -> std::pin::Pin<
             Box<dyn Future<Output = Result<Option<EditMessage>>> + Send + 'm>,
         > + Send,
@@ -177,8 +193,8 @@ where
         page: u8,
         ctx: &Context,
         m: &Message,
+        btns: Vec<CreateActionRow>,
     ) -> Result<Option<EditMessage>> {
-        let btns = self.pagination_row();
         self(page, ctx, m, btns).await
     }
 }
@@ -249,6 +265,10 @@ pub async fn paginate_with_first_message(
         }
     };
 
+    // Render one last time with no buttons
+    do_render_with_btns(&mut pager, page, ctx, &mut message, vec![])
+        .await
+        .pls_ok();
     Paginator::pop(ctx, &message).await?;
 
     res
@@ -279,14 +299,11 @@ pub async fn handle_pagination_reaction(
         FAST_NEXT => (pages.unwrap() as u8 - 1).min(page + fast),
         _ => return Ok(page),
     };
-    Ok(
-        if let Some(edit) = pager.render(new_page, ctx, message).await? {
-            message.edit(ctx, edit).await?;
-            new_page
-        } else {
-            page
-        },
-    )
+    Ok(if do_render(pager, new_page, ctx, message).await? {
+        new_page
+    } else {
+        page
+    })
 }
 
 #[derive(Debug, Clone)]

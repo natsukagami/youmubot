@@ -53,7 +53,7 @@ mod scores {
 
     mod grid {
         use pagination::paginate_with_first_message;
-        use serenity::all::GuildId;
+        use serenity::all::{CreateActionRow, GuildId};
         use serenity::builder::EditMessage;
         use serenity::model::channel::Message;
 
@@ -97,6 +97,7 @@ mod scores {
                 page: u8,
                 ctx: &Context,
                 msg: &Message,
+                btns: Vec<CreateActionRow>,
             ) -> Result<Option<EditMessage>> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
                 let page = page as usize;
@@ -127,7 +128,12 @@ mod scores {
                                 .footer(format!("Page {}/{}", page + 1, self.scores.len()))
                                 .build()
                         })
-                        .components(vec![score_components(self.guild_id), self.pagination_row()]),
+                        .components(
+                            vec![score_components(self.guild_id)]
+                                .into_iter()
+                                .chain(btns)
+                                .collect(),
+                        ),
                 ))
             }
 
@@ -141,6 +147,7 @@ mod scores {
         use std::borrow::Cow;
 
         use pagination::paginate_with_first_message;
+        use serenity::all::CreateActionRow;
         use serenity::builder::EditMessage;
         use serenity::model::channel::Message;
 
@@ -196,6 +203,7 @@ mod scores {
                 page: u8,
                 ctx: &Context,
                 _: &Message,
+                btns: Vec<CreateActionRow>,
             ) -> Result<Option<EditMessage>> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
@@ -323,11 +331,7 @@ mod scores {
                     .push_line("[?] means pp was predicted by oppai-rs.")
                     .build();
 
-                Ok(Some(
-                    EditMessage::new()
-                        .content(content)
-                        .components(vec![self.pagination_row()]),
-                ))
+                Ok(Some(EditMessage::new().content(content).components(btns)))
             }
 
             fn len(&self) -> Option<usize> {
@@ -339,7 +343,7 @@ mod scores {
 
 mod beatmapset {
     use serenity::{
-        all::{CreateButton, GuildId},
+        all::{CreateActionRow, CreateButton, GuildId},
         builder::{CreateEmbedFooter, EditMessage},
         model::channel::{Message, ReactionType},
     };
@@ -433,6 +437,7 @@ mod beatmapset {
             page: u8,
             ctx: &Context,
             msg: &Message,
+            btns: Vec<CreateActionRow>,
         ) -> Result<Option<EditMessage>> {
             let page = page as usize;
             if page == self.maps.len() {
@@ -442,7 +447,7 @@ mod beatmapset {
                             &self.maps[..],
                             self.mode,
                         ))
-                        .components(vec![self.pagination_row()]),
+                        .components(btns),
                 ));
             }
             if page > self.maps.len() {
@@ -489,7 +494,7 @@ mod beatmapset {
                                ))
                            })
                    )
-                   .components(vec![beatmap_components(map.mode, self.guild_id), self.pagination_row()]),
+                   .components(std::iter::once(beatmap_components(map.mode, self.guild_id)).chain(btns).collect()),
             ))
         }
 

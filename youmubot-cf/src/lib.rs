@@ -222,9 +222,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                     ))
                     .build();
 
-                Ok(Some(
-                    EditMessage::new().content(content).components(vec![btns]),
-                ))
+                Ok(Some(EditMessage::new().content(content).components(btns)))
             })
         })
         .with_page_count(total_pages),
@@ -390,9 +388,7 @@ pub(crate) async fn contest_rank_table(
                     .push_line(format!("Page **{}/{}**", page + 1, total_pages))
                     .build();
 
-                Ok(Some(
-                    EditMessage::new().content(content).components(vec![btns]),
-                ))
+                Ok(Some(EditMessage::new().content(content).components(btns)))
             })
         })
         .with_page_count(total_pages),
