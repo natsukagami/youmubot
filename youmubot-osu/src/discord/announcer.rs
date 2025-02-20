@@ -304,7 +304,7 @@ impl<'a> CollectedScore<'a> {
             .get_beatmap_default(self.score.beatmap_id)
             .await?;
         let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
-        Ok((BeatmapWithMode(beatmap, self.mode), content))
+        Ok((BeatmapWithMode(beatmap, Some(self.mode)), content))
     }
 
     async fn send_message_to(

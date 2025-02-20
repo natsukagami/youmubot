@@ -25,10 +25,13 @@ use youmubot_prelude::{
 };
 
 use crate::{
-    discord::{db::OsuUser, display::ScoreListStyle, oppai_cache::Stats, BeatmapWithMode},
-    models::{Mode, Mods},
+    discord::{
+        db::OsuUser, display::ScoreListStyle, link_parser::EmbedType, oppai_cache::Stats,
+        time_before_now,
+    },
+    models::Mode,
     request::UserID,
-    Score,
+    Beatmap, Score,
 };
 
 use super::{ModeArg, OsuEnv};
@@ -376,20 +379,23 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
     let style = args.single::<ScoreListStyle>().unwrap_or_default();
     let guild = msg.guild_id.expect("Guild-only command");
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let Some((bm, _)) =
-        super::load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await
+    let Some(beatmap) = super::load_beatmap(
+        &env,
+        msg.channel_id,
+        msg.referenced_message.as_ref(),
+        crate::discord::LoadRequest::Any,
+    )
+    .await
     else {
         msg.reply(&ctx, "No beatmap queried on this channel.")
             .await?;
         return Ok(());
     };
-
-    let scores = {
-        let reaction = msg.react(ctx, '⌛').await?;
-        let s = get_leaderboard(ctx, &env, &bm, show_all, order, guild).await?;
-        reaction.delete(&ctx).await?;
-        s
-    };
+    let reaction = msg.react(ctx, '⌛').await?;
+    let scoreboard_msg = beatmap.mention();
+    let (scores, show_diff) =
+        get_leaderboard_from_embed(ctx, &env, beatmap, None, show_all, order, guild).await?;
+    reaction.delete(&ctx).await?;
 
     if scores.is_empty() {
         msg.reply(&ctx, "No scores have been recorded for this beatmap.")
@@ -402,28 +408,24 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
             let reply = msg
                 .reply(
                     &ctx,
-                    format!(
-                        "⌛ Loading top scores on beatmap `{}`...",
-                        bm.short_link(Mods::NOMOD)
-                    ),
+                    format!("⌛ Loading top scores on {}...", scoreboard_msg),
                 )
                 .await?;
-            display_rankings_table(ctx, reply, scores, &bm, order).await?;
+            display_rankings_table(ctx, reply, scores, show_diff, order).await?;
         }
         ScoreListStyle::Grid => {
             let reply = msg
                 .reply(
                     &ctx,
                     format!(
-                        "Here are the top scores on beatmap `{}` of this server!",
-                        bm.short_link(Mods::NOMOD)
+                        "Here are the top scores on {} of this server!",
+                        scoreboard_msg
                     ),
                 )
                 .await?;
             style
                 .display_scores(
                     scores.into_iter().map(|s| s.score).collect(),
-                    bm.1,
                     ctx,
                     Some(guild),
                     reply,
@@ -439,19 +441,30 @@ pub struct Ranking {
     pub pp: f64,        // calculated pp or score pp
     pub official: bool, // official = pp is from bancho
     pub member: Arc<String>,
+    pub beatmap: Arc<Beatmap>,
     pub score: Score,
+    pub star: f64,
 }
 
-pub async fn get_leaderboard(
+async fn get_leaderboard(
     ctx: &Context,
     env: &OsuEnv,
-    bm: &BeatmapWithMode,
+    beatmaps: impl IntoIterator<Item = Beatmap>,
+    mode_override: Option<Mode>,
     show_unranked: bool,
     order: OrderBy,
     guild: GuildId,
 ) -> Result<Vec<Ranking>> {
-    let BeatmapWithMode(beatmap, mode) = bm;
-    let oppai_map = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
+    let oppai_maps = beatmaps
+        .into_iter()
+        .map(|b| async move {
+            let op = env.oppai.get_beatmap(b.beatmap_id).await?;
+            let r: Result<_> = Ok((Arc::new(b), op));
+            r
+        })
+        .collect::<stream::FuturesOrdered<_>>()
+        .try_collect::<Vec<_>>()
+        .await?;
     let osu_users = env
         .saved_users
         .all()
@@ -465,39 +478,48 @@ pub async fn get_leaderboard(
         .query_members(&ctx, guild)
         .await?
         .iter()
-        .filter_map(|m| osu_users.get(&m.user.id).map(|ou| (m.distinct(), ou.id)))
-        .map(|(mem, osu_id)| {
-            env.client
-                .scores(bm.0.beatmap_id, move |f| {
-                    f.user(UserID::ID(osu_id)).mode(bm.1)
-                })
-                .map(|r| Some((mem, r.ok()?)))
+        .filter_map(|m| {
+            osu_users
+                .get(&m.user.id)
+                .map(|ou| (Arc::new(m.distinct()), ou.id))
+        })
+        .flat_map(|(mem, osu_id)| {
+            oppai_maps.iter().map(move |(b, op)| {
+                let mem = mem.clone();
+                env.client
+                    .scores(b.beatmap_id, move |f| {
+                        f.user(UserID::ID(osu_id)).mode(mode_override)
+                    })
+                    .map(move |r| Some((b, op, mem.clone(), r.ok()?)))
+            })
         })
         .collect::<FuturesUnordered<_>>()
         .filter_map(future::ready)
         .collect::<Vec<_>>()
         .await
         .into_iter()
-        .flat_map(|(mem, scores)| {
-            let mem = Arc::new(mem);
+        .flat_map(|(b, op, mem, scores)| {
             scores
                 .into_iter()
                 .map(|score| {
                     let pp = score.pp.map(|v| (true, v)).unwrap_or_else(|| {
                         (
                             false,
-                            oppai_map.get_pp_from(
-                                *mode,
+                            op.get_pp_from(
+                                mode_override.unwrap_or(b.mode),
                                 Some(score.max_combo),
                                 Stats::Raw(&score.statistics),
                                 &score.mods,
                             ),
                         )
                     });
+                    let info = op.get_info_with(score.mode, &score.mods);
                     Ranking {
                         pp: pp.1,
                         official: pp.0,
+                        beatmap: b.clone(),
                         member: mem.clone(),
+                        star: info.attrs.stars(),
                         score,
                     }
                 })
@@ -536,11 +558,55 @@ pub async fn get_leaderboard(
     Ok(scores)
 }
 
+pub async fn get_leaderboard_from_embed(
+    ctx: &Context,
+    env: &OsuEnv,
+    embed: EmbedType,
+    mode_override: Option<Mode>,
+    show_unranked: bool,
+    order: OrderBy,
+    guild: GuildId,
+) -> Result<(Vec<Ranking>, bool /* should show diff */)> {
+    Ok(match embed {
+        EmbedType::Beatmap(map, mode, _, _) => {
+            let iter = std::iter::once(*map);
+            let scores = get_leaderboard(
+                ctx,
+                &env,
+                iter,
+                mode_override.or(mode),
+                show_unranked,
+                order,
+                guild,
+            )
+            .await?;
+            (scores, false)
+        }
+        EmbedType::Beatmapset(maps, _) if maps.is_empty() => (vec![], false),
+        EmbedType::Beatmapset(maps, mode) => {
+            let show_diff = maps.len() > 1;
+            (
+                get_leaderboard(
+                    ctx,
+                    &env,
+                    maps,
+                    mode_override.or(mode),
+                    show_unranked,
+                    order,
+                    guild,
+                )
+                .await?,
+                show_diff,
+            )
+        }
+    })
+}
+
 pub async fn display_rankings_table(
     ctx: &Context,
     to: Message,
     scores: Vec<Ranking>,
-    bm: &BeatmapWithMode,
+    show_diff: bool,
     order: OrderBy,
 ) -> Result<()> {
     let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
@@ -558,14 +624,33 @@ pub async fn display_rankings_table(
                 return Box::pin(future::ready(Ok(false)));
             }
             let scores = scores[start..end].to_vec();
-            let bm = (bm.0.clone(), bm.1);
             let header = header.clone();
             Box::pin(async move {
-                const SCORE_HEADERS: [&str; 8] =
-                    ["#", "Score", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
-                const PP_HEADERS: [&str; 8] =
-                    ["#", "PP", "Mods", "Rank", "Acc", "Combo", "Miss", "User"];
-                const ALIGNS: [Align; 8] = [Right, Right, Right, Right, Right, Right, Right, Left];
+                let headers: [&'static str; 9] = [
+                    "#",
+                    match order {
+                        OrderBy::PP => "pp",
+                        OrderBy::Score => "Score",
+                    },
+                    if show_diff { "Map" } else { "Mods" },
+                    "Rank",
+                    "Acc",
+                    "Combo",
+                    "Miss",
+                    "When",
+                    "User",
+                ];
+                let aligns: [Align; 9] = [
+                    Right,
+                    Right,
+                    if show_diff { Left } else { Right },
+                    Right,
+                    Right,
+                    Right,
+                    Right,
+                    Right,
+                    Left,
+                ];
 
                 let score_arr = scores
                     .iter()
@@ -575,9 +660,11 @@ pub async fn display_rankings_table(
                             id,
                             Ranking {
                                 pp,
+                                beatmap,
                                 official,
                                 member,
                                 score,
+                                star,
                             },
                         )| {
                             [
@@ -594,21 +681,35 @@ pub async fn display_rankings_table(
                                         })
                                     }
                                 },
-                                score.mods.to_string(),
+                                if show_diff {
+                                    let trimmed_diff = if beatmap.difficulty_name.len() > 20 {
+                                        let mut s = beatmap.difficulty_name.clone();
+                                        s.truncate(17);
+                                        s + "..."
+                                    } else {
+                                        beatmap.difficulty_name.clone()
+                                    };
+                                    format!(
+                                        "[{:.2}*] {} {}",
+                                        star,
+                                        trimmed_diff,
+                                        score.mods.to_string()
+                                    )
+                                } else {
+                                    score.mods.to_string()
+                                },
                                 score.rank.to_string(),
-                                format!("{:.2}%", score.accuracy(bm.1)),
+                                format!("{:.2}%", score.accuracy(score.mode)),
                                 format!("{}x", score.max_combo),
                                 format!("{}", score.count_miss),
+                                time_before_now(&score.date),
                                 member.to_string(),
                             ]
                         },
                     )
                     .collect::<Vec<_>>();
 
-                let score_table = match order {
-                    OrderBy::PP => table_formatting(&PP_HEADERS, &ALIGNS, score_arr),
-                    OrderBy::Score => table_formatting(&SCORE_HEADERS, &ALIGNS, score_arr),
-                };
+                let score_table = table_formatting(&headers, &aligns, score_arr);
                 let content = MessageBuilder::new()
                     .push_line(header.as_ref())
                     .push_line(score_table)
@@ -617,15 +718,6 @@ pub async fn display_rankings_table(
                         page + 1,
                         total_pages,
                     ))
-                    .push(
-                        if let crate::models::ApprovalStatus::Ranked(_) = bm.0.approval {
-                            ""
-                        } else if order == OrderBy::PP {
-                            "PP was calculated by `oppai-rs`, **not** official values.\n"
-                        } else {
-                            ""
-                        },
-                    )
                     .build();
 
                 m.edit(&ctx, EditMessage::new().content(content)).await?;

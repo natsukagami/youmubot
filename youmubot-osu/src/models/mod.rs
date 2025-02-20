@@ -452,7 +452,7 @@ impl Beatmap {
 
     pub fn mention(&self, override_mode: Option<Mode>, mods: &Mods) -> String {
         format!(
-            "[`{}`]({})",
+            "[`{}`](<{}>)",
             self.short_link(override_mode, mods),
             self.mode_link(override_mode),
         )

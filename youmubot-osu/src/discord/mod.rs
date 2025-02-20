@@ -2,7 +2,9 @@ use std::{borrow::Borrow, collections::HashMap as Map, str::FromStr, sync::Arc};
 
 use chrono::Utc;
 use futures_util::join;
+
 use interaction::{beatmap_components, score_components};
+use link_parser::EmbedType;
 use oppai_cache::BeatmapInfoWithPP;
 use rand::seq::IteratorRandom;
 use serenity::{
@@ -224,15 +226,11 @@ pub async fn mania(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct BeatmapWithMode(pub Beatmap, pub Mode);
+pub(crate) struct BeatmapWithMode(pub Beatmap, pub Option<Mode>);
 
 impl BeatmapWithMode {
-    pub fn short_link(&self, mods: &Mods) -> String {
-        self.0.short_link(Some(self.1), mods)
-    }
-
     fn mode(&self) -> Mode {
-        self.1
+        self.1.unwrap_or(self.0.mode)
     }
 }
 
@@ -339,7 +337,7 @@ pub(crate) async fn handle_save_respond(
     let osu_client = &env.client;
     async fn check(client: &OsuHttpClient, u: &User, mode: Mode, map_id: u64) -> Result<bool> {
         Ok(client
-            .user_recent(UserID::ID(u.id), |f| f.mode(Mode::Std).limit(1))
+            .user_recent(UserID::ID(u.id), |f| f.mode(mode).limit(1))
             .await?
             .into_iter()
             .take(1)
@@ -518,7 +516,7 @@ impl UserExtras {
                 .get_beatmap(s.beatmap_id)
                 .await?
                 .get_info_with(mode, &s.mods);
-            Some((s, BeatmapWithMode(beatmap, mode), info))
+            Some((s, BeatmapWithMode(beatmap, Some(mode)), info))
         } else {
             None
         };
@@ -691,7 +689,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 )
                 .await?;
             style
-                .display_scores(plays, mode, ctx, reply.guild_id, reply)
+                .display_scores(plays, ctx, reply.guild_id, reply)
                 .await?;
         }
         Nth::Nth(nth) => {
@@ -705,7 +703,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .count();
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
-            let beatmap_mode = BeatmapWithMode(beatmap, mode);
+            let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
 
             msg.channel_id
                 .send_message(
@@ -764,7 +762,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 )
                 .await?;
             style
-                .display_scores(plays, mode, ctx, reply.guild_id, reply)
+                .display_scores(plays, ctx, reply.guild_id, reply)
                 .await?;
         }
         Nth::Nth(nth) => {
@@ -773,7 +771,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             };
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
-            let beatmap_mode = BeatmapWithMode(beatmap, mode);
+            let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
 
             msg.channel_id
                 .send_message(
@@ -807,46 +805,107 @@ impl FromStr for OptBeatmapSet {
     }
 }
 
+pub(crate) async fn load_beatmap_from_channel(
+    env: &OsuEnv,
+    channel_id: serenity::all::ChannelId,
+) -> Option<EmbedType> {
+    let BeatmapWithMode(b, m) = cache::get_beatmap(env, channel_id).await.ok().flatten()?;
+    let mods = Mods::NOMOD.clone();
+    let info = env
+        .oppai
+        .get_beatmap(b.beatmap_id)
+        .await
+        .pls_ok()?
+        .get_possible_pp_with(m.unwrap_or(b.mode), &mods);
+    Some(EmbedType::Beatmap(
+        Box::new(b),
+        m,
+        info,
+        Mods::NOMOD.clone(),
+    ))
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Default)]
+pub(crate) enum LoadRequest {
+    #[default]
+    Any,
+    Beatmap,
+    Beatmapset,
+}
+
 /// Load the mentioned beatmap from the given message.
 pub(crate) async fn load_beatmap(
     env: &OsuEnv,
     channel_id: serenity::all::ChannelId,
     referenced: Option<&impl Borrow<Message>>,
-) -> Option<(BeatmapWithMode, Option<Mods>)> {
-    use link_parser::{parse_short_links, EmbedType};
-    if let Some(replied) = referenced {
+    req: LoadRequest,
+) -> Option<EmbedType> {
+    /* If the request is Beatmapset, we keep a fallback match on beatmap, and later convert it to a beatmapset. */
+    let mut fallback: Option<EmbedType> = None;
+    async fn collect_referenced(
+        env: &OsuEnv,
+        fallback: &mut Option<EmbedType>,
+        req: LoadRequest,
+        replied: &impl Borrow<Message>,
+    ) -> Option<EmbedType> {
+        use link_parser::*;
         async fn try_content(
             env: &OsuEnv,
+            req: LoadRequest,
+            fallback: &mut Option<EmbedType>,
             content: &str,
-        ) -> Option<(BeatmapWithMode, Option<Mods>)> {
-            let tp = parse_short_links(env, content).next().await?;
-            match tp.embed {
-                EmbedType::Beatmap(b, _, mods) => {
-                    let mode = tp.mode.unwrap_or(b.mode);
-                    Some((BeatmapWithMode(*b, mode), Some(mods)))
-                }
-                _ => None,
-            }
+        ) -> Option<EmbedType> {
+            parse_short_links(env, content)
+                .filter(|e| {
+                    future::ready(match &e.embed {
+                        EmbedType::Beatmap(_, _, _, _) => {
+                            if fallback.is_none() {
+                                fallback.replace(e.embed.clone());
+                            }
+                            req == LoadRequest::Beatmap || req == LoadRequest::Any
+                        }
+                        EmbedType::Beatmapset(_, _) => {
+                            req == LoadRequest::Beatmapset || req == LoadRequest::Any
+                        }
+                    })
+                })
+                .next()
+                .await
+                .map(|v| v.embed)
+        }
+        if let Some(v) = try_content(env, req, fallback, &replied.borrow().content).await {
+            return Some(v);
         }
         for embed in &replied.borrow().embeds {
             for field in &embed.fields {
-                if let Some(v) = try_content(env, &field.value).await {
+                if let Some(v) = try_content(env, req, fallback, &field.value).await {
                     return Some(v);
                 }
             }
             if let Some(desc) = &embed.description {
-                if let Some(v) = try_content(env, desc).await {
+                if let Some(v) = try_content(env, req, fallback, desc).await {
                     return Some(v);
                 }
             }
         }
-        if let Some(v) = try_content(env, &replied.borrow().content).await {
-            return Some(v);
-        }
+        None
     }
 
-    let b = cache::get_beatmap(env, channel_id).await.ok().flatten();
-    b.map(|b| (b, None))
+    let embed = match referenced {
+        Some(r) => collect_referenced(env, &mut fallback, req, r).await,
+        None => load_beatmap_from_channel(env, channel_id).await,
+    };
+
+    if req == LoadRequest::Beatmapset {
+        if embed.is_none() {
+            if let Some(EmbedType::Beatmap(b, mode, _, _)) = fallback {
+                return EmbedType::from_beatmapset_id(env, b.beatmapset_id, mode)
+                    .await
+                    .ok();
+            }
+        }
+    }
+    embed
 }
 
 #[command]
@@ -858,58 +917,56 @@ pub(crate) async fn load_beatmap(
 pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-    let b = load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await;
     let beatmapset = args.find::<OptBeatmapSet>().is_ok();
+    let Some(embed) = load_beatmap(
+        &env,
+        msg.channel_id,
+        msg.referenced_message.as_ref(),
+        if beatmapset {
+            LoadRequest::Beatmapset
+        } else {
+            LoadRequest::Any
+        },
+    )
+    .await
+    else {
+        msg.reply(&ctx, "No beatmap was queried on this channel.")
+            .await?;
+        return Ok(());
+    };
+    let umods = args.find::<UnparsedMods>().ok();
 
-    match b {
-        Some((bm, mods_def)) => {
-            let mods = args.find::<UnparsedMods>().ok();
-            if beatmapset {
-                let beatmapset = env
-                    .beatmaps
-                    .get_beatmapset(
-                        bm.0.beatmapset_id,
-                        None, /* Note that we cannot know, so don't force that */
-                    )
-                    .await?;
-                let reply = msg
-                    .reply(&ctx, "Here is the beatmapset you requested!")
-                    .await?;
-                display::display_beatmapset(
-                    ctx.clone(),
-                    beatmapset,
-                    None,
-                    mods,
-                    msg.guild_id,
-                    reply,
-                )
-                .await?;
-                return Ok(());
-            }
-            let mods = match mods {
-                Some(m) => m.to_mods(bm.mode())?,
-                None => mods_def.unwrap_or_default(),
+    let content_type = embed.mention();
+    match embed {
+        EmbedType::Beatmap(b, mode_, _, mods) => {
+            let mode = mode_.unwrap_or(b.mode);
+            let mods = match umods {
+                Some(m) => m.to_mods(mode)?,
+                None => mods,
             };
             let info = env
                 .oppai
-                .get_beatmap(bm.0.beatmap_id)
+                .get_beatmap(b.beatmap_id)
                 .await?
-                .get_possible_pp_with(bm.1, &mods);
+                .get_possible_pp_with(mode, &mods);
             msg.channel_id
                 .send_message(
                     &ctx,
                     CreateMessage::new()
-                        .content("Here is the beatmap you requested!")
-                        .embed(beatmap_embed(&bm.0, bm.1, &mods, &info))
-                        .components(vec![beatmap_components(bm.1, msg.guild_id)])
+                        .content(format!("Information for {}", content_type))
+                        .embed(beatmap_embed(&b, mode, &mods, &info))
+                        .components(vec![beatmap_components(mode, msg.guild_id)])
                         .reference_message(msg),
                 )
                 .await?;
             // Save the beatmap...
-            cache::save_beatmap(&env, msg.channel_id, &bm).await?;
+            cache::save_beatmap(&env, msg.channel_id, &BeatmapWithMode(*b, mode_)).await?;
         }
-        None => {
-            msg.reply(&ctx, "No beatmap was queried on this channel.")
+        EmbedType::Beatmapset(beatmaps, mode) => {
+            let reply = msg
+                .reply(&ctx, format!("Information for {}", content_type))
+                .await?;
+            display::display_beatmapset(ctx.clone(), beatmaps, mode, umods, msg.guild_id, reply)
                 .await?;
         }
     }
@@ -924,26 +981,27 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[max_args(3)]
 pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-    let bm = load_beatmap(&env, msg.channel_id, msg.referenced_message.as_ref()).await;
-
-    let bm = match bm {
-        Some((bm, _)) => bm,
-        None => {
-            msg.reply(&ctx, "No beatmap queried on this channel.")
-                .await?;
-            return Ok(());
-        }
+    let Some(embed) = load_beatmap(
+        &env,
+        msg.channel_id,
+        msg.referenced_message.as_ref(),
+        LoadRequest::Any,
+    )
+    .await
+    else {
+        msg.reply(&ctx, "No beatmap queried on this channel.")
+            .await?;
+        return Ok(());
     };
-    let mode = bm.1;
+
     let umods = args.find::<UnparsedMods>().ok();
-    let mods = umods.clone().unwrap_or_default().to_mods(mode)?;
     let style = args
         .single::<ScoreListStyle>()
         .unwrap_or(ScoreListStyle::Grid);
     let username_arg = args.single::<UsernameArg>().ok();
     let (_, user) = user_header_from_args(username_arg, &env, msg).await?;
 
-    let scores = do_check(&env, &vec![bm.clone()], umods, &user).await?;
+    let scores = do_check(&env, &embed, umods, &user).await?;
 
     if scores.is_empty() {
         msg.reply(&ctx, "No scores found").await?;
@@ -955,12 +1013,12 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             format!(
                 "Here are the scores by `{}` on {}!",
                 &user.username,
-                bm.0.mention(Some(bm.1), &mods)
+                embed.mention()
             ),
         )
         .await?;
     style
-        .display_scores(scores, mode, ctx, msg.guild_id, reply)
+        .display_scores(scores, ctx, msg.guild_id, reply)
         .await?;
 
     Ok(())
@@ -968,30 +1026,41 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 
 pub(crate) async fn do_check(
     env: &OsuEnv,
-    bm: &[BeatmapWithMode],
+    embed: &EmbedType,
     mods: Option<UnparsedMods>,
     user: &UserHeader,
 ) -> Result<Vec<Score>> {
-    let osu_client = &env.client;
+    async fn fetch_for_beatmap(
+        env: &OsuEnv,
+        b: &Beatmap,
+        mode_override: Option<Mode>,
+        mods: &Option<UnparsedMods>,
+        user: &UserHeader,
+    ) -> Result<Vec<Score>> {
+        let osu_client = &env.client;
+        let m = mode_override.unwrap_or(b.mode);
+        let mods = mods.clone().and_then(|t| t.to_mods(m).ok());
+        osu_client
+            .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
+            .map_ok(move |mut v| {
+                v.retain(|s| mods.as_ref().is_none_or(|m| m.contains(&s.mods)));
+                v
+            })
+            .await
+    }
 
-    let mut scores = bm
-        .iter()
-        .map(|bm| {
-            let BeatmapWithMode(b, m) = bm;
-            let mods = mods.clone().and_then(|t| t.to_mods(*m).ok());
-            osu_client
-                .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(*m))
-                .map_ok(move |mut v| {
-                    v.retain(|s| mods.as_ref().is_none_or(|m| m.contains(&s.mods)));
-                    v
-                })
-        })
-        .collect::<FuturesUnordered<_>>()
-        .try_collect::<Vec<_>>()
-        .await?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let mut scores = match embed {
+        EmbedType::Beatmap(beatmap, mode, _, _) => {
+            fetch_for_beatmap(env, &**beatmap, *mode, &mods, user).await?
+        }
+        EmbedType::Beatmapset(vec, mode) => vec
+            .iter()
+            .map(|b| fetch_for_beatmap(env, b, *mode, &mods, user))
+            .collect::<FuturesUnordered<_>>()
+            .try_collect::<Vec<_>>()
+            .await?
+            .concat(),
+    };
     scores.sort_by(|a, b| {
         b.pp.unwrap_or(-1.0)
             .partial_cmp(&a.pp.unwrap_or(-1.0))
@@ -1031,7 +1100,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
 
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
-            let beatmap = BeatmapWithMode(beatmap, mode);
+            let beatmap = BeatmapWithMode(beatmap, Some(mode));
 
             msg.channel_id
                 .send_message(&ctx, {
@@ -1061,7 +1130,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 )
                 .await?;
             style
-                .display_scores(plays, mode, ctx, msg.guild_id, reply)
+                .display_scores(plays, ctx, msg.guild_id, reply)
                 .await?;
         }
     }
@@ -1181,4 +1250,21 @@ pub(in crate::discord) async fn calculate_weighted_map_age(
         .sum::<f64>()
         / scales().iter().take(scores.len()).sum::<f64>())
     .floor() as i64)
+}
+
+pub(crate) fn time_before_now(time: &chrono::DateTime<Utc>) -> String {
+    let dur = Utc::now() - time;
+    if dur.num_days() >= 365 {
+        format!("{}Y", dur.num_days() / 365)
+    } else if dur.num_days() >= 30 {
+        format!("{}M", dur.num_days() / 30)
+    } else if dur.num_days() >= 1 {
+        format!("{}d", dur.num_days())
+    } else if dur.num_hours() >= 1 {
+        format!("{}h", dur.num_hours())
+    } else if dur.num_minutes() >= 1 {
+        format!("{}m", dur.num_minutes())
+    } else {
+        format!("{}s", dur.num_seconds())
+    }
 }

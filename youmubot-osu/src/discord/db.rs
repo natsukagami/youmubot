@@ -81,11 +81,17 @@ impl OsuLastBeatmap {
 }
 
 impl OsuLastBeatmap {
-    pub async fn by_channel(&self, id: impl Into<ChannelId>) -> Result<Option<(Beatmap, Mode)>> {
+    pub async fn by_channel(
+        &self,
+        id: impl Into<ChannelId>,
+    ) -> Result<Option<(Beatmap, Option<Mode>)>> {
         let last_beatmap =
             models::LastBeatmap::by_channel_id(id.into().get() as i64, &self.0).await?;
         Ok(match last_beatmap {
-            Some(lb) => Some((bincode::deserialize(&lb.beatmap[..])?, lb.mode.into())),
+            Some(lb) => Some((
+                bincode::deserialize(&lb.beatmap[..])?,
+                lb.mode.map(|s| s.into()),
+            )),
             None => None,
         })
     }
@@ -94,12 +100,12 @@ impl OsuLastBeatmap {
         &self,
         channel: impl Into<ChannelId>,
         beatmap: &Beatmap,
-        mode: Mode,
+        mode: Option<Mode>,
     ) -> Result<()> {
         let b = models::LastBeatmap {
             channel_id: channel.into().get() as i64,
             beatmap: bincode::serialize(beatmap)?,
-            mode: mode as u8,
+            mode: mode.map(|mode| mode as u8),
         };
         b.store(&self.0).await?;
         Ok(())

@@ -9,15 +9,24 @@ use youmubot_prelude::*;
 
 use super::{oppai_cache::BeatmapInfoWithPP, OsuEnv};
 
+#[derive(Debug, Clone)]
 pub enum EmbedType {
-    Beatmap(Box<Beatmap>, BeatmapInfoWithPP, Mods),
-    Beatmapset(Vec<Beatmap>),
+    Beatmap(Box<Beatmap>, Option<Mode>, BeatmapInfoWithPP, Mods),
+    Beatmapset(Vec<Beatmap>, Option<Mode>),
+}
+
+impl EmbedType {
+    pub fn mention(&self) -> String {
+        match self {
+            EmbedType::Beatmap(beatmap, mode, _, mods) => beatmap.mention(*mode, mods),
+            EmbedType::Beatmapset(vec, _) => vec[0].beatmapset_mention(),
+        }
+    }
 }
 
 pub struct ToPrint<'a> {
     pub embed: EmbedType,
     pub link: &'a str,
-    pub mode: Option<Mode>,
 }
 
 lazy_static! {
@@ -66,7 +75,6 @@ pub fn parse_old_links<'a>(
             Ok(ToPrint {
                 embed,
                 link: capture.get(0).unwrap().as_str(),
-                mode,
             })
         })
         .collect::<stream::FuturesUnordered<_>>()
@@ -104,7 +112,7 @@ pub fn parse_new_links<'a>(
                     .await
                 }
             }?;
-            Ok(ToPrint { embed, link, mode })
+            Ok(ToPrint { embed, link })
         })
         .collect::<stream::FuturesUnordered<_>>()
         .filter_map(|v: Result<ToPrint>| future::ready(v.pls_ok()))
@@ -133,14 +141,14 @@ pub fn parse_short_links<'a>(
                 "s" => EmbedType::from_beatmapset_id(env, id, mode).await?,
                 _ => unreachable!(),
             };
-            Ok(ToPrint { embed, link, mode })
+            Ok(ToPrint { embed, link })
         })
         .collect::<stream::FuturesUnordered<_>>()
         .filter_map(|v: Result<ToPrint>| future::ready(v.pls_ok()))
 }
 
 impl EmbedType {
-    async fn from_beatmap_id(
+    pub(crate) async fn from_beatmap_id(
         env: &OsuEnv,
         beatmap_id: u64,
         mode: Option<Mode>,
@@ -158,16 +166,17 @@ impl EmbedType {
                 .await
                 .map(|b| b.get_possible_pp_with(mode, &mods))?
         };
-        Ok(Self::Beatmap(Box::new(bm), info, mods))
+        Ok(Self::Beatmap(Box::new(bm), mode, info, mods))
     }
 
-    async fn from_beatmapset_id(
+    pub(crate) async fn from_beatmapset_id(
         env: &OsuEnv,
         beatmapset_id: u64,
         mode: Option<Mode>,
     ) -> Result<Self> {
         Ok(Self::Beatmapset(
             env.beatmaps.get_beatmapset(beatmapset_id, mode).await?,
+            mode,
         ))
     }
 }
