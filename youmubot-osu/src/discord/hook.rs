@@ -59,7 +59,7 @@ pub fn score_hook<'a>(
                 let mode = score.mode;
                 let content = env.oppai.get_beatmap(score.beatmap_id).await?;
                 let header = env.client.user_header(score.user_id).await?.unwrap();
-                Ok((score, BeatmapWithMode(bm, mode), content, header))
+                Ok((score, BeatmapWithMode(bm, Some(mode)), content, header))
             })
             .collect::<FuturesOrdered<_>>()
             .collect::<Vec<_>>()
@@ -253,11 +253,10 @@ pub fn hook<'a>(
         to_join
             .then(|l| async move {
                 match l.embed {
-                    EmbedType::Beatmap(b, info, mods) => {
-                        handle_beatmap(ctx, &b, info, l.link, l.mode, mods, msg)
+                    EmbedType::Beatmap(b, mode, info, mods) => {
+                        handle_beatmap(ctx, &b, info, l.link, mode, mods, msg)
                             .await
                             .pls_ok();
-                        let mode = l.mode.unwrap_or(b.mode);
                         let bm = super::BeatmapWithMode(*b, mode);
 
                         let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
@@ -266,10 +265,8 @@ pub fn hook<'a>(
                             .await
                             .pls_ok();
                     }
-                    EmbedType::Beatmapset(b) => {
-                        handle_beatmapset(ctx, b, l.link, l.mode, msg)
-                            .await
-                            .pls_ok();
+                    EmbedType::Beatmapset(b, mode) => {
+                        handle_beatmapset(ctx, b, l.link, mode, msg).await.pls_ok();
                     }
                 }
             })
@@ -289,7 +286,6 @@ async fn handle_beatmap<'a, 'b>(
     mods: Mods,
     reply_to: &Message,
 ) -> Result<()> {
-    let mode = mode.unwrap_or(beatmap.mode);
     reply_to
         .channel_id
         .send_message(
@@ -299,10 +295,21 @@ async fn handle_beatmap<'a, 'b>(
                     MessageBuilder::new()
                         .push("Beatmap information for ")
                         .push_mono_safe(link)
+                        .push(" (")
+                        .push(beatmap.mention(mode, &mods))
+                        .push(")")
                         .build(),
                 )
-                .embed(beatmap_embed(beatmap, mode, &mods, &info))
-                .components(vec![beatmap_components(mode, reply_to.guild_id)])
+                .embed(beatmap_embed(
+                    beatmap,
+                    mode.unwrap_or(beatmap.mode),
+                    &mods,
+                    &info,
+                ))
+                .components(vec![beatmap_components(
+                    mode.unwrap_or(beatmap.mode),
+                    reply_to.guild_id,
+                )])
                 .reference_message(reply_to),
         )
         .await?;
@@ -317,7 +324,14 @@ async fn handle_beatmapset<'a, 'b>(
     reply_to: &Message,
 ) -> Result<()> {
     let reply = reply_to
-        .reply(ctx, format!("Beatmapset information for `{}`", link))
+        .reply(
+            ctx,
+            format!(
+                "Beatmapset information for `{}` ({})",
+                link,
+                beatmaps[0].beatmapset_mention()
+            ),
+        )
         .await?;
     crate::discord::display::display_beatmapset(
         ctx.clone(),

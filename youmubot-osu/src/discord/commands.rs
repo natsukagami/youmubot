@@ -7,6 +7,7 @@ use embeds::ScoreEmbedBuilder;
 use link_parser::EmbedType;
 use poise::{ChoiceParameter, CreateReply};
 use serenity::all::User;
+use server_rank::get_leaderboard_from_embed;
 
 /// osu!-related command group.
 #[poise::command(
@@ -260,7 +261,7 @@ async fn handle_listing<U: HasOsuEnv>(
 
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
-            let beatmap = BeatmapWithMode(beatmap, mode);
+            let beatmap = BeatmapWithMode(beatmap, Some(mode));
 
             ctx.send({
                 CreateReply::default()
@@ -297,7 +298,7 @@ async fn handle_listing<U: HasOsuEnv>(
                 .into_message()
                 .await?;
             style
-                .display_scores(plays, mode, ctx.serenity_context(), ctx.guild_id(), reply)
+                .display_scores(plays, ctx.serenity_context(), ctx.guild_id(), reply)
                 .await?;
         }
     }
@@ -321,24 +322,24 @@ async fn beatmap<U: HasOsuEnv>(
 
     // override mods and mode if needed
     match beatmap {
-        EmbedType::Beatmap(beatmap, info, bmmods) => {
-            let (beatmap, info, mods) = if mods.is_none() && mode.is_none_or(|v| v == beatmap.mode)
-            {
-                (*beatmap, info, bmmods)
-            } else {
-                let mode = mode.unwrap_or(beatmap.mode);
-                let mods = match mods {
-                    None => bmmods,
-                    Some(mods) => mods.to_mods(mode)?,
+        EmbedType::Beatmap(beatmap, bmode, info, bmmods) => {
+            let (beatmap, info, mods) =
+                if mods.is_none() && mode.is_none_or(|v| v == bmode.unwrap_or(beatmap.mode)) {
+                    (*beatmap, info, bmmods)
+                } else {
+                    let mode = bmode.unwrap_or(beatmap.mode);
+                    let mods = match mods {
+                        None => bmmods,
+                        Some(mods) => mods.to_mods(mode)?,
+                    };
+                    let beatmap = env.beatmaps.get_beatmap(beatmap.beatmap_id, mode).await?;
+                    let info = env
+                        .oppai
+                        .get_beatmap(beatmap.beatmap_id)
+                        .await?
+                        .get_possible_pp_with(mode, &mods);
+                    (beatmap, info, mods)
                 };
-                let beatmap = env.beatmaps.get_beatmap(beatmap.beatmap_id, mode).await?;
-                let info = env
-                    .oppai
-                    .get_beatmap(beatmap.beatmap_id)
-                    .await?
-                    .get_possible_pp_with(mode, &mods);
-                (beatmap, info, mods)
-            };
             ctx.send(
                 CreateReply::default()
                     .content(format!("Information for {}", beatmap.mention(mode, &mods)))
@@ -355,9 +356,14 @@ async fn beatmap<U: HasOsuEnv>(
             )
             .await?;
             let bmode = beatmap.mode.with_override(mode);
-            save_beatmap(env, ctx.channel_id(), &BeatmapWithMode(beatmap, bmode)).await?;
+            save_beatmap(
+                env,
+                ctx.channel_id(),
+                &BeatmapWithMode(beatmap, Some(bmode)),
+            )
+            .await?;
         }
-        EmbedType::Beatmapset(vec) => {
+        EmbedType::Beatmapset(vec, _) => {
             let b0 = &vec[0];
             let msg = ctx
                 .clone()
@@ -438,35 +444,11 @@ async fn check<U: HasOsuEnv>(
     ctx.defer().await?;
 
     let embed = parse_map_input(ctx.channel_id(), env, map, mode, beatmapset).await?;
-    let beatmaps = match embed {
-        EmbedType::Beatmap(beatmap, _, _) => {
-            let nmode = beatmap.mode.with_override(mode);
-            vec![BeatmapWithMode(*beatmap, nmode)]
-        }
-        EmbedType::Beatmapset(vec) => match mode {
-            None => {
-                let default_mode = vec[0].mode;
-                vec.into_iter()
-                    .filter(|b| b.mode == default_mode)
-                    .map(|b| BeatmapWithMode(b, default_mode))
-                    .collect()
-            }
-            Some(m) => vec
-                .into_iter()
-                .filter(|b| b.mode == Mode::Std || b.mode == m)
-                .map(|b| BeatmapWithMode(b, m))
-                .collect(),
-        },
-    };
 
-    let display = if beatmaps.len() == 1 {
-        beatmaps[0].0.mention(None, Mods::NOMOD)
-    } else {
-        beatmaps[0].0.beatmapset_mention()
-    };
+    let display = embed.mention();
 
     let ordering = sort.unwrap_or_default();
-    let mut scores = do_check(env, &beatmaps, mods, &args.user).await?;
+    let mut scores = do_check(env, &embed, mods, &args.user).await?;
     if scores.is_empty() {
         ctx.reply(format!(
             "No plays found for {} on {} with the required criteria.",
@@ -499,13 +481,7 @@ async fn check<U: HasOsuEnv>(
     });
 
     style
-        .display_scores(
-            scores,
-            beatmaps[0].1,
-            ctx.serenity_context(),
-            ctx.guild_id(),
-            msg,
-        )
+        .display_scores(scores, ctx.serenity_context(), ctx.guild_id(), msg)
         .await?;
 
     Ok(())
@@ -552,23 +528,20 @@ async fn leaderboard<U: HasOsuEnv>(
     let env = ctx.data().osu_env();
     let guild = ctx.partial_guild().await.unwrap();
     let style = style.unwrap_or_default();
+    let order = sort.unwrap_or_default();
 
-    let bm = match parse_map_input(ctx.channel_id(), env, map, mode, None).await? {
-        EmbedType::Beatmap(beatmap, _, _) => {
-            let nmode = beatmap.mode.with_override(mode);
-            BeatmapWithMode(*beatmap, nmode)
-        }
-        EmbedType::Beatmapset(_) => return Err(Error::msg("invalid map link")),
-    };
+    let embed = parse_map_input(ctx.channel_id(), env, map, mode, None).await?;
 
     ctx.defer().await?;
 
-    let mut scores = server_rank::get_leaderboard(
+    let scoreboard_msg = embed.mention();
+    let (mut scores, show_diff) = get_leaderboard_from_embed(
         ctx.serenity_context(),
-        env,
-        &bm,
-        unranked.unwrap_or(false),
-        sort.unwrap_or(server_rank::OrderBy::PP),
+        &env,
+        embed,
+        None,
+        unranked.unwrap_or(true),
+        order,
         guild.id,
     )
     .await?;
@@ -576,12 +549,10 @@ async fn leaderboard<U: HasOsuEnv>(
         scores.reverse();
     }
 
-    let beatmap = &bm.0;
     if scores.is_empty() {
         ctx.reply(format!(
             "No scores have been recorded in **{}** on {}.",
-            guild.name,
-            beatmap.mention(mode, Mods::NOMOD),
+            guild.name, scoreboard_msg,
         ))
         .await?;
         return Ok(());
@@ -589,8 +560,7 @@ async fn leaderboard<U: HasOsuEnv>(
 
     let header = format!(
         "Here are the top scores of **{}** on {}",
-        guild.name,
-        beatmap.mention(mode, Mods::NOMOD),
+        guild.name, scoreboard_msg,
     );
 
     match style {
@@ -600,7 +570,7 @@ async fn leaderboard<U: HasOsuEnv>(
                 ctx.serenity_context(),
                 reply,
                 scores,
-                &bm,
+                show_diff,
                 sort.unwrap_or_default(),
             )
             .await?;
@@ -610,7 +580,6 @@ async fn leaderboard<U: HasOsuEnv>(
             style
                 .display_scores(
                     scores.into_iter().map(|s| s.score).collect(),
-                    bm.1,
                     ctx.serenity_context(),
                     Some(guild.id),
                     reply,
@@ -659,18 +628,10 @@ async fn parse_map_input(
 ) -> Result<EmbedType> {
     let output = match input {
         None => {
-            let Some((BeatmapWithMode(b, mode), bmmods)) =
-                load_beatmap(env, channel_id, None as Option<&'_ Message>).await
-            else {
+            let Some(v) = load_beatmap_from_channel(env, channel_id).await else {
                 return Err(Error::msg("no beatmap mentioned in this channel"));
             };
-            let mods = bmmods.unwrap_or_else(|| Mods::NOMOD.clone());
-            let info = env
-                .oppai
-                .get_beatmap(b.beatmap_id)
-                .await?
-                .get_possible_pp_with(mode, &mods);
-            EmbedType::Beatmap(Box::new(b), info, mods)
+            v
         }
         Some(map) => {
             if let Ok(id) = map.parse::<u64>() {
@@ -685,6 +646,7 @@ async fn parse_map_input(
                     .get_possible_pp_with(beatmap.mode, Mods::NOMOD);
                 return Ok(EmbedType::Beatmap(
                     Box::new(beatmap),
+                    None,
                     info,
                     Mods::NOMOD.clone(),
                 ));
@@ -708,14 +670,14 @@ async fn parse_map_input(
     // override into beatmapset if needed
     let output = if beatmapset == Some(true) {
         match output {
-            EmbedType::Beatmap(beatmap, _, _) => {
+            EmbedType::Beatmap(beatmap, _, _, _) => {
                 let beatmaps = env
                     .beatmaps
                     .get_beatmapset(beatmap.beatmapset_id, mode)
                     .await?;
-                EmbedType::Beatmapset(beatmaps)
+                EmbedType::Beatmapset(beatmaps, mode)
             }
-            bm @ EmbedType::Beatmapset(_) => bm,
+            bm @ EmbedType::Beatmapset(_, _) => bm,
         }
     } else {
         output

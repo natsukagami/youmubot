@@ -3,7 +3,7 @@ use crate::models::*;
 pub struct LastBeatmap {
     pub channel_id: i64,
     pub beatmap: Vec<u8>,
-    pub mode: u8,
+    pub mode: Option<u8>,
 }
 
 impl LastBeatmap {

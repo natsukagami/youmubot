@@ -7,7 +7,7 @@ mod scores {
 
     use youmubot_prelude::*;
 
-    use crate::models::{Mode, Score};
+    use crate::models::Score;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, ChoiceParameter)]
     /// The style for the scores list to be displayed.
@@ -40,16 +40,13 @@ mod scores {
         pub async fn display_scores(
             self,
             scores: Vec<Score>,
-            mode: Mode,
             ctx: &Context,
             guild_id: Option<GuildId>,
             m: Message,
         ) -> Result<()> {
             match self {
-                ScoreListStyle::Table => table::display_scores_table(scores, mode, ctx, m).await,
-                ScoreListStyle::Grid => {
-                    grid::display_scores_grid(scores, mode, ctx, guild_id, m).await
-                }
+                ScoreListStyle::Table => table::display_scores_table(scores, ctx, m).await,
+                ScoreListStyle::Grid => grid::display_scores_grid(scores, ctx, guild_id, m).await,
             }
         }
     }
@@ -64,11 +61,10 @@ mod scores {
 
         use crate::discord::interaction::score_components;
         use crate::discord::{cache::save_beatmap, BeatmapWithMode, OsuEnv};
-        use crate::models::{Mode, Score};
+        use crate::models::Score;
 
         pub async fn display_scores_grid(
             scores: Vec<Score>,
-            mode: Mode,
             ctx: &Context,
             guild_id: Option<GuildId>,
             mut on: Message,
@@ -80,11 +76,7 @@ mod scores {
             }
 
             paginate_with_first_message(
-                Paginate {
-                    scores,
-                    guild_id,
-                    mode,
-                },
+                Paginate { scores, guild_id },
                 ctx,
                 on,
                 std::time::Duration::from_secs(60),
@@ -96,7 +88,6 @@ mod scores {
         pub struct Paginate {
             scores: Vec<Score>,
             guild_id: Option<GuildId>,
-            mode: Mode,
         }
 
         #[async_trait]
@@ -107,9 +98,16 @@ mod scores {
                 let score = &self.scores[page];
 
                 let hourglass = msg.react(ctx, '⌛').await?;
-                let mode = self.mode;
-                let beatmap = env.beatmaps.get_beatmap(score.beatmap_id, mode).await?;
+                let beatmap = env
+                    .beatmaps
+                    .get_beatmap(score.beatmap_id, score.mode)
+                    .await?;
                 let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
+                let mode = if beatmap.mode == score.mode {
+                    None
+                } else {
+                    Some(score.mode)
+                };
                 let bm = BeatmapWithMode(beatmap, mode);
                 let user = env
                     .client
@@ -153,12 +151,11 @@ mod scores {
         use youmubot_prelude::*;
 
         use crate::discord::oppai_cache::Stats;
-        use crate::discord::{Beatmap, BeatmapInfo, OsuEnv};
-        use crate::models::{Mode, Score};
+        use crate::discord::{time_before_now, Beatmap, BeatmapInfo, OsuEnv};
+        use crate::models::Score;
 
         pub async fn display_scores_table(
             scores: Vec<Score>,
-            mode: Mode,
             ctx: &Context,
             mut on: Message,
         ) -> Result<()> {
@@ -172,7 +169,6 @@ mod scores {
                 Paginate {
                     header: on.content.clone(),
                     scores,
-                    mode,
                 },
                 ctx,
                 on,
@@ -185,7 +181,6 @@ mod scores {
         pub struct Paginate {
             header: String,
             scores: Vec<Score>,
-            mode: Mode,
         }
 
         impl Paginate {
@@ -212,14 +207,13 @@ mod scores {
 
                 let hourglass = msg.react(ctx, '⌛').await?;
                 let plays = &self.scores[start..end];
-                let mode = self.mode;
                 let beatmaps = plays
                     .iter()
                     .map(|play| async move {
-                        let beatmap = meta_cache.get_beatmap(play.beatmap_id, mode).await?;
+                        let beatmap = meta_cache.get_beatmap(play.beatmap_id, play.mode).await?;
                         let info = {
                             let b = oppai.get_beatmap(beatmap.beatmap_id).await?;
-                            b.get_info_with(mode, &play.mods)
+                            b.get_info_with(play.mode, &play.mods)
                         };
                         Ok((beatmap, info)) as Result<(Beatmap, BeatmapInfo)>
                     })
@@ -235,7 +229,7 @@ mod scores {
                             None => {
                                 let b = oppai.get_beatmap(p.beatmap_id).await?;
                                 let pp = b.get_pp_from(
-                                    mode,
+                                    p.mode,
                                     Some(p.max_combo),
                                     Stats::Raw(&p.statistics),
                                     &p.mods,
@@ -289,15 +283,16 @@ mod scores {
                                 beatmap.artist,
                                 beatmap.title,
                                 beatmap.difficulty_name,
-                                beatmap.short_link(Some(self.mode), &play.mods),
+                                beatmap.short_link(Some(play.mode), &play.mods),
                             )
                         })
                         .unwrap_or_else(|| "FETCH_FAILED".to_owned())
                     })
                     .collect::<Vec<_>>();
 
-                const SCORE_HEADERS: [&str; 6] = ["#", "PP", "Acc", "Ranks", "Mods", "Beatmap"];
-                const SCORE_ALIGNS: [Align; 6] = [Right, Right, Right, Right, Right, Left];
+                const SCORE_HEADERS: [&str; 7] =
+                    ["#", "PP", "Acc", "Ranks", "Mods", "When", "Beatmap"];
+                const SCORE_ALIGNS: [Align; 7] = [Right, Right, Right, Right, Right, Right, Left];
 
                 let score_arr = plays
                     .iter()
@@ -308,9 +303,10 @@ mod scores {
                         [
                             format!("{}", id + start + 1),
                             pp.to_string(),
-                            format!("{:.2}%", play.accuracy(self.mode)),
+                            format!("{:.2}%", play.accuracy(play.mode)),
                             format!("{}", rank),
                             play.mods.to_string(),
+                            time_before_now(&play.date),
                             beatmap.clone(),
                         ]
                     })
@@ -486,7 +482,7 @@ mod beatmapset {
             save_beatmap(
                 &env,
                 msg.channel_id,
-                &BeatmapWithMode(map.clone(), self.mode.unwrap_or(map.mode)),
+                &BeatmapWithMode(map.clone(), self.mode),
             )
             .await
             .pls_ok();

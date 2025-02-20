@@ -14,8 +14,9 @@ use crate::{discord::embeds::FakeScore, mods::UnparsedMods, Mode, Mods, UserHead
 use super::{
     display::ScoreListStyle,
     embeds::beatmap_embed,
-    server_rank::{display_rankings_table, get_leaderboard, OrderBy},
-    BeatmapWithMode, OsuEnv,
+    link_parser::EmbedType,
+    server_rank::{display_rankings_table, get_leaderboard_from_embed, OrderBy},
+    BeatmapWithMode, LoadRequest, OsuEnv,
 };
 
 pub(super) const BTN_CHECK: &str = "youmubot_osu_btn_check";
@@ -67,7 +68,7 @@ pub fn handle_check_button<'a>(
         let msg = &*comp.message;
 
         let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-        let (bm, _) = super::load_beatmap(&env, comp.channel_id, Some(msg))
+        let embed = super::load_beatmap(&env, comp.channel_id, Some(msg), LoadRequest::Any)
             .await
             .unwrap();
         let user = match env.saved_users.by_user_id(comp.user.id).await? {
@@ -79,15 +80,15 @@ pub fn handle_check_button<'a>(
         };
         let header = UserHeader::from(user.clone());
 
-        let scores = super::do_check(&env, &vec![bm.clone()], None, &header).await?;
+        let scores = super::do_check(&env, &embed, None, &header).await?;
         if scores.is_empty() {
             comp.create_followup(
                 &ctx,
                 CreateInteractionResponseFollowup::new().content(format!(
-                    "No plays found for [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`.",
+                    "No plays found for [`{}`](<https://osu.ppy.sh/users/{}>) on {}.",
                     user.username,
                     user.id,
-                    bm.short_link(Mods::NOMOD)
+                    embed.mention(),
                 )),
             )
             .await?;
@@ -98,10 +99,10 @@ pub fn handle_check_button<'a>(
             .create_followup(
                 &ctx,
                 CreateInteractionResponseFollowup::new().content(format!(
-                    "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on `{}`!",
+                    "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on {}!",
                     user.username,
                     user.id,
-                    bm.short_link(Mods::NOMOD)
+                    embed.mention()
                 )),
             )
             .await?;
@@ -110,7 +111,7 @@ pub fn handle_check_button<'a>(
         let guild_id = comp.guild_id;
         spawn_future(async move {
             ScoreListStyle::Grid
-                .display_scores(scores, bm.1, &ctx, guild_id, reply)
+                .display_scores(scores, &ctx, guild_id, reply)
                 .await
                 .pls_ok();
         });
@@ -189,11 +190,16 @@ pub fn handle_simulate_button<'a>(
 
         let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-        let (bm, _) = super::load_beatmap(&env, comp.channel_id, Some(msg))
+        let embed = super::load_beatmap(&env, comp.channel_id, Some(msg), LoadRequest::Beatmap)
             .await
             .unwrap();
-        let b = &bm.0;
-        let mode = bm.1;
+        let (b, mode) = match embed {
+            EmbedType::Beatmap(beatmap, mode, _, _) => {
+                let mode = mode.unwrap_or(beatmap.mode);
+                (beatmap, mode)
+            }
+            EmbedType::Beatmapset(_, _) => return Err(Error::msg("Cannot find any beatmap")),
+        };
         let content = env.oppai.get_beatmap(b.beatmap_id).await?;
         let info = content.get_info_with(mode, Mods::NOMOD);
 
@@ -227,7 +233,9 @@ pub fn handle_simulate_button<'a>(
 
         query.interaction.defer(&ctx).await?;
 
-        if let Err(err) = handle_simluate_query(ctx, &env, &query, bm).await {
+        if let Err(err) =
+            handle_simluate_query(ctx, &env, &query, BeatmapWithMode(*b, Some(mode))).await
+        {
             query
                 .interaction
                 .create_followup(
@@ -251,7 +259,7 @@ async fn handle_simluate_query(
     bm: BeatmapWithMode,
 ) -> Result<()> {
     let b = &bm.0;
-    let mode = bm.1;
+    let mode = bm.1.unwrap_or(b.mode);
     let content = env.oppai.get_beatmap(b.beatmap_id).await?;
 
     let score: FakeScore = {
@@ -305,54 +313,58 @@ async fn handle_last_req(
 
     let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-    let (bm, mods_def) = super::load_beatmap(&env, comp.channel_id, Some(msg))
-        .await
-        .unwrap();
-    let BeatmapWithMode(b, m) = &bm;
+    let embed = super::load_beatmap(
+        &env,
+        comp.channel_id,
+        Some(msg),
+        if is_beatmapset_req {
+            LoadRequest::Beatmapset
+        } else {
+            LoadRequest::Any
+        },
+    )
+    .await
+    .unwrap();
 
-    let mods = mods_def.unwrap_or_default();
-
-    if is_beatmapset_req {
-        let beatmapset = env
-            .beatmaps
-            .get_beatmapset(bm.0.beatmapset_id, None)
-            .await?;
-        let reply = comp
-            .create_followup(
-                &ctx,
-                CreateInteractionResponseFollowup::new()
-                    .content(format!("Beatmapset `{}`", bm.0.beatmapset_mention())),
+    match embed {
+        EmbedType::Beatmapset(beatmapset, mode) => {
+            let reply = comp
+                .create_followup(
+                    &ctx,
+                    CreateInteractionResponseFollowup::new().content(format!(
+                        "Beatmapset `{}`",
+                        beatmapset[0].beatmapset_mention()
+                    )),
+                )
+                .await?;
+            super::display::display_beatmapset(
+                ctx.clone(),
+                beatmapset,
+                mode,
+                None,
+                comp.guild_id,
+                reply,
             )
             .await?;
-        super::display::display_beatmapset(
-            ctx.clone(),
-            beatmapset,
-            None,
-            None,
-            comp.guild_id,
-            reply,
-        )
-        .await?;
-        return Ok(());
-    } else {
-        let info = env
-            .oppai
-            .get_beatmap(b.beatmap_id)
-            .await?
-            .get_possible_pp_with(*m, &mods);
-        comp.create_followup(
-            &ctx,
-            serenity::all::CreateInteractionResponseFollowup::new()
-                .content(format!(
-                    "Information for beatmap `{}`",
-                    bm.short_link(&mods)
-                ))
-                .embed(beatmap_embed(b, *m, &mods, &info))
-                .components(vec![beatmap_components(bm.1, comp.guild_id)]),
-        )
-        .await?;
-        // Save the beatmap...
-        super::cache::save_beatmap(&env, msg.channel_id, &bm).await?;
+            return Ok(());
+        }
+        EmbedType::Beatmap(b, m, _, mods) => {
+            let info = env
+                .oppai
+                .get_beatmap(b.beatmap_id)
+                .await?
+                .get_possible_pp_with(m.unwrap_or(b.mode), &mods);
+            comp.create_followup(
+                &ctx,
+                serenity::all::CreateInteractionResponseFollowup::new()
+                    .content(format!("Information for beatmap {}", b.mention(m, &mods)))
+                    .embed(beatmap_embed(&*b, m.unwrap_or(b.mode), &mods, &info))
+                    .components(vec![beatmap_components(m.unwrap_or(b.mode), comp.guild_id)]),
+            )
+            .await?;
+            // Save the beatmap...
+            super::cache::save_beatmap(&env, msg.channel_id, &BeatmapWithMode(*b, m)).await?;
+        }
     }
 
     Ok(())
@@ -380,20 +392,23 @@ pub fn handle_lb_button<'a>(
 
         let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
-        let (bm, _) = super::load_beatmap(&env, comp.channel_id, Some(msg))
+        let embed = super::load_beatmap(&env, comp.channel_id, Some(msg), LoadRequest::Any)
             .await
             .unwrap();
         let order = OrderBy::default();
         let guild = comp.guild_id.expect("Guild-only command");
 
-        let scores = get_leaderboard(ctx, &env, &bm, false, order, guild).await?;
+        let scoreboard_msg = embed.mention();
+        let (scores, show_diff) =
+            get_leaderboard_from_embed(ctx, &env, embed, None, false, order, guild).await?;
 
         if scores.is_empty() {
             comp.create_followup(
                 &ctx,
-                CreateInteractionResponseFollowup::new().content(
-                    "No scores have been recorded for this beatmap from anyone in this server.",
-                ),
+                CreateInteractionResponseFollowup::new().content(format!(
+                    "No scores have been recorded for {} from anyone in this server.",
+                    scoreboard_msg
+                )),
             )
             .await?;
             return Ok(());
@@ -402,13 +417,11 @@ pub fn handle_lb_button<'a>(
         let reply = comp
             .create_followup(
                 &ctx,
-                CreateInteractionResponseFollowup::new().content(format!(
-                    "Here are the top scores on beatmap `{}`!",
-                    bm.short_link(Mods::NOMOD)
-                )),
+                CreateInteractionResponseFollowup::new()
+                    .content(format!("Here are the top scores on {}!", scoreboard_msg)),
             )
             .await?;
-        display_rankings_table(ctx, reply, scores, &bm, order).await?;
+        display_rankings_table(ctx, reply, scores, show_diff, order).await?;
         Ok(())
     })
 }

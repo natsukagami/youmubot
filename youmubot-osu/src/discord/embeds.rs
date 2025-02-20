@@ -506,7 +506,9 @@ impl<'a> FakeScore<'a> {
 
     pub fn embed(self, ctx: &Context) -> Result<CreateEmbed> {
         let BeatmapWithMode(b, mode) = self.bm;
-        let info = self.content.get_info_with(*mode, &self.mods);
+        let info = self
+            .content
+            .get_info_with(mode.unwrap_or(b.mode), &self.mods);
         let attrs = match &info.attrs {
             rosu_pp::any::PerformanceAttributes::Osu(osu_performance_attributes) => {
                 osu_performance_attributes
@@ -540,7 +542,7 @@ impl<'a> FakeScore<'a> {
             "".into()
         } else {
             let pp = self.content.get_pp_from(
-                *mode,
+                mode.unwrap_or(b.mode),
                 None,
                 Stats::AccOnly {
                     acc: accuracy,
@@ -594,7 +596,7 @@ impl<'a> FakeScore<'a> {
                 "Map stats",
                 b.difficulty
                     .apply_mods(&self.mods, attrs.stars())
-                    .format_info(*mode, &self.mods, b),
+                    .format_info(mode.unwrap_or(b.mode), &self.mods, b),
                 false,
             )
             .footer(CreateEmbedFooter::new(
@@ -707,7 +709,7 @@ pub(crate) fn user_embed(u: User, ex: UserExtras) -> CreateEmbed {
                         "> {}",
                         map.difficulty
                             .apply_mods(&v.mods, info.attrs.stars())
-                            .format_info(mode, &v.mods, &map)
+                            .format_info(mode.unwrap_or(map.mode), &v.mods, &map)
                             .replace('\n', "\n> ")
                     ))
                     .build(),
