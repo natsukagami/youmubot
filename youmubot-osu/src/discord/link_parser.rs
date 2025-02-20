@@ -29,7 +29,7 @@ lazy_static! {
         r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?"
     ).unwrap();
     static ref SHORT_LINK_REGEX: Regex = Regex::new(
-        r"(?:^|\s|\W)(?P<main>/b/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?)"
+        r"(?:^|\s|\W)(?P<main>/(?P<link_type>b|s)/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?)"
     ).unwrap();
 
     // Score hook
@@ -60,7 +60,7 @@ pub fn parse_old_links<'a>(
                         .unwrap_or_default();
                     EmbedType::from_beatmap_id(env, capture["id"].parse()?, mode, mods).await
                 }
-                "s" => EmbedType::from_beatmapset_id(env, capture["id"].parse()?).await,
+                "s" => EmbedType::from_beatmapset_id(env, capture["id"].parse()?, mode).await,
                 _ => unreachable!(),
             }?;
             Ok(ToPrint {
@@ -99,6 +99,7 @@ pub fn parse_new_links<'a>(
                     EmbedType::from_beatmapset_id(
                         env,
                         capture.name("set_id").unwrap().as_str().parse()?,
+                        mode,
                     )
                     .await
                 }
@@ -121,11 +122,17 @@ pub fn parse_short_links<'a>(
                 .and_then(|v| Mode::parse_from_new_site(v.as_str()));
             let link = capture.name("main").unwrap().as_str();
             let id: u64 = capture.name("id").unwrap().as_str().parse()?;
-            let mods = capture
-                .name("mods")
-                .and_then(|v| UnparsedMods::from_str(v.as_str()).pls_ok())
-                .unwrap_or_default();
-            let embed = EmbedType::from_beatmap_id(env, id, mode, mods).await?;
+            let embed = match capture.name("link_type").unwrap().as_str() {
+                "b" => {
+                    let mods = capture
+                        .name("mods")
+                        .and_then(|v| UnparsedMods::from_str(v.as_str()).pls_ok())
+                        .unwrap_or_default();
+                    EmbedType::from_beatmap_id(env, id, mode, mods).await?
+                }
+                "s" => EmbedType::from_beatmapset_id(env, id, mode).await?,
+                _ => unreachable!(),
+            };
             Ok(ToPrint { embed, link, mode })
         })
         .collect::<stream::FuturesUnordered<_>>()
@@ -154,9 +161,13 @@ impl EmbedType {
         Ok(Self::Beatmap(Box::new(bm), info, mods))
     }
 
-    async fn from_beatmapset_id(env: &OsuEnv, beatmapset_id: u64) -> Result<Self> {
+    async fn from_beatmapset_id(
+        env: &OsuEnv,
+        beatmapset_id: u64,
+        mode: Option<Mode>,
+    ) -> Result<Self> {
         Ok(Self::Beatmapset(
-            env.beatmaps.get_beatmapset(beatmapset_id).await?,
+            env.beatmaps.get_beatmapset(beatmapset_id, mode).await?,
         ))
     }
 }

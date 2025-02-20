@@ -100,7 +100,7 @@ impl BeatmapMetaCache {
     }
 
     /// Get a beatmapset from its ID.
-    pub async fn get_beatmapset(&self, id: u64) -> Result<Vec<Beatmap>> {
+    pub async fn get_beatmapset(&self, id: u64, mode: Option<Mode>) -> Result<Vec<Beatmap>> {
         let bms = models::CachedBeatmap::by_beatmapset(id as i64, &self.pool).await?;
         if !bms.is_empty() {
             return Ok(bms
@@ -110,7 +110,9 @@ impl BeatmapMetaCache {
         }
         let mut beatmaps = self
             .client
-            .beatmaps(crate::BeatmapRequestKind::Beatmapset(id), |f| f)
+            .beatmaps(crate::BeatmapRequestKind::Beatmapset(id), |f| {
+                f.maybe_mode(mode)
+            })
             .await?;
         if beatmaps.is_empty() {
             return Err(Error::msg("beatmapset not found"));
