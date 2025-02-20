@@ -92,7 +92,12 @@ mod scores {
 
         #[async_trait]
         impl pagination::Paginate for Paginate {
-            async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+            async fn render(
+                &mut self,
+                page: u8,
+                ctx: &Context,
+                msg: &Message,
+            ) -> Result<Option<EditMessage>> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
                 let page = page as usize;
                 let score = &self.scores[page];
@@ -115,22 +120,17 @@ mod scores {
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
 
-                msg.edit(
-                    ctx,
+                hourglass.delete(ctx).await?;
+                save_beatmap(&env, msg.channel_id, &bm).await?;
+                Ok(Some(
                     EditMessage::new()
                         .embed({
                             crate::discord::embeds::score_embed(score, &bm, &content, &user)
                                 .footer(format!("Page {}/{}", page + 1, self.scores.len()))
                                 .build()
                         })
-                        .components(vec![score_components(self.guild_id)]),
-                )
-                .await?;
-                save_beatmap(&env, msg.channel_id, &bm).await?;
-
-                // End
-                hourglass.delete(ctx).await?;
-                Ok(true)
+                        .components(vec![score_components(self.guild_id), self.pagination_row()]),
+                ))
             }
 
             fn len(&self) -> Option<usize> {
@@ -193,7 +193,12 @@ mod scores {
 
         #[async_trait]
         impl pagination::Paginate for Paginate {
-            async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+            async fn render(
+                &mut self,
+                page: u8,
+                ctx: &Context,
+                msg: &Message,
+            ) -> Result<Option<EditMessage>> {
                 let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
 
                 let meta_cache = &env.beatmaps;
@@ -202,7 +207,7 @@ mod scores {
                 let start = page * ITEMS_PER_PAGE;
                 let end = self.scores.len().min(start + ITEMS_PER_PAGE);
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
 
                 let hourglass = msg.react(ctx, '⌛').await?;
@@ -321,9 +326,12 @@ mod scores {
                     .push_line("[?] means pp was predicted by oppai-rs.")
                     .build();
 
-                msg.edit(ctx, EditMessage::new().content(content)).await?;
                 hourglass.delete(ctx).await?;
-                Ok(true)
+                Ok(Some(
+                    EditMessage::new()
+                        .content(content)
+                        .components(vec![self.pagination_row()]),
+                ))
             }
 
             fn len(&self) -> Option<usize> {
@@ -335,7 +343,7 @@ mod scores {
 
 mod beatmapset {
     use serenity::{
-        all::{GuildId, Reaction},
+        all::{CreateButton, GuildId},
         builder::{CreateEmbedFooter, EditMessage},
         model::channel::{Message, ReactionType},
     };
@@ -352,6 +360,7 @@ mod beatmapset {
     };
 
     const SHOW_ALL_EMOTE: &str = "🗒️";
+    const SHOW_ALL: &str = "youmubot_osu::discord::display::show_all";
 
     pub async fn display_beatmapset(
         ctx: Context,
@@ -377,8 +386,6 @@ mod beatmapset {
             mode,
             mods,
             guild_id,
-
-            all_reaction: None,
         };
 
         let ctx = ctx.clone();
@@ -401,8 +408,6 @@ mod beatmapset {
         mode: Option<Mode>,
         mods: Option<UnparsedMods>,
         guild_id: Option<GuildId>,
-
-        all_reaction: Option<Reaction>,
     }
 
     impl Paginate {
@@ -427,21 +432,25 @@ mod beatmapset {
             Some(self.maps.len())
         }
 
-        async fn render(&mut self, page: u8, ctx: &Context, msg: &mut Message) -> Result<bool> {
+        async fn render(
+            &mut self,
+            page: u8,
+            ctx: &Context,
+            msg: &Message,
+        ) -> Result<Option<EditMessage>> {
             let page = page as usize;
             if page == self.maps.len() {
-                msg.edit(
-                    ctx,
-                    EditMessage::new().embed(crate::discord::embeds::beatmapset_embed(
-                        &self.maps[..],
-                        self.mode,
-                    )),
-                )
-                .await?;
-                return Ok(true);
+                return Ok(Some(
+                    EditMessage::new()
+                        .embed(crate::discord::embeds::beatmapset_embed(
+                            &self.maps[..],
+                            self.mode,
+                        ))
+                        .components(vec![self.pagination_row()]),
+                ));
             }
             if page > self.maps.len() {
-                return Ok(false);
+                return Ok(None);
             }
 
             let map = &self.maps[page];
@@ -458,7 +467,16 @@ mod beatmapset {
                     self.infos[page].insert(info)
                 }
             };
-            msg.edit(ctx,
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+            save_beatmap(
+                &env,
+                msg.channel_id,
+                &BeatmapWithMode(map.clone(), self.mode),
+            )
+            .await
+            .pls_ok();
+
+            Ok(Some(
                      EditMessage::new().embed(
                        crate::discord::embeds::beatmap_embed(
                            map,
@@ -475,31 +493,19 @@ mod beatmapset {
                                ))
                            })
                    )
-                   .components(vec![beatmap_components(map.mode, self.guild_id)]),
-            )
-                .await?;
-            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-            save_beatmap(
-                &env,
-                msg.channel_id,
-                &BeatmapWithMode(map.clone(), self.mode),
-            )
-            .await
-            .pls_ok();
-
-            Ok(true)
+                   .components(vec![beatmap_components(map.mode, self.guild_id), self.pagination_row()]),
+            ))
         }
 
-        async fn prerender(
-            &mut self,
-            ctx: &Context,
-            m: &mut serenity::model::channel::Message,
-        ) -> Result<()> {
-            self.all_reaction = Some(
-                m.react(&ctx, SHOW_ALL_EMOTE.parse::<ReactionType>().unwrap())
-                    .await?,
+        fn interaction_buttons(&self) -> Vec<CreateButton> {
+            let mut btns = pagination::default_buttons(self);
+            btns.insert(
+                0,
+                CreateButton::new(SHOW_ALL)
+                    .emoji(ReactionType::try_from(SHOW_ALL_EMOTE).unwrap())
+                    .label("Show all"),
             );
-            Ok(())
+            btns
         }
 
         async fn handle_reaction(
@@ -507,26 +513,16 @@ mod beatmapset {
             page: u8,
             ctx: &Context,
             message: &mut serenity::model::channel::Message,
-            reaction: &Reaction,
+            reaction: &str,
         ) -> Result<Option<u8>> {
             // Render the old style.
-            if let ReactionType::Unicode(s) = &reaction.emoji {
-                if s == SHOW_ALL_EMOTE {
-                    self.render(self.maps.len() as u8, ctx, message).await?;
-                    return Ok(Some(self.maps.len() as u8));
-                }
+            if reaction == SHOW_ALL {
+                pagination::do_render(self, self.maps.len() as u8, ctx, message).await?;
+                return Ok(Some(self.maps.len() as u8));
             }
             pagination::handle_pagination_reaction(page, self, ctx, message, reaction)
                 .await
                 .map(Some)
-        }
-
-        async fn cleanup(&mut self, ctx: &Context, _msg: &mut Message) {
-            if let Some(r) = self.all_reaction.take() {
-                if !r.delete_all(&ctx).await.is_ok() {
-                    r.delete(&ctx).await.pls_ok();
-                }
-            }
         }
     }
 }

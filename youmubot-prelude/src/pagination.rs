@@ -1,14 +1,18 @@
-use crate::{Context, OkPrint, Result};
-use futures_util::{future::Future, StreamExt as _};
+use crate::{Context, Result};
+use futures_util::future::Future;
 use serenity::{
+    all::{
+        CreateActionRow, CreateButton, CreateInteractionResponse, EditMessage, Interaction,
+        MessageId,
+    },
     builder::CreateMessage,
-    collector,
     model::{
-        channel::{Message, Reaction, ReactionType},
+        channel::{Message, ReactionType},
         id::ChannelId,
     },
+    prelude::TypeMapKey,
 };
-use std::convert::TryFrom;
+use std::{convert::TryFrom, sync::Arc};
 use tokio::time as tokio_time;
 
 const ARROW_RIGHT: &str = "➡️";
@@ -16,19 +20,28 @@ const ARROW_LEFT: &str = "⬅️";
 const REWIND: &str = "⏪";
 const FAST_FORWARD: &str = "⏩";
 
+const NEXT: &str = "youmubot_pagination_next";
+const PREV: &str = "youmubot_pagination_prev";
+const FAST_NEXT: &str = "youmubot_pagination_fast_next";
+const FAST_PREV: &str = "youmubot_pagination_fast_prev";
+
 /// A trait that provides the implementation of a paginator.
 #[async_trait::async_trait]
 pub trait Paginate: Send + Sized {
     /// Render the given page.
-    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool>;
+    /// Remember to add the [[interaction_buttons]] as an action row!
+    async fn render(&mut self, page: u8, ctx: &Context, m: &Message)
+        -> Result<Option<EditMessage>>;
 
-    /// Any setting-up before the rendering stage.
-    async fn prerender(&mut self, _ctx: &Context, _m: &mut Message) -> Result<()> {
-        Ok(())
+    /// The [[CreateActionRow]] for pagination.
+    fn pagination_row(&self) -> CreateActionRow {
+        CreateActionRow::Buttons(self.interaction_buttons())
     }
 
-    /// Cleans up after the pagination has timed out.
-    async fn cleanup(&mut self, _ctx: &Context, _m: &mut Message) -> () {}
+    /// A list of buttons to create that would interact with pagination logic.
+    fn interaction_buttons(&self) -> Vec<CreateButton> {
+        default_buttons(self)
+    }
 
     /// Handle the incoming reaction. Defaults to calling `handle_pagination_reaction`, but you can do some additional handling
     /// before handing the functionality over.
@@ -39,7 +52,7 @@ pub trait Paginate: Send + Sized {
         page: u8,
         ctx: &Context,
         message: &mut Message,
-        reaction: &Reaction,
+        reaction: &str,
     ) -> Result<Option<u8>> {
         handle_pagination_reaction(page, self, ctx, message, reaction)
             .await
@@ -65,15 +78,46 @@ pub trait Paginate: Send + Sized {
     }
 }
 
+pub async fn do_render(
+    p: &mut impl Paginate,
+    page: u8,
+    ctx: &Context,
+    m: &mut Message,
+) -> Result<bool> {
+    if let Some(edit) = p.render(page, ctx, m).await? {
+        m.edit(ctx, edit).await?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 pub fn paginate_from_fn(
     pager: impl for<'m> FnMut(
             u8,
             &'m Context,
-            &'m mut Message,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
-        + Send,
+            &'m Message,
+            CreateActionRow,
+        ) -> std::pin::Pin<
+            Box<dyn Future<Output = Result<Option<EditMessage>>> + Send + 'm>,
+        > + Send,
 ) -> impl Paginate {
     pager
+}
+
+pub fn default_buttons(p: &impl Paginate) -> Vec<CreateButton> {
+    let mut btns = vec![
+        CreateButton::new(PREV).emoji(ReactionType::try_from(ARROW_LEFT).unwrap()),
+        CreateButton::new(NEXT).emoji(ReactionType::try_from(ARROW_RIGHT).unwrap()),
+    ];
+    if p.len().is_some_and(|v| v > 5) {
+        btns.insert(
+            0,
+            CreateButton::new(FAST_PREV).emoji(ReactionType::try_from(REWIND).unwrap()),
+        );
+        btns.push(CreateButton::new(FAST_NEXT).emoji(ReactionType::try_from(FAST_FORWARD).unwrap()))
+    }
+    btns
 }
 
 struct WithPageCount<Inner> {
@@ -83,14 +127,16 @@ struct WithPageCount<Inner> {
 
 #[async_trait::async_trait]
 impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
-    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool> {
+    async fn render(
+        &mut self,
+        page: u8,
+        ctx: &Context,
+        m: &Message,
+    ) -> Result<Option<EditMessage>> {
         if page as usize >= self.page_count {
-            return Ok(false);
+            return Ok(None);
         }
         self.inner.render(page, ctx, m).await
-    }
-    async fn prerender(&mut self, ctx: &Context, m: &mut Message) -> Result<()> {
-        self.inner.prerender(ctx, m).await
     }
 
     async fn handle_reaction(
@@ -98,18 +144,11 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
         page: u8,
         ctx: &Context,
         message: &mut Message,
-        reaction: &Reaction,
+        reaction: &str,
     ) -> Result<Option<u8>> {
-        // handle normal reactions first, then fallback to the inner one
-        let new_page = handle_pagination_reaction(page, self, ctx, message, reaction).await?;
-
-        if new_page != page {
-            Ok(Some(new_page))
-        } else {
-            self.inner
-                .handle_reaction(page, ctx, message, reaction)
-                .await
-        }
+        self.inner
+            .handle_reaction(page, ctx, message, reaction)
+            .await
     }
 
     fn len(&self) -> Option<usize> {
@@ -119,10 +158,6 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
     fn is_empty(&self) -> Option<bool> {
         Some(self.page_count == 0)
     }
-
-    async fn cleanup(&mut self, ctx: &Context, msg: &mut Message) {
-        self.inner.cleanup(ctx, msg).await;
-    }
 }
 
 #[async_trait::async_trait]
@@ -131,12 +166,20 @@ where
     T: for<'m> FnMut(
             u8,
             &'m Context,
-            &'m mut Message,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<bool>> + Send + 'm>>
-        + Send,
+            &'m Message,
+            CreateActionRow,
+        ) -> std::pin::Pin<
+            Box<dyn Future<Output = Result<Option<EditMessage>>> + Send + 'm>,
+        > + Send,
 {
-    async fn render(&mut self, page: u8, ctx: &Context, m: &mut Message) -> Result<bool> {
-        self(page, ctx, m).await
+    async fn render(
+        &mut self,
+        page: u8,
+        ctx: &Context,
+        m: &Message,
+    ) -> Result<Option<EditMessage>> {
+        let btns = self.pagination_row();
+        self(page, ctx, m, btns).await
     }
 }
 
@@ -178,63 +221,22 @@ pub async fn paginate_with_first_message(
     mut message: Message,
     timeout: std::time::Duration,
 ) -> Result<()> {
-    pager.prerender(ctx, &mut message).await?;
-    pager.render(0, ctx, &mut message).await?;
+    let (send, recv) = flume::unbounded::<String>();
+    Paginator::push(ctx, &message, send).await?;
+
+    do_render(&mut pager, 0, ctx, &mut message).await?;
     // Just quit if there is only one page
     if pager.len().filter(|&v| v == 1).is_some() {
         return Ok(());
     }
-    // React to the message
-    let large_count = pager.len().filter(|&p| p > 10).is_some();
-    let reactions = {
-        let mut rs = Vec::<Reaction>::with_capacity(4);
-        if large_count {
-            // add >> and << buttons
-            rs.push(message.react(&ctx, ReactionType::try_from(REWIND)?).await?);
-        }
-        rs.push(
-            message
-                .react(&ctx, ReactionType::try_from(ARROW_LEFT)?)
-                .await?,
-        );
-        rs.push(
-            message
-                .react(&ctx, ReactionType::try_from(ARROW_RIGHT)?)
-                .await?,
-        );
-        if large_count {
-            // add >> and << buttons
-            rs.push(
-                message
-                    .react(&ctx, ReactionType::try_from(FAST_FORWARD)?)
-                    .await?,
-            );
-        }
-        rs
-    };
-    // Build a reaction collector
-    let mut reaction_collector = {
-        // message.await_reactions(ctx).removed(true).build();
-        let message_id = message.id;
-        let me = message.author.id;
-        collector::collect(&ctx.shard, move |event| {
-            match event {
-                serenity::all::Event::ReactionAdd(r) => Some(r.reaction.clone()),
-                serenity::all::Event::ReactionRemove(r) => Some(r.reaction.clone()),
-                _ => None,
-            }
-            .filter(|r| r.message_id == message_id)
-            .filter(|r| r.user_id.is_some_and(|id| id != me))
-        })
-    };
     let mut page = 0;
 
     // Loop the handler function.
     let res: Result<()> = loop {
-        match tokio_time::timeout(timeout, reaction_collector.next()).await {
+        match tokio_time::timeout(timeout, recv.clone().into_recv_async()).await {
             Err(_) => break Ok(()),
-            Ok(None) => break Ok(()),
-            Ok(Some(reaction)) => {
+            Ok(Err(_)) => break Ok(()),
+            Ok(Ok(reaction)) => {
                 page = match pager
                     .handle_reaction(page, ctx, &mut message, &reaction)
                     .await
@@ -247,14 +249,7 @@ pub async fn paginate_with_first_message(
         }
     };
 
-    pager.cleanup(ctx, &mut message).await;
-
-    for reaction in reactions {
-        if reaction.delete_all(&ctx).await.pls_ok().is_none() {
-            // probably no permission to delete all reactions, fall back to delete my own.
-            reaction.delete(&ctx).await.pls_ok();
-        }
-    }
+    Paginator::pop(ctx, &message).await?;
 
     res
 }
@@ -265,35 +260,90 @@ pub async fn handle_pagination_reaction(
     pager: &mut impl Paginate,
     ctx: &Context,
     message: &mut Message,
-    reaction: &Reaction,
+    reaction: &str,
 ) -> Result<u8> {
     let pages = pager.len();
     let fast = pages.map(|v| v / 10).unwrap_or(5).max(5) as u8;
-    match &reaction.emoji {
-        ReactionType::Unicode(ref s) => {
-            let new_page = match s.as_str() {
-                ARROW_LEFT | REWIND if page == 0 => return Ok(page),
-                ARROW_LEFT => page - 1,
-                REWIND => {
-                    if page < fast {
-                        0
-                    } else {
-                        page - fast
-                    }
-                }
-                ARROW_RIGHT if pages.filter(|&pages| page as usize + 1 >= pages).is_some() => {
-                    return Ok(page)
-                }
-                ARROW_RIGHT => page + 1,
-                FAST_FORWARD => (pages.unwrap() as u8 - 1).min(page + fast),
-                _ => return Ok(page),
-            };
-            Ok(if pager.render(new_page, ctx, message).await? {
-                new_page
+    let new_page = match reaction {
+        PREV | FAST_PREV if page == 0 => return Ok(page),
+        PREV => page - 1,
+        FAST_PREV => {
+            if page < fast {
+                0
             } else {
-                page
-            })
+                page - fast
+            }
         }
-        _ => Ok(page),
+        NEXT if pages.filter(|&pages| page as usize + 1 >= pages).is_some() => return Ok(page),
+        NEXT => page + 1,
+        FAST_NEXT => (pages.unwrap() as u8 - 1).min(page + fast),
+        _ => return Ok(page),
+    };
+    Ok(
+        if let Some(edit) = pager.render(new_page, ctx, message).await? {
+            message.edit(ctx, edit).await?;
+            new_page
+        } else {
+            page
+        },
+    )
+}
+
+#[derive(Debug, Clone)]
+/// Handles distributing pagination interaction to the handlers.
+pub struct Paginator {
+    pub(crate) channels: Arc<dashmap::DashMap<MessageId, flume::Sender<String>>>,
+}
+
+impl Paginator {
+    pub fn new() -> Self {
+        Self {
+            channels: Arc::new(dashmap::DashMap::new()),
+        }
+    }
+    async fn push(ctx: &Context, msg: &Message, channel: flume::Sender<String>) -> Result<()> {
+        ctx.data
+            .write()
+            .await
+            .get_mut::<Paginator>()
+            .unwrap()
+            .channels
+            .insert(msg.id, channel);
+        Ok(())
+    }
+
+    async fn pop(ctx: &Context, msg: &Message) -> Result<()> {
+        ctx.data
+            .write()
+            .await
+            .get_mut::<Paginator>()
+            .unwrap()
+            .channels
+            .remove(&msg.id);
+        Ok(())
+    }
+}
+
+impl TypeMapKey for Paginator {
+    type Value = Paginator;
+}
+
+#[async_trait::async_trait]
+impl crate::hook::InteractionHook for Paginator {
+    async fn call(&self, ctx: &Context, interaction: &Interaction) -> Result<()> {
+        match interaction {
+            Interaction::Component(component_interaction) => {
+                if let Some(ch) = self.channels.get(&component_interaction.message.id) {
+                    component_interaction
+                        .create_response(ctx, CreateInteractionResponse::Acknowledge)
+                        .await?;
+                    ch.send_async(component_interaction.data.custom_id.clone())
+                        .await
+                        .ok();
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 }

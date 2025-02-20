@@ -192,18 +192,18 @@ pub fn dot_osu_hook<'a>(
             } else {
                 let osu_embeds = Arc::new(osu_embeds);
                 paginate_reply(
-                    paginate_from_fn(|page, ctx, msg| {
+                    paginate_from_fn(|page, _, _, btns| {
                         let osu_embeds = osu_embeds.clone();
                         Box::pin(async move {
                             let (embed, attachments) = &osu_embeds[page as usize];
                             let mut edit = EditMessage::new()
                                 .content(format!("Attached beatmaps ({}/{})", page + 1, embed_len))
-                                .embed(embed.clone());
+                                .embed(embed.clone())
+                                .components(vec![btns]);
                             for att in attachments {
                                 edit = edit.new_attachment(att.clone());
                             }
-                            msg.edit(&ctx, edit).await?;
-                            Ok(true)
+                            Ok(Some(edit))
                         })
                     })
                     .with_page_count(embed_len),

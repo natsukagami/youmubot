@@ -236,6 +236,11 @@ async fn main() {
         }
     };
 
+    // Paginator
+    let paginator = youmubot_prelude::pagination::Paginator::new();
+    handler.push_interaction_hook(paginator.clone());
+    data.insert::<youmubot_prelude::pagination::Paginator>(paginator);
+
     data.insert::<Env>(env.clone());
 
     #[cfg(feature = "core")]

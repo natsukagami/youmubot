@@ -66,25 +66,23 @@ async fn message_command(
     }
     let images = std::sync::Arc::new(images);
     paginate_reply(
-        paginate_from_fn(|page, ctx, msg: &mut Message| {
+        paginate_from_fn(|page, _, _, btns| {
             let images = images.clone();
             Box::pin(async move {
                 let page = page as usize;
                 if page >= images.len() {
-                    Ok(false)
+                    Ok(None)
                 } else {
-                    msg.edit(
-                        ctx,
-                        EditMessage::new().content(format!(
-                            "[🖼️  **{}/{}**] Here's the image you requested!\n\n{}",
-                            page + 1,
-                            images.len(),
-                            images[page]
-                        )),
-                    )
-                    .await
-                    .map(|_| true)
-                    .map_err(|e| e.into())
+                    Ok(Some(
+                        EditMessage::new()
+                            .content(format!(
+                                "[🖼️  **{}/{}**] Here's the image you requested!\n\n{}",
+                                page + 1,
+                                images.len(),
+                                images[page]
+                            ))
+                            .components(vec![btns]),
+                    ))
                 }
             })
         })

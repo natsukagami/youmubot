@@ -180,7 +180,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
     let last_updated = ranks.iter().map(|(_, cfu)| cfu.last_update).min().unwrap();
 
     paginate_reply(
-        paginate_from_fn(move |page, ctx, msg| {
+        paginate_from_fn(move |page, _, _, btns| {
             use Align::*;
             let ranks = ranks.clone();
             Box::pin(async move {
@@ -188,7 +188,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                 let start = ITEMS_PER_PAGE * page;
                 let end = ranks.len().min(start + ITEMS_PER_PAGE);
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let ranks = &ranks[start..end];
 
@@ -222,8 +222,9 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
                     ))
                     .build();
 
-                msg.edit(ctx, EditMessage::new().content(content)).await?;
-                Ok(true)
+                Ok(Some(
+                    EditMessage::new().content(content).components(vec![btns]),
+                ))
             })
         })
         .with_page_count(total_pages),
@@ -318,7 +319,7 @@ pub(crate) async fn contest_rank_table(
     let ranks = Arc::new(ranks);
 
     paginate_reply(
-        paginate_from_fn(move |page, ctx, msg| {
+        paginate_from_fn(move |page, _, _, btns| {
             let contest = contest.clone();
             let problems = problems.clone();
             let ranks = ranks.clone();
@@ -327,7 +328,7 @@ pub(crate) async fn contest_rank_table(
                 let start = page * ITEMS_PER_PAGE;
                 let end = ranks.len().min(start + ITEMS_PER_PAGE);
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let ranks = &ranks[start..end];
 
@@ -389,8 +390,9 @@ pub(crate) async fn contest_rank_table(
                     .push_line(format!("Page **{}/{}**", page + 1, total_pages))
                     .build();
 
-                msg.edit(ctx, EditMessage::new().content(content)).await?;
-                Ok(true)
+                Ok(Some(
+                    EditMessage::new().content(content).components(vec![btns]),
+                ))
             })
         })
         .with_page_count(total_pages),

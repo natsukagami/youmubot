@@ -236,7 +236,7 @@ where
     let total_len = users.len();
     let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
     paginate_with_first_message(
-        paginate_from_fn(move |page: u8, ctx: &Context, m: &mut Message| {
+        paginate_from_fn(move |page: u8, _: &Context, _: &Message, btns| {
             let header = header.clone();
             use Align::*;
             let users = users.clone();
@@ -244,7 +244,7 @@ where
                 let start = (page as usize) * ITEMS_PER_PAGE;
                 let end = (start + ITEMS_PER_PAGE).min(users.len());
                 if start >= end {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let users = &users[start..end];
                 let table = match query {
@@ -317,8 +317,9 @@ where
                         last_update.format("<t:%s:R>"),
                     ))
                     .build();
-                m.edit(ctx, EditMessage::new().content(content)).await?;
-                Ok(true)
+                Ok(Some(
+                    EditMessage::new().content(content).components(vec![btns]),
+                ))
             })
         })
         .with_page_count(total_pages),
@@ -617,11 +618,11 @@ pub async fn display_rankings_table(
     let header = Arc::new(to.content.clone());
 
     paginate_with_first_message(
-        paginate_from_fn(move |page: u8, ctx: &Context, m: &mut Message| {
+        paginate_from_fn(move |page: u8, _, _, btns| {
             let start = (page as usize) * ITEMS_PER_PAGE;
             let end = (start + ITEMS_PER_PAGE).min(scores.len());
             if start >= end {
-                return Box::pin(future::ready(Ok(false)));
+                return Box::pin(future::ready(Ok(None)));
             }
             let scores = scores[start..end].to_vec();
             let header = header.clone();
@@ -720,8 +721,9 @@ pub async fn display_rankings_table(
                     ))
                     .build();
 
-                m.edit(&ctx, EditMessage::new().content(content)).await?;
-                Ok(true)
+                Ok(Some(
+                    EditMessage::new().content(content).components(vec![btns]),
+                ))
             })
         })
         .with_page_count(total_pages),
