@@ -1,9 +1,10 @@
-use crate::{Context, OkPrint, Result};
+use crate::{CmdContext, Context, OkPrint, Result};
 use futures_util::future::Future;
+use poise::{CreateReply, ReplyHandle};
 use serenity::{
     all::{
-        CreateActionRow, CreateButton, CreateInteractionResponse, EditMessage, Interaction,
-        MessageId,
+        ComponentInteraction, CreateActionRow, CreateButton, CreateInteractionResponse,
+        EditInteractionResponse, EditMessage, Interaction, MessageId,
     },
     builder::CreateMessage,
     model::{
@@ -15,28 +16,68 @@ use serenity::{
 use std::{convert::TryFrom, sync::Arc};
 use tokio::time as tokio_time;
 
-const ARROW_RIGHT: &str = "➡️";
-const ARROW_LEFT: &str = "⬅️";
-const REWIND: &str = "⏪";
-const FAST_FORWARD: &str = "⏩";
+// const ARROW_RIGHT: &str = "➡️";
+// const ARROW_LEFT: &str = "⬅️";
+// const REWIND: &str = "⏪";
+// const FAST_FORWARD: &str = "⏩";
 
 const NEXT: &str = "youmubot_pagination_next";
 const PREV: &str = "youmubot_pagination_prev";
 const FAST_NEXT: &str = "youmubot_pagination_fast_next";
 const FAST_PREV: &str = "youmubot_pagination_fast_prev";
 
+pub trait CanEdit: Send {
+    fn get_message(&self) -> impl Future<Output = Result<Message>> + Send;
+    fn apply_edit(&mut self, edit: CreateReply) -> impl Future<Output = Result<()>> + Send;
+}
+
+impl<'a> CanEdit for (Message, &'a Context) {
+    async fn get_message(&self) -> Result<Message> {
+        Ok(self.0.clone())
+    }
+
+    async fn apply_edit(&mut self, edit: CreateReply) -> Result<()> {
+        self.0
+            .edit(&self.1, edit.to_prefix_edit(EditMessage::new()))
+            .await?;
+        Ok(())
+    }
+}
+
+impl<'a, 'b> CanEdit for (&'a ComponentInteraction, &'b Context) {
+    async fn get_message(&self) -> Result<Message> {
+        Ok(self.0.get_response(&self.1.http).await?)
+    }
+
+    async fn apply_edit(&mut self, edit: CreateReply) -> Result<()> {
+        self.0
+            .edit_response(
+                &self.1,
+                edit.to_slash_initial_response_edit(EditInteractionResponse::new()),
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+impl<'a, 'e, Env: Send + Sync> CanEdit for (ReplyHandle<'a>, CmdContext<'e, Env>) {
+    async fn get_message(&self) -> Result<Message> {
+        Ok(self.0.message().await?.into_owned())
+    }
+
+    async fn apply_edit(&mut self, edit: CreateReply) -> Result<()> {
+        self.0.edit(self.1, edit).await?;
+        Ok(())
+    }
+}
+
 /// A trait that provides the implementation of a paginator.
 #[async_trait::async_trait]
 pub trait Paginate: Send + Sized {
     /// Render the given page.
     /// Remember to add the [[interaction_buttons]] as an action row!
-    async fn render(
-        &mut self,
-        page: u8,
-        ctx: &Context,
-        m: &Message,
-        btns: Vec<CreateActionRow>,
-    ) -> Result<Option<EditMessage>>;
+    async fn render(&mut self, page: u8, btns: Vec<CreateActionRow>)
+        -> Result<Option<CreateReply>>;
 
     // /// The [[CreateActionRow]] for pagination.
     // fn pagination_row(&self) -> CreateActionRow {
@@ -54,11 +95,11 @@ pub trait Paginate: Send + Sized {
     async fn handle_reaction(
         &mut self,
         page: u8,
-        ctx: &Context,
-        message: &mut Message,
+        _ctx: &Context,
+        message: &mut impl CanEdit,
         reaction: &str,
     ) -> Result<Option<u8>> {
-        handle_pagination_reaction(page, self, ctx, message, reaction)
+        handle_pagination_reaction(page, self, message, reaction)
             .await
             .map(Some)
     }
@@ -82,25 +123,19 @@ pub trait Paginate: Send + Sized {
     }
 }
 
-pub async fn do_render(
-    p: &mut impl Paginate,
-    page: u8,
-    ctx: &Context,
-    m: &mut Message,
-) -> Result<bool> {
+pub async fn do_render(p: &mut impl Paginate, page: u8, m: &mut impl CanEdit) -> Result<bool> {
     let btns = vec![CreateActionRow::Buttons(p.interaction_buttons())];
-    do_render_with_btns(p, page, ctx, m, btns).await
+    do_render_with_btns(p, page, m, btns).await
 }
 
 async fn do_render_with_btns(
     p: &mut impl Paginate,
     page: u8,
-    ctx: &Context,
-    m: &mut Message,
+    m: &mut impl CanEdit,
     btns: Vec<CreateActionRow>,
 ) -> Result<bool> {
-    if let Some(edit) = p.render(page, ctx, m, btns).await? {
-        m.edit(ctx, edit).await?;
+    if let Some(edit) = p.render(page, btns).await? {
+        m.apply_edit(edit).await?;
         Ok(true)
     } else {
         Ok(false)
@@ -108,29 +143,24 @@ async fn do_render_with_btns(
 }
 
 pub fn paginate_from_fn(
-    pager: impl for<'m> FnMut(
+    pager: impl FnMut(
             u8,
-            &'m Context,
-            &'m Message,
             Vec<CreateActionRow>,
-        ) -> std::pin::Pin<
-            Box<dyn Future<Output = Result<Option<EditMessage>>> + Send + 'm>,
-        > + Send,
+        )
+            -> std::pin::Pin<Box<dyn Future<Output = Result<Option<CreateReply>>> + Send>>
+        + Send,
 ) -> impl Paginate {
     pager
 }
 
 pub fn default_buttons(p: &impl Paginate) -> Vec<CreateButton> {
     let mut btns = vec![
-        CreateButton::new(PREV).emoji(ReactionType::try_from(ARROW_LEFT).unwrap()),
-        CreateButton::new(NEXT).emoji(ReactionType::try_from(ARROW_RIGHT).unwrap()),
+        CreateButton::new(PREV).label("<"),
+        CreateButton::new(NEXT).label(">"),
     ];
     if p.len().is_some_and(|v| v > 5) {
-        btns.insert(
-            0,
-            CreateButton::new(FAST_PREV).emoji(ReactionType::try_from(REWIND).unwrap()),
-        );
-        btns.push(CreateButton::new(FAST_NEXT).emoji(ReactionType::try_from(FAST_FORWARD).unwrap()))
+        btns.insert(0, CreateButton::new(FAST_PREV).label("<<"));
+        btns.push(CreateButton::new(FAST_NEXT).label(">>"))
     }
     btns
 }
@@ -145,21 +175,19 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
     async fn render(
         &mut self,
         page: u8,
-        ctx: &Context,
-        m: &Message,
         btns: Vec<CreateActionRow>,
-    ) -> Result<Option<EditMessage>> {
+    ) -> Result<Option<CreateReply>> {
         if page as usize >= self.page_count {
             return Ok(None);
         }
-        self.inner.render(page, ctx, m, btns).await
+        self.inner.render(page, btns).await
     }
 
     async fn handle_reaction(
         &mut self,
         page: u8,
         ctx: &Context,
-        message: &mut Message,
+        message: &mut impl CanEdit,
         reaction: &str,
     ) -> Result<Option<u8>> {
         self.inner
@@ -179,23 +207,19 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
 #[async_trait::async_trait]
 impl<T> Paginate for T
 where
-    T: for<'m> FnMut(
+    T: FnMut(
             u8,
-            &'m Context,
-            &'m Message,
             Vec<CreateActionRow>,
-        ) -> std::pin::Pin<
-            Box<dyn Future<Output = Result<Option<EditMessage>>> + Send + 'm>,
-        > + Send,
+        )
+            -> std::pin::Pin<Box<dyn Future<Output = Result<Option<CreateReply>>> + Send>>
+        + Send,
 {
     async fn render(
         &mut self,
         page: u8,
-        ctx: &Context,
-        m: &Message,
         btns: Vec<CreateActionRow>,
-    ) -> Result<Option<EditMessage>> {
-        self(page, ctx, m, btns).await
+    ) -> Result<Option<CreateReply>> {
+        self(page, btns).await
     }
 }
 
@@ -210,6 +234,7 @@ pub async fn paginate_reply(
     let message = reply_to
         .reply(&ctx, "Youmu is loading the first page...")
         .await?;
+    let message = (message, ctx);
     paginate_with_first_message(pager, ctx, message, timeout).await
 }
 
@@ -227,6 +252,7 @@ pub async fn paginate(
             CreateMessage::new().content("Youmu is loading the first page..."),
         )
         .await?;
+    let message = (message, ctx);
     paginate_with_first_message(pager, ctx, message, timeout).await
 }
 
@@ -234,13 +260,14 @@ pub async fn paginate(
 pub async fn paginate_with_first_message(
     mut pager: impl Paginate,
     ctx: &Context,
-    mut message: Message,
+    mut message: impl CanEdit,
     timeout: std::time::Duration,
 ) -> Result<()> {
+    let msg_id = message.get_message().await?.id;
     let (send, recv) = flume::unbounded::<String>();
-    Paginator::push(ctx, &message, send).await?;
+    Paginator::push(ctx, msg_id, send).await?;
 
-    do_render(&mut pager, 0, ctx, &mut message).await?;
+    do_render(&mut pager, 0, &mut message).await?;
     // Just quit if there is only one page
     if pager.len().filter(|&v| v == 1).is_some() {
         return Ok(());
@@ -266,10 +293,10 @@ pub async fn paginate_with_first_message(
     };
 
     // Render one last time with no buttons
-    do_render_with_btns(&mut pager, page, ctx, &mut message, vec![])
+    do_render_with_btns(&mut pager, page, &mut message, vec![])
         .await
         .pls_ok();
-    Paginator::pop(ctx, &message).await?;
+    Paginator::pop(ctx, msg_id).await?;
 
     res
 }
@@ -278,8 +305,7 @@ pub async fn paginate_with_first_message(
 pub async fn handle_pagination_reaction(
     page: u8,
     pager: &mut impl Paginate,
-    ctx: &Context,
-    message: &mut Message,
+    message: &mut impl CanEdit,
     reaction: &str,
 ) -> Result<u8> {
     let pages = pager.len();
@@ -299,7 +325,7 @@ pub async fn handle_pagination_reaction(
         FAST_NEXT => (pages.unwrap() as u8 - 1).min(page + fast),
         _ => return Ok(page),
     };
-    Ok(if do_render(pager, new_page, ctx, message).await? {
+    Ok(if do_render(pager, new_page, message).await? {
         new_page
     } else {
         page
@@ -318,25 +344,25 @@ impl Paginator {
             channels: Arc::new(dashmap::DashMap::new()),
         }
     }
-    async fn push(ctx: &Context, msg: &Message, channel: flume::Sender<String>) -> Result<()> {
+    async fn push(ctx: &Context, msg: MessageId, channel: flume::Sender<String>) -> Result<()> {
         ctx.data
-            .write()
+            .read()
             .await
-            .get_mut::<Paginator>()
+            .get::<Paginator>()
             .unwrap()
             .channels
-            .insert(msg.id, channel);
+            .insert(msg, channel);
         Ok(())
     }
 
-    async fn pop(ctx: &Context, msg: &Message) -> Result<()> {
+    async fn pop(ctx: &Context, msg: MessageId) -> Result<()> {
         ctx.data
-            .write()
+            .read()
             .await
-            .get_mut::<Paginator>()
+            .get::<Paginator>()
             .unwrap()
             .channels
-            .remove(&msg.id);
+            .remove(&msg);
         Ok(())
     }
 }

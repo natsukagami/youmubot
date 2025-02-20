@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use futures_util::stream::FuturesOrdered;
 use pagination::paginate_from_fn;
-use serenity::{
-    all::EditMessage, builder::CreateMessage, model::channel::Message, utils::MessageBuilder,
-};
+use serenity::{builder::CreateMessage, model::channel::Message, utils::MessageBuilder};
 
 use stream::Stream;
 use youmubot_prelude::*;
@@ -192,16 +190,16 @@ pub fn dot_osu_hook<'a>(
             } else {
                 let osu_embeds = Arc::new(osu_embeds);
                 paginate_reply(
-                    paginate_from_fn(|page, _, _, btns| {
+                    paginate_from_fn(|page, btns| {
                         let osu_embeds = osu_embeds.clone();
                         Box::pin(async move {
                             let (embed, attachments) = &osu_embeds[page as usize];
-                            let mut edit = EditMessage::new()
+                            let mut edit = CreateReply::default()
                                 .content(format!("Attached beatmaps ({}/{})", page + 1, embed_len))
                                 .embed(embed.clone())
                                 .components(btns);
                             for att in attachments {
-                                edit = edit.new_attachment(att.clone());
+                                edit = edit.attachment(att.clone());
                             }
                             Ok(Some(edit))
                         })
@@ -334,12 +332,12 @@ async fn handle_beatmapset<'a, 'b>(
         )
         .await?;
     crate::discord::display::display_beatmapset(
-        ctx.clone(),
+        ctx,
         beatmaps,
         mode,
         None,
         reply_to.guild_id,
-        reply,
+        (reply, ctx),
     )
     .await
     .pls_ok();

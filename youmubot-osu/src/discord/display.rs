@@ -3,7 +3,7 @@ pub use scores::ScoreListStyle;
 
 mod scores {
     use poise::ChoiceParameter;
-    use serenity::{all::GuildId, model::channel::Message};
+    use serenity::all::GuildId;
 
     use youmubot_prelude::*;
 
@@ -42,7 +42,7 @@ mod scores {
             scores: Vec<Score>,
             ctx: &Context,
             guild_id: Option<GuildId>,
-            m: Message,
+            m: impl CanEdit,
         ) -> Result<()> {
             match self {
                 ScoreListStyle::Table => table::display_scores_table(scores, ctx, m).await,
@@ -54,8 +54,6 @@ mod scores {
     mod grid {
         use pagination::paginate_with_first_message;
         use serenity::all::{CreateActionRow, GuildId};
-        use serenity::builder::EditMessage;
-        use serenity::model::channel::Message;
 
         use youmubot_prelude::*;
 
@@ -67,16 +65,23 @@ mod scores {
             scores: Vec<Score>,
             ctx: &Context,
             guild_id: Option<GuildId>,
-            mut on: Message,
+            mut on: impl CanEdit,
         ) -> Result<()> {
+            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+            let channel_id = on.get_message().await?.channel_id;
             if scores.is_empty() {
-                on.edit(&ctx, EditMessage::new().content("No plays found"))
+                on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;
                 return Ok(());
             }
 
             paginate_with_first_message(
-                Paginate { scores, guild_id },
+                Paginate {
+                    env,
+                    scores,
+                    guild_id,
+                    channel_id,
+                },
                 ctx,
                 on,
                 std::time::Duration::from_secs(60),
@@ -86,8 +91,10 @@ mod scores {
         }
 
         pub struct Paginate {
+            env: OsuEnv,
             scores: Vec<Score>,
             guild_id: Option<GuildId>,
+            channel_id: serenity::all::ChannelId,
         }
 
         #[async_trait]
@@ -95,11 +102,9 @@ mod scores {
             async fn render(
                 &mut self,
                 page: u8,
-                ctx: &Context,
-                msg: &Message,
                 btns: Vec<CreateActionRow>,
-            ) -> Result<Option<EditMessage>> {
-                let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+            ) -> Result<Option<CreateReply>> {
+                let env = &self.env;
                 let page = page as usize;
                 let score = &self.scores[page];
 
@@ -120,9 +125,9 @@ mod scores {
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
 
-                save_beatmap(&env, msg.channel_id, &bm).await?;
+                save_beatmap(&env, self.channel_id, &bm).await?;
                 Ok(Some(
-                    EditMessage::new()
+                    CreateReply::default()
                         .embed({
                             crate::discord::embeds::score_embed(score, &bm, &content, &user)
                                 .footer(format!("Page {}/{}", page + 1, self.scores.len()))
@@ -148,8 +153,6 @@ mod scores {
 
         use pagination::paginate_with_first_message;
         use serenity::all::CreateActionRow;
-        use serenity::builder::EditMessage;
-        use serenity::model::channel::Message;
 
         use youmubot_prelude::table_format::Align::{Left, Right};
         use youmubot_prelude::table_format::{table_formatting, Align};
@@ -162,17 +165,18 @@ mod scores {
         pub async fn display_scores_table(
             scores: Vec<Score>,
             ctx: &Context,
-            mut on: Message,
+            mut on: impl CanEdit,
         ) -> Result<()> {
             if scores.is_empty() {
-                on.edit(&ctx, EditMessage::new().content("No plays found"))
+                on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;
                 return Ok(());
             }
 
             paginate_with_first_message(
                 Paginate {
-                    header: on.content.clone(),
+                    env: ctx.data.read().await.get::<OsuEnv>().unwrap().clone(),
+                    header: on.get_message().await?.content.clone(),
                     scores,
                 },
                 ctx,
@@ -184,6 +188,7 @@ mod scores {
         }
 
         pub struct Paginate {
+            env: OsuEnv,
             header: String,
             scores: Vec<Score>,
         }
@@ -201,11 +206,9 @@ mod scores {
             async fn render(
                 &mut self,
                 page: u8,
-                ctx: &Context,
-                _: &Message,
                 btns: Vec<CreateActionRow>,
-            ) -> Result<Option<EditMessage>> {
-                let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
+            ) -> Result<Option<CreateReply>> {
+                let env = &self.env;
 
                 let meta_cache = &env.beatmaps;
                 let oppai = &env.oppai;
@@ -331,7 +334,9 @@ mod scores {
                     .push_line("[?] means pp was predicted by oppai-rs.")
                     .build();
 
-                Ok(Some(EditMessage::new().content(content).components(btns)))
+                Ok(Some(
+                    CreateReply::default().content(content).components(btns),
+                ))
             }
 
             fn len(&self) -> Option<usize> {
@@ -344,8 +349,8 @@ mod scores {
 mod beatmapset {
     use serenity::{
         all::{CreateActionRow, CreateButton, GuildId},
-        builder::{CreateEmbedFooter, EditMessage},
-        model::channel::{Message, ReactionType},
+        builder::CreateEmbedFooter,
+        model::channel::ReactionType,
     };
 
     use youmubot_prelude::*;
@@ -363,12 +368,12 @@ mod beatmapset {
     const SHOW_ALL: &str = "youmubot_osu::discord::display::show_all";
 
     pub async fn display_beatmapset(
-        ctx: Context,
+        ctx: &Context,
         mut beatmapset: Vec<Beatmap>,
         mode: Option<Mode>,
         mods: Option<UnparsedMods>,
         guild_id: Option<GuildId>,
-        target: Message,
+        target: impl CanEdit,
     ) -> Result<bool> {
         assert!(!beatmapset.is_empty(), "Beatmapset should not be empty");
 
@@ -381,6 +386,8 @@ mod beatmapset {
         });
 
         let p = Paginate {
+            env: ctx.data.read().await.get::<OsuEnv>().unwrap().clone(),
+            channel_id: target.get_message().await?.channel_id,
             infos: vec![None; beatmapset.len()],
             maps: beatmapset,
             mode,
@@ -389,20 +396,20 @@ mod beatmapset {
         };
 
         let ctx = ctx.clone();
-        spawn_future(async move {
-            pagination::paginate_with_first_message(
-                p,
-                &ctx,
-                target,
-                std::time::Duration::from_secs(60),
-            )
-            .await
-            .pls_ok();
-        });
+        pagination::paginate_with_first_message(
+            p,
+            &ctx,
+            target,
+            std::time::Duration::from_secs(60),
+        )
+        .await
+        .pls_ok();
         Ok(true)
     }
 
     struct Paginate {
+        env: OsuEnv,
+        channel_id: serenity::all::ChannelId,
         maps: Vec<Beatmap>,
         infos: Vec<Option<BeatmapInfoWithPP>>,
         mode: Option<Mode>,
@@ -411,15 +418,9 @@ mod beatmapset {
     }
 
     impl Paginate {
-        async fn get_beatmap_info(
-            &self,
-            ctx: &Context,
-            b: &Beatmap,
-            mods: &Mods,
-        ) -> Result<BeatmapInfoWithPP> {
-            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
-
-            env.oppai
+        async fn get_beatmap_info(&self, b: &Beatmap, mods: &Mods) -> Result<BeatmapInfoWithPP> {
+            self.env
+                .oppai
                 .get_beatmap(b.beatmap_id)
                 .await
                 .map(move |v| v.get_possible_pp_with(b.mode.with_override(self.mode), &mods))
@@ -435,14 +436,12 @@ mod beatmapset {
         async fn render(
             &mut self,
             page: u8,
-            ctx: &Context,
-            msg: &Message,
             btns: Vec<CreateActionRow>,
-        ) -> Result<Option<EditMessage>> {
+        ) -> Result<Option<CreateReply>> {
             let page = page as usize;
             if page == self.maps.len() {
                 return Ok(Some(
-                    EditMessage::new()
+                    CreateReply::default()
                         .embed(crate::discord::embeds::beatmapset_embed(
                             &self.maps[..],
                             self.mode,
@@ -464,21 +463,20 @@ mod beatmapset {
             let info = match &self.infos[page] {
                 Some(info) => info,
                 None => {
-                    let info = self.get_beatmap_info(ctx, map, &mods).await?;
+                    let info = self.get_beatmap_info(map, &mods).await?;
                     self.infos[page].insert(info)
                 }
             };
-            let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
             save_beatmap(
-                &env,
-                msg.channel_id,
+                &self.env,
+                self.channel_id,
                 &BeatmapWithMode(map.clone(), self.mode),
             )
             .await
             .pls_ok();
 
             Ok(Some(
-                     EditMessage::new().embed(
+                     CreateReply::default().embed(
                        crate::discord::embeds::beatmap_embed(
                            map,
                            self.mode.unwrap_or(map.mode),
@@ -512,16 +510,16 @@ mod beatmapset {
         async fn handle_reaction(
             &mut self,
             page: u8,
-            ctx: &Context,
-            message: &mut serenity::model::channel::Message,
+            _ctx: &Context,
+            message: &mut impl CanEdit,
             reaction: &str,
         ) -> Result<Option<u8>> {
             // Render the old style.
             if reaction == SHOW_ALL {
-                pagination::do_render(self, self.maps.len() as u8, ctx, message).await?;
+                pagination::do_render(self, self.maps.len() as u8, message).await?;
                 return Ok(Some(self.maps.len() as u8));
             }
-            pagination::handle_pagination_reaction(page, self, ctx, message, reaction)
+            pagination::handle_pagination_reaction(page, self, message, reaction)
                 .await
                 .map(Some)
         }

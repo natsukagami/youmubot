@@ -95,27 +95,22 @@ pub fn handle_check_button<'a>(
             return Ok(());
         }
 
-        let reply = comp
-            .create_followup(
-                &ctx,
-                CreateInteractionResponseFollowup::new().content(format!(
-                    "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on {}!",
-                    user.username,
-                    user.id,
-                    embed.mention()
-                )),
-            )
-            .await?;
+        comp.create_followup(
+            &ctx,
+            CreateInteractionResponseFollowup::new().content(format!(
+                "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on {}!",
+                user.username,
+                user.id,
+                embed.mention()
+            )),
+        )
+        .await?;
 
-        let ctx = ctx.clone();
         let guild_id = comp.guild_id;
-        spawn_future(async move {
-            ScoreListStyle::Grid
-                .display_scores(scores, &ctx, guild_id, reply)
-                .await
-                .pls_ok();
-        });
-
+        ScoreListStyle::Grid
+            .display_scores(scores, &ctx, guild_id, (comp, ctx))
+            .await
+            .pls_ok();
         Ok(())
     })
 }
@@ -326,24 +321,21 @@ async fn handle_last_req(
     .await
     .unwrap();
 
+    let content_type = format!("Information for {}", embed.mention());
     match embed {
         EmbedType::Beatmapset(beatmapset, mode) => {
-            let reply = comp
-                .create_followup(
-                    &ctx,
-                    CreateInteractionResponseFollowup::new().content(format!(
-                        "Beatmapset `{}`",
-                        beatmapset[0].beatmapset_mention()
-                    )),
-                )
-                .await?;
+            comp.create_followup(
+                &ctx,
+                CreateInteractionResponseFollowup::new().content(content_type),
+            )
+            .await?;
             super::display::display_beatmapset(
-                ctx.clone(),
+                ctx,
                 beatmapset,
                 mode,
                 None,
                 comp.guild_id,
-                reply,
+                (comp, ctx),
             )
             .await?;
             return Ok(());
@@ -357,7 +349,7 @@ async fn handle_last_req(
             comp.create_followup(
                 &ctx,
                 serenity::all::CreateInteractionResponseFollowup::new()
-                    .content(format!("Information for beatmap {}", b.mention(m, &mods)))
+                    .content(content_type)
                     .embed(beatmap_embed(&*b, m.unwrap_or(b.mode), &mods, &info))
                     .components(vec![beatmap_components(m.unwrap_or(b.mode), comp.guild_id)]),
             )

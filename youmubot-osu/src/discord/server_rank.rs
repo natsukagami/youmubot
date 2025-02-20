@@ -11,7 +11,6 @@ use chrono::DateTime;
 use pagination::paginate_with_first_message;
 use serenity::{
     all::{GuildId, Member, PartialGuild},
-    builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
     utils::MessageBuilder,
@@ -236,7 +235,7 @@ where
     let total_len = users.len();
     let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
     paginate_with_first_message(
-        paginate_from_fn(move |page: u8, _: &Context, _: &Message, btns| {
+        paginate_from_fn(move |page: u8, btns| {
             let header = header.clone();
             use Align::*;
             let users = users.clone();
@@ -317,12 +316,14 @@ where
                         last_update.format("<t:%s:R>"),
                     ))
                     .build();
-                Ok(Some(EditMessage::new().content(content).components(btns)))
+                Ok(Some(
+                    CreateReply::default().content(content).components(btns),
+                ))
             })
         })
         .with_page_count(total_pages),
         ctx,
-        msg,
+        (msg, ctx),
         std::time::Duration::from_secs(60),
     )
     .await?;
@@ -425,7 +426,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
                     scores.into_iter().map(|s| s.score).collect(),
                     ctx,
                     Some(guild),
-                    reply,
+                    (reply, ctx),
                 )
                 .await?;
         }
@@ -614,7 +615,7 @@ pub async fn display_rankings_table(
     let header = Arc::new(to.content.clone());
 
     paginate_with_first_message(
-        paginate_from_fn(move |page: u8, _, _, btns| {
+        paginate_from_fn(move |page: u8, btns| {
             let start = (page as usize) * ITEMS_PER_PAGE;
             let end = (start + ITEMS_PER_PAGE).min(scores.len());
             if start >= end {
@@ -717,12 +718,14 @@ pub async fn display_rankings_table(
                     ))
                     .build();
 
-                Ok(Some(EditMessage::new().content(content).components(btns)))
+                Ok(Some(
+                    CreateReply::default().content(content).components(btns),
+                ))
             })
         })
         .with_page_count(total_pages),
         ctx,
-        to,
+        (to, ctx),
         std::time::Duration::from_secs(60),
     )
     .await?;

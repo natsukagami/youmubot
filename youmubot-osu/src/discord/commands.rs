@@ -294,11 +294,14 @@ async fn handle_listing<U: HasOsuEnv>(
                     listing_kind,
                     user.mention()
                 ))
-                .await?
-                .into_message()
                 .await?;
             style
-                .display_scores(plays, ctx.serenity_context(), ctx.guild_id(), reply)
+                .display_scores(
+                    plays,
+                    ctx.clone().serenity_context(),
+                    ctx.guild_id(),
+                    (reply, ctx),
+                )
                 .await?;
         }
     }
@@ -368,16 +371,14 @@ async fn beatmap<U: HasOsuEnv>(
             let msg = ctx
                 .clone()
                 .reply(format!("Information for {}", b0.beatmapset_mention()))
-                .await?
-                .into_message()
                 .await?;
             display_beatmapset(
-                ctx.serenity_context().clone(),
+                ctx.clone().serenity_context(),
                 vec,
                 mode,
                 mods,
                 ctx.guild_id(),
-                msg,
+                (msg, ctx),
             )
             .await?;
         }
@@ -470,8 +471,6 @@ async fn check<U: HasOsuEnv>(
             args.user.mention(),
             display
         ))
-        .await?
-        .into_message()
         .await?;
 
     let style = style.unwrap_or(if scores.len() <= 5 {
@@ -481,7 +480,12 @@ async fn check<U: HasOsuEnv>(
     });
 
     style
-        .display_scores(scores, ctx.serenity_context(), ctx.guild_id(), msg)
+        .display_scores(
+            scores,
+            ctx.clone().serenity_context(),
+            ctx.guild_id(),
+            (msg, ctx),
+        )
         .await?;
 
     Ok(())
@@ -577,13 +581,13 @@ async fn leaderboard<U: HasOsuEnv>(
             .await?;
         }
         ScoreListStyle::Grid => {
-            let reply = ctx.reply(header).await?.into_message().await?;
+            let reply = ctx.reply(header).await?;
             style
                 .display_scores(
                     scores.into_iter().map(|s| s.score).collect(),
                     ctx.serenity_context(),
                     Some(guild.id),
-                    reply,
+                    (reply, ctx),
                 )
                 .await?;
         }

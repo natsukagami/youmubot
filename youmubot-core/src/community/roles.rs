@@ -1,5 +1,4 @@
 use serenity::{
-    builder::EditMessage,
     framework::standard::{macros::command, Args, CommandResult},
     model::{
         channel::{Message, ReactionType},
@@ -44,7 +43,7 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
             let pages = (roles.len() + ROLES_PER_PAGE - 1) / ROLES_PER_PAGE;
 
             paginate_reply(
-                paginate_from_fn(|page, _, _, btns| {
+                paginate_from_fn(|page, btns| {
                     let roles = roles.clone();
                     Box::pin(async move {
                         let page = page as usize;
@@ -77,7 +76,9 @@ async fn list(ctx: &Context, m: &Message, _: Args) -> CommandResult {
                             .push_line(format!("Page **{}/{}**", page + 1, pages))
                             .build();
 
-                        Ok(Some(EditMessage::new().content(content).components(btns)))
+                        Ok(Some(
+                            CreateReply::default().content(content).components(btns),
+                        ))
                     })
                 })
                 .with_page_count(pages),

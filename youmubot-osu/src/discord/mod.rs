@@ -689,7 +689,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 )
                 .await?;
             style
-                .display_scores(plays, ctx, reply.guild_id, reply)
+                .display_scores(plays, ctx, reply.guild_id, (reply, ctx))
                 .await?;
         }
         Nth::Nth(nth) => {
@@ -762,7 +762,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 )
                 .await?;
             style
-                .display_scores(plays, ctx, reply.guild_id, reply)
+                .display_scores(plays, ctx, reply.guild_id, (reply, ctx))
                 .await?;
         }
         Nth::Nth(nth) => {
@@ -966,7 +966,7 @@ pub async fn last(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             let reply = msg
                 .reply(&ctx, format!("Information for {}", content_type))
                 .await?;
-            display::display_beatmapset(ctx.clone(), beatmaps, mode, umods, msg.guild_id, reply)
+            display::display_beatmapset(ctx, beatmaps, mode, umods, msg.guild_id, (reply, ctx))
                 .await?;
         }
     }
@@ -1018,7 +1018,7 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         )
         .await?;
     style
-        .display_scores(scores, ctx, msg.guild_id, reply)
+        .display_scores(scores, ctx, msg.guild_id, (reply, ctx))
         .await?;
 
     Ok(())
@@ -1130,7 +1130,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 )
                 .await?;
             style
-                .display_scores(plays, ctx, msg.guild_id, reply)
+                .display_scores(plays, ctx, msg.guild_id, (reply, ctx))
                 .await?;
         }
     }

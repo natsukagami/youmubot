@@ -18,7 +18,8 @@ pub use debugging_ok::OkPrint;
 pub use flags::Flags;
 pub use hook::Hook;
 pub use member_cache::MemberCache;
-pub use pagination::{paginate, paginate_from_fn, paginate_reply, Paginate};
+pub use pagination::{paginate, paginate_from_fn, paginate_reply, CanEdit, Paginate};
+pub use poise::CreateReply;
 
 pub mod announcer;
 pub mod args;
