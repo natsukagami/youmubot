@@ -8,8 +8,8 @@ use link_parser::EmbedType;
 use oppai_cache::BeatmapInfoWithPP;
 use rand::seq::IteratorRandom;
 use serenity::{
-    builder::{CreateMessage, EditMessage},
-    collector,
+    all::{CreateActionRow, CreateButton},
+    builder::CreateMessage,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -257,10 +257,17 @@ pub async fn save(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             CreateMessage::new()
                 .content(save_request_message(&u.username, score.beatmap_id, mode))
                 .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
-                .components(vec![beatmap_components(mode, msg.guild_id)]),
+                .components(vec![beatmap_components(mode, msg.guild_id), save_button()]),
         )
         .await?;
-    handle_save_respond(ctx, &env, msg.author.id, reply, &beatmap, u, mode).await?;
+    let mut p = (reply, ctx);
+    match handle_save_respond(ctx, &env, msg.author.id, &mut p, &beatmap, u, mode).await {
+        Ok(_) => (),
+        Err(e) => {
+            p.0.delete(&ctx).await?;
+            return Err(e.into());
+        }
+    };
     Ok(())
 }
 
@@ -325,11 +332,18 @@ pub(crate) async fn find_save_requirements(
     Ok((u, mode, score, beatmap, info))
 }
 
+const SAVE_BUTTON: &str = "youmubot::osu::save";
+pub(crate) fn save_button() -> CreateActionRow {
+    CreateActionRow::Buttons(vec![CreateButton::new(SAVE_BUTTON)
+        .label("I'm done!")
+        .emoji('👌')
+        .style(serenity::all::ButtonStyle::Primary)])
+}
 pub(crate) async fn handle_save_respond(
     ctx: &Context,
     env: &OsuEnv,
     sender: serenity::all::UserId,
-    mut reply: Message,
+    reply: &mut impl CanEdit,
     beatmap: &Beatmap,
     user: crate::models::User,
     mode: Mode,
@@ -343,50 +357,36 @@ pub(crate) async fn handle_save_respond(
             .take(1)
             .any(|s| s.beatmap_id == map_id))
     }
-    let reaction = reply.react(&ctx, '👌').await?;
+    let msg_id = reply.get_message().await?.id;
+    let recv = InteractionCollector::create(&ctx, msg_id).await?;
+    let timeout = std::time::Duration::from_secs(300) + beatmap.difficulty.total_length;
     let completed = loop {
-        let emoji = reaction.emoji.clone();
-        let user_reaction = collector::ReactionCollector::new(ctx)
-            .message_id(reply.id)
-            .author_id(sender)
-            .filter(move |r| r.emoji == emoji)
-            .timeout(std::time::Duration::from_secs(300) + beatmap.difficulty.total_length)
-            .next()
-            .await;
-        if let Some(ur) = user_reaction {
-            if check(osu_client, &user, mode, beatmap.beatmap_id).await? {
-                break true;
-            }
-            ur.delete(&ctx).await?;
-        } else {
+        let Some(reaction) = recv.next(timeout).await else {
             break false;
+        };
+        if reaction == SAVE_BUTTON && check(osu_client, &user, mode, beatmap.beatmap_id).await? {
+            break true;
         }
     };
     if !completed {
         reply
-            .edit(
-                &ctx,
-                EditMessage::new()
+            .apply_edit(
+                CreateReply::default()
                     .content(format!(
                         "Setting username to **{}** failed due to timeout. Please try again!",
                         user.username
                     ))
-                    .embeds(vec![])
                     .components(vec![]),
             )
             .await?;
-        reaction.delete(&ctx).await?;
         return Ok(());
     }
 
     add_user(sender, &user, &env).await?;
     let ex = UserExtras::from_user(env, &user, mode).await?;
     reply
-        .channel_id
-        .send_message(
-            &ctx,
-            CreateMessage::new()
-                .reference_message(&reply)
+        .apply_edit(
+            CreateReply::default()
                 .content(
                     MessageBuilder::new()
                         .push("Youmu is now tracking user ")
@@ -395,7 +395,8 @@ pub(crate) async fn handle_save_respond(
                         .push(user.mention().to_string())
                         .build(),
                 )
-                .add_embed(user_embed(user.clone(), ex)),
+                .embed(user_embed(user.clone(), ex))
+                .components(vec![]),
         )
         .await?;
     Ok(())

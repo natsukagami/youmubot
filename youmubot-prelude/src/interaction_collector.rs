@@ -3,7 +3,7 @@ use serenity::{
     all::{CreateInteractionResponse, Interaction, MessageId},
     prelude::TypeMapKey,
 };
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 /// Handles distributing interaction to the handlers.
@@ -13,16 +13,25 @@ pub struct InteractionCollector {
 
 /// Wraps the interfaction receiver channel, automatically cleaning up upon drop.
 #[derive(Debug)]
-struct InteractionCollectorGuard {
+pub struct InteractionCollectorGuard {
     msg_id: MessageId,
     ch: flume::Receiver<String>,
     collector: InteractionCollector,
 }
 
-impl Deref for InteractionCollectorGuard {
-    type Target = flume::Receiver<String>;
+impl InteractionCollectorGuard {
+    /// Returns the next fetched interaction, with the given timeout.
+    pub async fn next(&self, timeout: std::time::Duration) -> Option<String> {
+        match tokio::time::timeout(timeout, self.ch.clone().into_recv_async()).await {
+            Err(_) => None,
+            Ok(Err(_)) => None,
+            Ok(Ok(interaction)) => Some(interaction),
+        }
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
+impl AsRef<flume::Receiver<String>> for InteractionCollectorGuard {
+    fn as_ref(&self) -> &flume::Receiver<String> {
         &self.ch
     }
 }
@@ -40,7 +49,7 @@ impl InteractionCollector {
         }
     }
     /// Create a new collector, returning a receiver.
-    pub fn create_collector(&self, msg: MessageId) -> impl Deref<Target = flume::Receiver<String>> {
+    pub fn create_collector(&self, msg: MessageId) -> InteractionCollectorGuard {
         let (send, recv) = flume::unbounded();
         self.channels.insert(msg.clone(), send);
         InteractionCollectorGuard {
@@ -51,10 +60,7 @@ impl InteractionCollector {
     }
 
     /// Create a new collector, returning a receiver.
-    pub(crate) async fn create(
-        ctx: &Context,
-        msg: MessageId,
-    ) -> Result<impl Deref<Target = flume::Receiver<String>>> {
+    pub async fn create(ctx: &Context, msg: MessageId) -> Result<InteractionCollectorGuard> {
         Ok(ctx
             .data
             .read()

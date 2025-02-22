@@ -58,7 +58,14 @@ impl OsuSavedUsers {
         let mut t = self.pool.begin().await?;
         model::OsuUser::delete(u.user_id.get() as i64, &mut *t).await?;
         assert!(
-            model::OsuUser::from(u).store(&mut t).await?,
+            match model::OsuUser::from(u).store(&mut t).await {
+                Ok(v) => v,
+                Err(youmubot_db_sql::Error::Duplicate(_)) =>
+                    return Err(Error::msg(
+                        "another Discord user has already saved your account with the same id!"
+                    )),
+                Err(e) => return Err(e.into()),
+            },
             "Should be updated"
         );
         t.commit().await?;
