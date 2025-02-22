@@ -3,17 +3,11 @@ use futures_util::future::Future;
 use poise::{CreateReply, ReplyHandle};
 use serenity::{
     all::{
-        ComponentInteraction, CreateActionRow, CreateButton, CreateInteractionResponse,
-        EditInteractionResponse, EditMessage, Interaction, MessageId,
+        ComponentInteraction, CreateActionRow, CreateButton, EditInteractionResponse, EditMessage,
     },
     builder::CreateMessage,
-    model::{
-        channel::{Message, ReactionType},
-        id::ChannelId,
-    },
-    prelude::TypeMapKey,
+    model::{channel::Message, id::ChannelId},
 };
-use std::{convert::TryFrom, sync::Arc};
 use tokio::time as tokio_time;
 
 // const ARROW_RIGHT: &str = "➡️";
@@ -264,8 +258,7 @@ pub async fn paginate_with_first_message(
     timeout: std::time::Duration,
 ) -> Result<()> {
     let msg_id = message.get_message().await?.id;
-    let (send, recv) = flume::unbounded::<String>();
-    Paginator::push(ctx, msg_id, send).await?;
+    let recv = crate::InteractionCollector::create(ctx, msg_id).await?;
 
     do_render(&mut pager, 0, &mut message).await?;
     // Just quit if there is only one page
@@ -296,7 +289,6 @@ pub async fn paginate_with_first_message(
     do_render_with_btns(&mut pager, page, &mut message, vec![])
         .await
         .pls_ok();
-    Paginator::pop(ctx, msg_id).await?;
 
     res
 }
@@ -330,63 +322,4 @@ pub async fn handle_pagination_reaction(
     } else {
         page
     })
-}
-
-#[derive(Debug, Clone)]
-/// Handles distributing pagination interaction to the handlers.
-pub struct Paginator {
-    pub(crate) channels: Arc<dashmap::DashMap<MessageId, flume::Sender<String>>>,
-}
-
-impl Paginator {
-    pub fn new() -> Self {
-        Self {
-            channels: Arc::new(dashmap::DashMap::new()),
-        }
-    }
-    async fn push(ctx: &Context, msg: MessageId, channel: flume::Sender<String>) -> Result<()> {
-        ctx.data
-            .read()
-            .await
-            .get::<Paginator>()
-            .unwrap()
-            .channels
-            .insert(msg, channel);
-        Ok(())
-    }
-
-    async fn pop(ctx: &Context, msg: MessageId) -> Result<()> {
-        ctx.data
-            .read()
-            .await
-            .get::<Paginator>()
-            .unwrap()
-            .channels
-            .remove(&msg);
-        Ok(())
-    }
-}
-
-impl TypeMapKey for Paginator {
-    type Value = Paginator;
-}
-
-#[async_trait::async_trait]
-impl crate::hook::InteractionHook for Paginator {
-    async fn call(&self, ctx: &Context, interaction: &Interaction) -> Result<()> {
-        match interaction {
-            Interaction::Component(component_interaction) => {
-                if let Some(ch) = self.channels.get(&component_interaction.message.id) {
-                    component_interaction
-                        .create_response(ctx, CreateInteractionResponse::Acknowledge)
-                        .await?;
-                    ch.send_async(component_interaction.data.custom_id.clone())
-                        .await
-                        .ok();
-                }
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
 }

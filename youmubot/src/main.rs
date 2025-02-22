@@ -237,9 +237,9 @@ async fn main() {
     };
 
     // Paginator
-    let paginator = youmubot_prelude::pagination::Paginator::new();
+    let paginator = youmubot_prelude::InteractionCollector::new();
     handler.push_interaction_hook(paginator.clone());
-    data.insert::<youmubot_prelude::pagination::Paginator>(paginator);
+    data.insert::<youmubot_prelude::InteractionCollector>(paginator);
 
     data.insert::<Env>(env.clone());
 
