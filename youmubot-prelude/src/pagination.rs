@@ -8,12 +8,6 @@ use serenity::{
     builder::CreateMessage,
     model::{channel::Message, id::ChannelId},
 };
-use tokio::time as tokio_time;
-
-// const ARROW_RIGHT: &str = "➡️";
-// const ARROW_LEFT: &str = "⬅️";
-// const REWIND: &str = "⏪";
-// const FAST_FORWARD: &str = "⏩";
 
 const NEXT: &str = "youmubot_pagination_next";
 const PREV: &str = "youmubot_pagination_prev";
@@ -269,10 +263,9 @@ pub async fn paginate_with_first_message(
 
     // Loop the handler function.
     let res: Result<()> = loop {
-        match tokio_time::timeout(timeout, recv.clone().into_recv_async()).await {
-            Err(_) => break Ok(()),
-            Ok(Err(_)) => break Ok(()),
-            Ok(Ok(reaction)) => {
+        match recv.next(timeout).await {
+            None => break Ok(()),
+            Some(reaction) => {
                 page = match pager
                     .handle_reaction(page, ctx, &mut message, &reaction)
                     .await

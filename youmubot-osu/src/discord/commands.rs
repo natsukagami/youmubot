@@ -186,21 +186,31 @@ pub async fn save<U: HasOsuEnv>(
             CreateReply::default()
                 .content(save_request_message(&u.username, score.beatmap_id, mode))
                 .embed(beatmap_embed(&beatmap, mode, Mods::NOMOD, &info))
-                .components(vec![beatmap_components(mode, ctx.guild_id())]),
+                .components(vec![
+                    beatmap_components(mode, ctx.guild_id()),
+                    save_button(),
+                ]),
         )
-        .await?
-        .into_message()
         .await?;
-    handle_save_respond(
+    let mut p = (reply, ctx.clone());
+    match handle_save_respond(
         ctx.serenity_context(),
         &env,
         ctx.author().id,
-        reply,
+        &mut p,
         &beatmap,
         u,
         mode,
     )
-    .await?;
+    .await
+    {
+        Ok(_) => (),
+        Err(e) => {
+            p.0.delete(ctx).await?;
+            return Err(e.into());
+        }
+    };
+
     Ok(())
 }
 
