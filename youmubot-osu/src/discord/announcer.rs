@@ -181,6 +181,14 @@ impl Announcer {
         }) && s <= now
     }
 
+    // Is an user_event worth announcing?
+    fn is_worth_announcing(s: &UserEventRank) -> bool {
+        if s.mode != Mode::Std && s.rank > 50 {
+            return false;
+        }
+        true
+    }
+
     /// Handles an user/mode scan, announces all possible new scores, return the new pp value.
     async fn fetch_user_data(
         &self,
@@ -211,7 +219,7 @@ impl Announcer {
         let events = std::mem::take(&mut user.events)
             .into_iter()
             .filter_map(|v| v.to_event_rank())
-            .filter(|s| s.mode == mode)
+            .filter(|s| s.mode == mode && Self::is_worth_announcing(s))
             .filter(|s| Self::is_announceable_date(s.date, last_update, now))
             .collect::<Vec<_>>();
         Ok((user, top_scores, events))
