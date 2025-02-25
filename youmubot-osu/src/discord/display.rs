@@ -326,13 +326,17 @@ mod scores {
                     .collect::<Vec<_>>();
 
                 let score_table = table_formatting(&SCORE_HEADERS, &SCORE_ALIGNS, score_arr);
+                let has_oppai = plays.iter().any(|p| p.pp.is_none());
 
-                let content = serenity::utils::MessageBuilder::new()
+                let mut content = serenity::utils::MessageBuilder::new();
+                content
                     .push_line(&self.header)
                     .push_line(score_table)
-                    .push_line(format!("Page **{}/{}**", page + 1, self.total_pages()))
-                    .push_line("[?] means pp was predicted by oppai-rs.")
-                    .build();
+                    .push_line(format!("Page **{}/{}**", page + 1, self.total_pages()));
+                if has_oppai {
+                    content.push_line("[?] means pp was predicted by oppai-rs.");
+                };
+                let content = content.build();
 
                 Ok(Some(
                     CreateReply::default().content(content).components(btns),
