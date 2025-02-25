@@ -248,6 +248,7 @@ pub mod builders {
         user: UserID,
         mode: Option<Mode>,
         limit: Option<u8>,
+        include_fails: bool,
     }
 
     impl UserScoreRequestBuilder {
@@ -257,6 +258,7 @@ pub mod builders {
                 user,
                 mode: None,
                 limit: None,
+                include_fails: true,
             }
         }
 
@@ -270,11 +272,16 @@ pub mod builders {
             self
         }
 
+        pub fn include_fails(&mut self, include_fails: bool) -> &mut Self {
+            self.include_fails = include_fails;
+            self
+        }
+
         pub(crate) async fn build(self, client: &OsuClient) -> Result<Vec<models::Score>> {
             let scores = handle_not_found({
                 let mut r = client.rosu.user_scores(self.user);
                 r = match self.score_type {
-                    UserScoreType::Recent => r.recent().include_fails(true),
+                    UserScoreType::Recent => r.recent().include_fails(self.include_fails),
                     UserScoreType::Best => r.best(),
                     UserScoreType::Pin => r.pinned(),
                 };

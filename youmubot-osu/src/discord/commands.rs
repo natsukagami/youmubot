@@ -119,6 +119,7 @@ async fn recent<U: HasOsuEnv>(
     #[min = 1]
     #[max = 50]
     index: Option<u8>,
+    #[description = "Only include passed scores"] passes_only: Option<bool>,
     #[description = "Score listing style"] style: Option<ScoreListStyle>,
     #[description = "Game mode"] mode: Option<Mode>,
     #[description = "osu! username"] username: Option<String>,
@@ -127,6 +128,7 @@ async fn recent<U: HasOsuEnv>(
     let env = ctx.data().osu_env();
     let args = arg_from_username_or_discord(username, discord_name);
     let style = style.unwrap_or(ScoreListStyle::Table);
+    let include_fails = !passes_only.unwrap_or(false);
 
     let args = ListingArgs::from_params(env, index, style, mode, args, ctx.author().id).await?;
 
@@ -134,7 +136,9 @@ async fn recent<U: HasOsuEnv>(
 
     let osu_client = &env.client;
     let plays = osu_client
-        .user_recent(UserID::ID(args.user.id), |f| f.mode(args.mode).limit(50))
+        .user_recent(UserID::ID(args.user.id), |f| {
+            f.mode(args.mode).include_fails(include_fails).limit(50)
+        })
         .await?;
 
     handle_listing(ctx, plays, args, |_, b| b, "recent").await
