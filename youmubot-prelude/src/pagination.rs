@@ -251,14 +251,18 @@ pub async fn paginate_with_first_message(
     mut message: impl CanEdit,
     timeout: std::time::Duration,
 ) -> Result<()> {
+    // Just quit if there is only one page
+    if pager.len().filter(|&v| v == 1).is_some() {
+        do_render_with_btns(&mut pager, 0, &mut message, vec![])
+            .await
+            .pls_ok();
+        return Ok(());
+    }
+
     let msg_id = message.get_message().await?.id;
     let recv = crate::InteractionCollector::create(ctx, msg_id).await?;
 
     do_render(&mut pager, 0, &mut message).await?;
-    // Just quit if there is only one page
-    if pager.len().filter(|&v| v == 1).is_some() {
-        return Ok(());
-    }
     let mut page = 0;
 
     // Loop the handler function.
