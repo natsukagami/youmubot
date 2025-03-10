@@ -16,6 +16,8 @@ mod scores {
         Table,
         #[name = "List of Embeds"]
         Grid,
+        #[name = "Table File"]
+        File,
     }
 
     impl Default for ScoreListStyle {
@@ -46,6 +48,7 @@ mod scores {
         ) -> Result<()> {
             match self {
                 ScoreListStyle::Table => table::display_scores_table(scores, ctx, m).await,
+                ScoreListStyle::File => table::display_scores_as_file(scores, ctx, m).await,
                 ScoreListStyle::Grid => grid::display_scores_grid(scores, ctx, guild_id, m).await,
             }
         }
@@ -152,7 +155,7 @@ mod scores {
         use std::borrow::Cow;
 
         use pagination::paginate_with_first_message;
-        use serenity::all::CreateActionRow;
+        use serenity::all::{CreateActionRow, CreateAttachment};
 
         use youmubot_prelude::table_format::Align::{Left, Right};
         use youmubot_prelude::table_format::{table_formatting, Align};
@@ -161,6 +164,29 @@ mod scores {
         use crate::discord::oppai_cache::Stats;
         use crate::discord::{time_before_now, Beatmap, BeatmapInfo, OsuEnv};
         use crate::models::Score;
+
+        pub async fn display_scores_as_file(
+            scores: Vec<Score>,
+            ctx: &Context,
+            mut on: impl CanEdit,
+        ) -> Result<()> {
+            if scores.is_empty() {
+                on.apply_edit(CreateReply::default().content("No plays found"))
+                    .await?;
+                return Ok(());
+            }
+            let p = Paginate {
+                env: ctx.data.read().await.get::<OsuEnv>().unwrap().clone(),
+                header: on.get_message().await?.content.clone(),
+                scores,
+            };
+            let content = p.to_table(0, p.scores.len()).await;
+            on.apply_edit(
+                CreateReply::default().attachment(CreateAttachment::bytes(content, "table.txt")),
+            )
+            .await?;
+            Ok(())
+        }
 
         pub async fn display_scores_table(
             scores: Vec<Score>,
@@ -197,30 +223,13 @@ mod scores {
             fn total_pages(&self) -> usize {
                 (self.scores.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE
             }
-        }
 
-        const ITEMS_PER_PAGE: usize = 5;
+            async fn to_table(&self, start: usize, end: usize) -> String {
+                let scores = &self.scores[start..end];
+                let meta_cache = &self.env.beatmaps;
+                let oppai = &self.env.oppai;
 
-        #[async_trait]
-        impl pagination::Paginate for Paginate {
-            async fn render(
-                &mut self,
-                page: u8,
-                btns: Vec<CreateActionRow>,
-            ) -> Result<Option<CreateReply>> {
-                let env = &self.env;
-
-                let meta_cache = &env.beatmaps;
-                let oppai = &env.oppai;
-                let page = page as usize;
-                let start = page * ITEMS_PER_PAGE;
-                let end = self.scores.len().min(start + ITEMS_PER_PAGE);
-                if start >= end {
-                    return Ok(None);
-                }
-
-                let plays = &self.scores[start..end];
-                let beatmaps = plays
+                let beatmaps = scores
                     .iter()
                     .map(|play| async move {
                         let beatmap = meta_cache.get_beatmap(play.beatmap_id, play.mode).await?;
@@ -234,7 +243,7 @@ mod scores {
                     .map(|v| v.ok())
                     .collect::<Vec<_>>();
 
-                let pps = plays
+                let pps = scores
                     .iter()
                     .map(|p| async move {
                         match p.pp.map(|pp| format!("{:.2}", pp)) {
@@ -257,7 +266,7 @@ mod scores {
 
                 let (beatmaps, pps) = future::join(beatmaps, pps).await;
 
-                let ranks = plays
+                let ranks = scores
                     .iter()
                     .enumerate()
                     .map(|(i, p)| -> Cow<'static, str> {
@@ -288,7 +297,7 @@ mod scores {
                     .into_iter()
                     .enumerate()
                     .map(|(i, b)| {
-                        let play = &plays[i];
+                        let play = &scores[i];
                         b.map(|(beatmap, info)| {
                             format!(
                                 "[{:.1}*] {} - {} [{}] ({})",
@@ -307,7 +316,7 @@ mod scores {
                     ["#", "PP", "Acc", "Ranks", "Mods", "When", "Beatmap"];
                 const SCORE_ALIGNS: [Align; 7] = [Right, Right, Right, Right, Right, Right, Left];
 
-                let score_arr = plays
+                let score_arr = scores
                     .iter()
                     .zip(beatmaps.iter())
                     .zip(ranks.iter().zip(pps.iter()))
@@ -325,9 +334,30 @@ mod scores {
                     })
                     .collect::<Vec<_>>();
 
-                let score_table = table_formatting(&SCORE_HEADERS, &SCORE_ALIGNS, score_arr);
+                table_formatting(&SCORE_HEADERS, &SCORE_ALIGNS, score_arr)
+            }
+        }
+
+        const ITEMS_PER_PAGE: usize = 5;
+
+        #[async_trait]
+        impl pagination::Paginate for Paginate {
+            async fn render(
+                &mut self,
+                page: u8,
+                btns: Vec<CreateActionRow>,
+            ) -> Result<Option<CreateReply>> {
+                let page = page as usize;
+                let start = page * ITEMS_PER_PAGE;
+                let end = self.scores.len().min(start + ITEMS_PER_PAGE);
+                if start >= end {
+                    return Ok(None);
+                }
+                let plays = &self.scores[start..end];
+
                 let has_oppai = plays.iter().any(|p| p.pp.is_none());
 
+                let score_table = self.to_table(start, end).await;
                 let mut content = serenity::utils::MessageBuilder::new();
                 content
                     .push_line(&self.header)

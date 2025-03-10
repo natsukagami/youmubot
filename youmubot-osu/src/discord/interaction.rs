@@ -413,7 +413,8 @@ pub fn handle_lb_button<'a>(
                     .content(format!("Here are the top scores on {}!", scoreboard_msg)),
             )
             .await?;
-        display_rankings_table(ctx, reply, scores, show_diff, order).await?;
+        let has_lazer_score = scores.iter().any(|s| s.score.mods.is_lazer);
+        display_rankings_table(ctx, reply, scores, has_lazer_score, show_diff, order).await?;
         Ok(())
     })
 }

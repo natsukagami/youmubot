@@ -6,7 +6,7 @@ use display::display_beatmapset;
 use embeds::ScoreEmbedBuilder;
 use link_parser::EmbedType;
 use poise::{ChoiceParameter, CreateReply};
-use serenity::all::User;
+use serenity::all::{CreateAttachment, User};
 use server_rank::get_leaderboard_from_embed;
 
 /// osu!-related command group.
@@ -581,6 +581,7 @@ async fn leaderboard<U: HasOsuEnv>(
         "Here are the top scores of **{}** on {}",
         guild.name, scoreboard_msg,
     );
+    let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
 
     match style {
         ScoreListStyle::Table => {
@@ -589,8 +590,27 @@ async fn leaderboard<U: HasOsuEnv>(
                 ctx.serenity_context(),
                 reply,
                 scores,
+                has_lazer_score,
                 show_diff,
                 sort.unwrap_or_default(),
+            )
+            .await?;
+        }
+        ScoreListStyle::File => {
+            ctx.send(
+                CreateReply::default()
+                    .content(header)
+                    .attachment(CreateAttachment::bytes(
+                        server_rank::rankings_to_table(
+                            &scores,
+                            0,
+                            scores.len(),
+                            has_lazer_score,
+                            show_diff,
+                            order,
+                        ),
+                        "rankings.txt",
+                    )),
             )
             .await?;
         }

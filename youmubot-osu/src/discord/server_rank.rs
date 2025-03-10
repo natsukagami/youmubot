@@ -10,7 +10,7 @@ use std::{
 use chrono::DateTime;
 use pagination::paginate_with_first_message;
 use serenity::{
-    all::{GuildId, Member, PartialGuild},
+    all::{CreateAttachment, CreateMessage, GuildId, Member, PartialGuild},
     framework::standard::{macros::command, Args, CommandResult},
     model::channel::Message,
     utils::MessageBuilder,
@@ -401,26 +401,41 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
         return Ok(());
     }
 
+    let header = format!(
+        "Here are the top scores of **{}** on {}",
+        guild.name(&ctx).unwrap(),
+        scoreboard_msg,
+    );
+    let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
+
     match style {
         ScoreListStyle::Table => {
-            let reply = msg
-                .reply(
+            let reply = msg.reply(&ctx, header).await?;
+            display_rankings_table(ctx, reply, scores, has_lazer_score, show_diff, order).await?;
+        }
+        ScoreListStyle::File => {
+            msg.channel_id
+                .send_message(
                     &ctx,
-                    format!("⌛ Loading top scores on {}...", scoreboard_msg),
+                    CreateMessage::new()
+                        .content(header)
+                        .reference_message(msg)
+                        .add_file(CreateAttachment::bytes(
+                            rankings_to_table(
+                                &scores,
+                                0,
+                                scores.len(),
+                                has_lazer_score,
+                                show_diff,
+                                order,
+                            ),
+                            "rankings.txt",
+                        )),
                 )
                 .await?;
-            display_rankings_table(ctx, reply, scores, show_diff, order).await?;
         }
         ScoreListStyle::Grid => {
-            let reply = msg
-                .reply(
-                    &ctx,
-                    format!(
-                        "Here are the top scores on {} of this server!",
-                        scoreboard_msg
-                    ),
-                )
-                .await?;
+            let reply = msg.reply(&ctx, header).await?;
             style
                 .display_scores(
                     scores.into_iter().map(|s| s.score).collect(),
@@ -600,19 +615,107 @@ pub async fn get_leaderboard_from_embed(
     })
 }
 
+pub(crate) fn rankings_to_table(
+    scores: &[Ranking],
+    start: usize,
+    end: usize,
+    has_lazer_score: bool,
+    show_diff: bool,
+    order: OrderBy,
+) -> String {
+    assert!(start < end);
+    let headers: [&'static str; 9] = [
+        "#",
+        match order {
+            OrderBy::PP => "pp",
+            OrderBy::Score => "Score",
+        },
+        if show_diff { "Map" } else { "Mods" },
+        "Rank",
+        "Acc",
+        "Combo",
+        "Miss",
+        "When",
+        "User",
+    ];
+    let aligns: [Align; 9] = [
+        Right,
+        Right,
+        if show_diff { Left } else { Right },
+        Right,
+        Right,
+        Right,
+        Right,
+        Right,
+        Left,
+    ];
+
+    let score_arr = scores
+        .iter()
+        .enumerate()
+        .map(
+            |(
+                id,
+                Ranking {
+                    pp,
+                    beatmap,
+                    official,
+                    member,
+                    score,
+                    star,
+                },
+            )| {
+                [
+                    format!("{}", 1 + id + start),
+                    match order {
+                        OrderBy::PP => {
+                            format!("{:.2}{}", pp, if *official { "" } else { "[?]" })
+                        }
+                        OrderBy::Score => {
+                            crate::discord::embeds::grouped_number(if has_lazer_score {
+                                score.normalized_score as u64
+                            } else {
+                                score.score
+                            })
+                        }
+                    },
+                    if show_diff {
+                        let trimmed_diff = if beatmap.difficulty_name.len() > 20 {
+                            let mut s = beatmap.difficulty_name.clone();
+                            s.truncate(17);
+                            s + "..."
+                        } else {
+                            beatmap.difficulty_name.clone()
+                        };
+                        format!("[{:.2}*] {} {}", star, trimmed_diff, score.mods.to_string())
+                    } else {
+                        score.mods.to_string()
+                    },
+                    score.rank.to_string(),
+                    format!("{:.2}%", score.accuracy(score.mode)),
+                    format!("{}x", score.max_combo),
+                    format!("{}", score.count_miss),
+                    time_before_now(&score.date),
+                    member.to_string(),
+                ]
+            },
+        )
+        .collect::<Vec<_>>();
+    table_formatting(&headers, &aligns, &score_arr)
+}
+
 pub async fn display_rankings_table(
     ctx: &Context,
     to: Message,
     scores: Vec<Ranking>,
+    has_lazer_score: bool,
     show_diff: bool,
     order: OrderBy,
 ) -> Result<()> {
-    let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
-
     const ITEMS_PER_PAGE: usize = 5;
     let total_len = scores.len();
     let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    let header = Arc::new(to.content.clone());
+    let header = to.content.clone();
 
     paginate_with_first_message(
         paginate_from_fn(move |page: u8, btns| {
@@ -622,106 +725,21 @@ pub async fn display_rankings_table(
                 return Box::pin(future::ready(Ok(None)));
             }
             let scores = scores[start..end].to_vec();
-            let header = header.clone();
-            Box::pin(async move {
-                let headers: [&'static str; 9] = [
-                    "#",
-                    match order {
-                        OrderBy::PP => "pp",
-                        OrderBy::Score => "Score",
-                    },
-                    if show_diff { "Map" } else { "Mods" },
-                    "Rank",
-                    "Acc",
-                    "Combo",
-                    "Miss",
-                    "When",
-                    "User",
-                ];
-                let aligns: [Align; 9] = [
-                    Right,
-                    Right,
-                    if show_diff { Left } else { Right },
-                    Right,
-                    Right,
-                    Right,
-                    Right,
-                    Right,
-                    Left,
-                ];
-
-                let score_arr = scores
-                    .iter()
-                    .enumerate()
-                    .map(
-                        |(
-                            id,
-                            Ranking {
-                                pp,
-                                beatmap,
-                                official,
-                                member,
-                                score,
-                                star,
-                            },
-                        )| {
-                            [
-                                format!("{}", 1 + id + start),
-                                match order {
-                                    OrderBy::PP => {
-                                        format!("{:.2}{}", pp, if *official { "" } else { "[?]" })
-                                    }
-                                    OrderBy::Score => {
-                                        crate::discord::embeds::grouped_number(if has_lazer_score {
-                                            score.normalized_score as u64
-                                        } else {
-                                            score.score
-                                        })
-                                    }
-                                },
-                                if show_diff {
-                                    let trimmed_diff = if beatmap.difficulty_name.len() > 20 {
-                                        let mut s = beatmap.difficulty_name.clone();
-                                        s.truncate(17);
-                                        s + "..."
-                                    } else {
-                                        beatmap.difficulty_name.clone()
-                                    };
-                                    format!(
-                                        "[{:.2}*] {} {}",
-                                        star,
-                                        trimmed_diff,
-                                        score.mods.to_string()
-                                    )
-                                } else {
-                                    score.mods.to_string()
-                                },
-                                score.rank.to_string(),
-                                format!("{:.2}%", score.accuracy(score.mode)),
-                                format!("{}x", score.max_combo),
-                                format!("{}", score.count_miss),
-                                time_before_now(&score.date),
-                                member.to_string(),
-                            ]
-                        },
-                    )
-                    .collect::<Vec<_>>();
-
-                let score_table = table_formatting(&headers, &aligns, score_arr);
-                let content = MessageBuilder::new()
-                    .push_line(header.as_ref())
-                    .push_line(score_table)
-                    .push_line(format!(
-                        "Page **{}**/**{}**. Not seeing your scores? Run `osu check` to update.",
-                        page + 1,
-                        total_pages,
-                    ))
-                    .build();
-
-                Ok(Some(
-                    CreateReply::default().content(content).components(btns),
+            let score_table =
+                rankings_to_table(&scores, start, end, has_lazer_score, show_diff, order);
+            let content = MessageBuilder::new()
+                .push_line(&header)
+                .push_line(score_table)
+                .push_line(format!(
+                    "Page **{}**/**{}**. Not seeing your scores? Run `osu check` to update.",
+                    page + 1,
+                    total_pages,
                 ))
-            })
+                .build();
+
+            Box::pin(future::ready(Ok(Some(
+                CreateReply::default().content(content).components(btns),
+            ))))
         })
         .with_page_count(total_pages),
         ctx,
