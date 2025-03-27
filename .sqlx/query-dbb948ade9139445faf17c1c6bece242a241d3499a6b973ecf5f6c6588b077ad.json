@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n              id,\n              username,\n              ignored_since as \"ignored_since: DateTime\"\n            FROM ignored_users\n            ORDER BY id ASC",
+  "query": "INSERT INTO ignored_users(id, username) VALUES (?, ?)\n               ON CONFLICT (id) DO UPDATE SET username = excluded.username\n               RETURNING id,\n              username,\n              ignored_since as \"ignored_since: DateTime\"",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,7 @@
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 2
     },
     "nullable": [
       false,
@@ -28,5 +28,5 @@
       false
     ]
   },
-  "hash": "db5960586bc418d2a6a31c18b4a63f4efcfe4685c0561e07a2c954538be4789b"
+  "hash": "dbb948ade9139445faf17c1c6bece242a241d3499a6b973ecf5f6c6588b077ad"
 }

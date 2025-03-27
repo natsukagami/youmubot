@@ -29,19 +29,22 @@ impl IgnoredUser {
     }
 
     /// Add an user to ignore list.
-    pub async fn add<'a, E>(conn: E, user_id: i64, username: String) -> Result<()>
+    pub async fn add<'a, E>(conn: E, user_id: i64, username: String) -> Result<Self>
     where
         E: Executor<'a, Database = Database>,
     {
-        query!(
+        Ok(query_as!(
+            IgnoredUser,
             r#"INSERT INTO ignored_users(id, username) VALUES (?, ?)
-               ON CONFLICT (id) DO UPDATE SET username = excluded.username"#,
+               ON CONFLICT (id) DO UPDATE SET username = excluded.username
+               RETURNING id,
+              username,
+              ignored_since as "ignored_since: DateTime""#,
             user_id,
             username
         )
-        .execute(conn)
-        .await?;
-        Ok(())
+        .fetch_one(conn)
+        .await?)
     }
 
     // Remove an user from ignore list.
