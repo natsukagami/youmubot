@@ -17,11 +17,32 @@ pub mod community;
 mod db;
 pub mod fun;
 
+#[derive(Debug, Clone)]
+pub struct CoreEnv {
+    pub(crate) prelude: Env,
+    pub(crate) ignore: admin::ignore::IgnoredUsers,
+}
+
+impl CoreEnv {
+    async fn new(prelude: Env) -> Result<Self> {
+        let ignore = admin::ignore::IgnoredUsers::from_db(&prelude).await?;
+        Ok(Self { prelude, ignore })
+    }
+}
+
+/// Gets an [CoreEnv] from the current environment.
+pub trait HasCoreEnv: Send + Sync {
+    fn core_env(&self) -> &CoreEnv;
+}
+
+impl<T: AsRef<CoreEnv> + Send + Sync> HasCoreEnv for T {
+    fn core_env(&self) -> &CoreEnv {
+        self.as_ref()
+    }
+}
+
 /// Sets up all databases in the client.
-pub fn setup(
-    path: &std::path::Path,
-    data: &mut TypeMap,
-) -> serenity::framework::standard::CommandResult {
+pub async fn setup(path: &std::path::Path, data: &mut TypeMap, prelude: Env) -> Result<CoreEnv> {
     db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
     db::load_role_list(
         &mut *data,
@@ -32,7 +53,7 @@ pub fn setup(
     // Start reaction handlers
     data.insert::<community::ReactionWatchers>(community::ReactionWatchers::new(&*data)?);
 
-    Ok(())
+    CoreEnv::new(prelude).await
 }
 
 pub fn ready_hook(ctx: &Context) -> CommandResult {

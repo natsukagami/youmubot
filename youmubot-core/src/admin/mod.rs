@@ -13,6 +13,8 @@ use youmubot_prelude::*;
 mod soft_ban;
 pub use soft_ban::watch_soft_bans;
 
+pub mod ignore;
+
 #[group]
 #[description = "Administrative commands for the server."]
 #[commands(clean, ban, kick, soft_ban, soft_ban_init)]

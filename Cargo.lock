@@ -3426,6 +3426,7 @@ dependencies = [
  "dashmap 5.5.3",
  "flume 0.10.14",
  "futures-util",
+ "poise",
  "rand",
  "serde",
  "serenity",
