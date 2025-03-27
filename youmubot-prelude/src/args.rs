@@ -189,8 +189,14 @@ mod ids {
     use super::ParseError;
 
     /// An `UserId` parsed the old way.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct UserId(pub id::UserId);
+
+    impl From<u64> for UserId {
+        fn from(value: u64) -> Self {
+            Self(id::UserId::new(value))
+        }
+    }
 
     impl FromStr for UserId {
         type Err = ParseError;

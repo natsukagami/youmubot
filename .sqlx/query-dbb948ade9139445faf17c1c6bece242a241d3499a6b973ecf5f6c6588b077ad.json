@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO ignored_users(id, username) VALUES (?, ?)\n               ON CONFLICT (id) DO UPDATE SET username = excluded.username\n               RETURNING id,\n              username,\n              ignored_since as \"ignored_since: DateTime\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "ignored_since: DateTime",
+        "ordinal": 2,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dbb948ade9139445faf17c1c6bece242a241d3499a6b973ecf5f6c6588b077ad"
+}

@@ -53,6 +53,8 @@ struct Env {
     prelude: youmubot_prelude::Env,
     #[cfg(feature = "osu")]
     osu: youmubot_osu::discord::OsuEnv,
+    #[cfg(feature = "core")]
+    core: youmubot_core::CoreEnv,
 }
 
 impl AsRef<youmubot_prelude::Env> for Env {
@@ -65,6 +67,13 @@ impl AsRef<youmubot_prelude::Env> for Env {
 impl AsRef<youmubot_osu::discord::OsuEnv> for Env {
     fn as_ref(&self) -> &youmubot_osu::discord::OsuEnv {
         &self.osu
+    }
+}
+
+#[cfg(feature = "core")]
+impl AsRef<youmubot_core::CoreEnv> for Env {
+    fn as_ref(&self) -> &youmubot_core::CoreEnv {
+        &self.core
     }
 }
 
@@ -219,7 +228,9 @@ async fn main() {
         let prelude = setup::setup_prelude(&db_path, sql_path, &mut data).await;
         // Setup core
         #[cfg(feature = "core")]
-        youmubot_core::setup(&db_path, &mut data).expect("Setup db should succeed");
+        let core = youmubot_core::setup(&db_path, &mut data, prelude.clone())
+            .await
+            .expect("Setup db should succeed");
         // osu!
         #[cfg(feature = "osu")]
         let osu = youmubot_osu::discord::setup(&mut data, prelude.clone(), &mut announcers)
@@ -233,6 +244,8 @@ async fn main() {
             prelude,
             #[cfg(feature = "osu")]
             osu,
+            #[cfg(feature = "core")]
+            core,
         }
     };
 
@@ -266,20 +279,49 @@ async fn main() {
                 case_insensitive_commands: true,
                 ..Default::default()
             },
+            command_check: Some(|ctx| {
+                Box::pin(command_check(ctx.data(), UserId(ctx.author().id)).map(Ok))
+            }),
             on_error: |err| {
                 Box::pin(async move {
-                    if let poise::FrameworkError::Command { error, ctx, .. } = err {
-                        let reply = format!(
-                            "Command '{}' returned error: {:?}",
-                            ctx.invoked_command_name(),
-                            error
-                        );
-                        eprintln!("{}\n{:?}", reply, error);
-                        ctx.send(poise::CreateReply::default().content(reply).ephemeral(true))
+                    match err {
+                        poise::FrameworkError::Command { error, ctx, .. } => {
+                            let reply = format!(
+                                "Command '{}' returned error: {:?}",
+                                ctx.invoked_command_name(),
+                                error
+                            );
+                            eprintln!("{}\n{:?}", reply, error);
+                            ctx.send(poise::CreateReply::default().content(reply).ephemeral(true))
+                                .await
+                                .pls_ok();
+                        }
+                        poise::FrameworkError::NotAnOwner { ctx, .. } => {
+                            ctx.send(
+                                poise::CreateReply::default()
+                                    .content("You have to be an owner to run this command!")
+                                    .ephemeral(true),
+                            )
                             .await
                             .pls_ok();
-                    } else {
-                        eprintln!("Poise error: {:?}", err)
+                        }
+                        poise::FrameworkError::CommandCheckFailed { error: _, ctx, .. }
+                        | poise::FrameworkError::CooldownHit {
+                            remaining_cooldown: _,
+                            ctx,
+                            ..
+                        } => {
+                            ctx.send(
+                                poise::CreateReply::default()
+                                    .content("You are being rate-limited, please try again later!")
+                                    .ephemeral(true),
+                            )
+                            .await
+                            .pls_ok();
+                        }
+                        _ => {
+                            eprintln!("Poise error: {:?}", err)
+                        }
                     }
                 })
             },
@@ -287,6 +329,8 @@ async fn main() {
                 poise_register(),
                 #[cfg(feature = "osu")]
                 youmubot_osu::discord::osu_command(),
+                #[cfg(feature = "core")]
+                youmubot_core::admin::ignore::ignore(),
             ],
             ..Default::default()
         })
@@ -398,25 +442,37 @@ async fn poise_register(ctx: CmdContext<'_, Env>) -> Result<()> {
     Ok(())
 }
 
+async fn command_check(env: &Env, author: UserId) -> bool {
+    #[cfg(feature = "core")]
+    if youmubot_core::admin::ignore::should_ignore(env, author) {
+        tracing::info!("User is in ignore list, skipping...");
+        return false;
+    }
+    true
+}
+
 // Hooks!
 
 #[hook]
-async fn before_hook(_: &Context, msg: &Message, command_name: &str) -> bool {
-    println!(
+async fn before_hook(ctx: &Context, msg: &Message, command_name: &str) -> bool {
+    let env = ctx.data.read().await;
+    let env = env.get::<Env>().unwrap();
+    tracing::info!(
         "Got command '{}' by user '{}'",
-        command_name, msg.author.name
+        command_name,
+        msg.author.name
     );
-    true
+    command_check(env, UserId(msg.author.id)).await
 }
 
 #[hook]
 async fn after_hook(ctx: &Context, msg: &Message, command_name: &str, error: CommandResult) {
     match error {
-        Ok(()) => println!("Processed command '{}'", command_name),
+        Ok(()) => tracing::info!("Processed command '{}'", command_name),
         Err(why) => {
             let reply = format!("Command '{}' returned error {:?}", command_name, why);
             msg.reply(&ctx, &reply).await.ok();
-            println!("{}", reply)
+            tracing::info!("{}", reply)
         }
     }
 }
@@ -441,6 +497,9 @@ async fn on_dispatch_error(ctx: &Context, msg: &Message, error: DispatchError, _
                 max, given
             ),
             DispatchError::OnlyForGuilds => "🔇 This command cannot be used in DMs.".to_owned(),
+            DispatchError::OnlyForOwners => {
+                "🔇 This command can only be used by bot owners.".to_owned()
+            }
             _ => return,
         },
     )
