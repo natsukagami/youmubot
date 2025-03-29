@@ -4,7 +4,7 @@
 , pkg-config
 , openssl
 
-, enableCodeforces ? true
+, enableCodeforces ? false
 , enableOsu ? true
 , ...
 }:
