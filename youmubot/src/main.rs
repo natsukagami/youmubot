@@ -38,6 +38,7 @@ impl Handler {
         self.hooks.push(RwLock::new(Box::new(f)));
     }
 
+    #[allow(unused)]
     fn push_ready_hook(&mut self, f: fn(&Context) -> CommandResult) {
         self.ready_hooks.push(f);
     }
@@ -184,8 +185,6 @@ async fn main() {
     }
 
     let mut handler = Handler::new();
-    #[cfg(feature = "core")]
-    handler.push_ready_hook(youmubot_core::ready_hook);
     // Set up hooks
     #[cfg(feature = "osu")]
     {

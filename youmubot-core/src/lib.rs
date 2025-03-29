@@ -10,7 +10,7 @@ use serenity::{
 pub use admin::ADMIN_GROUP;
 pub use community::COMMUNITY_GROUP;
 pub use fun::FUN_GROUP;
-use youmubot_prelude::{announcer::CacheAndHttp, *};
+use youmubot_prelude::*;
 
 pub mod admin;
 pub mod community;
@@ -43,7 +43,6 @@ impl<T: AsRef<CoreEnv> + Send + Sync> HasCoreEnv for T {
 
 /// Sets up all databases in the client.
 pub async fn setup(path: &std::path::Path, data: &mut TypeMap, prelude: Env) -> Result<CoreEnv> {
-    db::SoftBans::insert_into(&mut *data, &path.join("soft_bans.yaml"))?;
     db::load_role_list(
         &mut *data,
         &path.join("roles_v2.yaml"),
@@ -54,15 +53,6 @@ pub async fn setup(path: &std::path::Path, data: &mut TypeMap, prelude: Env) -> 
     data.insert::<community::ReactionWatchers>(community::ReactionWatchers::new(&*data)?);
 
     CoreEnv::new(prelude).await
-}
-
-pub fn ready_hook(ctx: &Context) -> CommandResult {
-    // Create handler threads
-    tokio::spawn(admin::watch_soft_bans(
-        CacheAndHttp::from_context(ctx),
-        ctx.data.clone(),
-    ));
-    Ok(())
 }
 
 // A help command

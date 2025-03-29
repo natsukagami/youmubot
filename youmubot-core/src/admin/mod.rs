@@ -7,17 +7,13 @@ use serenity::{
     },
     model::channel::{Channel, Message},
 };
-use soft_ban::{SOFT_BAN_COMMAND, SOFT_BAN_INIT_COMMAND};
 use youmubot_prelude::*;
-
-mod soft_ban;
-pub use soft_ban::watch_soft_bans;
 
 pub mod ignore;
 
 #[group]
 #[description = "Administrative commands for the server."]
-#[commands(clean, ban, kick, soft_ban, soft_ban_init)]
+#[commands(clean, ban, kick)]
 struct Admin;
 
 #[command]
