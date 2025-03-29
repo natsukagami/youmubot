@@ -19,9 +19,16 @@ All PRs welcome.
 
 ### Regenerate compiler information
 
-From within `./youmubot-db-sql` run
+The commands expect the cwd to be at the project base directory.
+
+Manually run migrations with
+```
+sqlx migrate run --database-url "sqlite:./youmubot.db" --source ./youmubot-db-sql/migrations
+```
+
+Update compiler information with
 ```bash
-cargo sqlx prepare --database-url "sqlite:$(realpath ..)/youmubot.db"
+cargo sqlx prepare --database-url "sqlite:./youmubot.db" --workspace
 ```
 
 ## License
