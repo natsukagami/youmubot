@@ -77,7 +77,7 @@ jobs:
                 name: natsukagami
                 authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
             - name: Build dependencies
-              run: nix build --option substitute false --option sandbox true --option eval-cache false .#youmubot.cargoDeps
+              run: nix build .#youmubot.cargoDeps --option substituters "https://cache.nixos.org" --option extra-substituters ""
     build:
         name: Build
         runs-on: ubuntu-latest
