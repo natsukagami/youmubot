@@ -64,6 +64,20 @@ jobs:
               run: cargo test
               env:
                   SQLX_OFFLINE: "true"
+    checkDeps:
+        name: Check dependency hash
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - uses: cachix/install-nix-action@v27
+              with:
+                github_access_token: ${{ secrets.GITHUB_TOKEN }}
+            - uses: cachix/cachix-action@v15
+              with:
+                name: natsukagami
+                authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+            - name: Build dependencies
+              run: nix build --option substitute false --option sandbox true --option eval-cache false .#youmubot.cargoDeps
     build:
         name: Build
         runs-on: ubuntu-latest
