@@ -32,13 +32,13 @@ pub struct ToPrint<'a> {
 lazy_static! {
     // Beatmap(set) hooks
     static ref OLD_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?"
+        r"(?:https?://)?osu\.ppy\.sh/(?P<link_type>s|b|beatmaps)/(?P<id>\d+)(?:[\&\?]m=(?P<mode>[0123]))?(?:(?P<mods>v2|[[:^alpha:]][\w@.]+\b))?"
     ).unwrap();
     static ref NEW_LINK_REGEX: Regex = Regex::new(
-        r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?"
+        r"(?:https?://)?osu\.ppy\.sh/beatmapsets/(?P<set_id>\d+)/?(?:\#(?P<mode>osu|taiko|fruits|mania)(?:/(?P<beatmap_id>\d+)|/?))?(?:(?P<mods>v2|[[:^alpha:]][\w@.]+\b))?"
     ).unwrap();
     static ref SHORT_LINK_REGEX: Regex = Regex::new(
-        r"(?:^|\s|\W)(?P<main>/(?P<link_type>b|s)/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:(?P<mods>v2|[[:^alpha:]]\S+\b))?)"
+        r"(?:^|\s|\W)(?P<main>/(?P<link_type>b|s)/(?P<id>\d+)(?:/(?P<mode>osu|taiko|fruits|mania))?(?:(?P<mods>v2|[[:^alpha:]][\w@.]+\b))?)"
     ).unwrap();
 
     // Score hook
