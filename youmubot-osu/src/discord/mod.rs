@@ -1044,7 +1044,7 @@ pub(crate) async fn do_check(
         osu_client
             .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
             .map_ok(move |mut v| {
-                v.retain(|s| mods.as_ref().is_none_or(|m| m.contains(&s.mods)));
+                v.retain(|s| mods.as_ref().is_none_or(|m| s.mods.contains(&m)));
                 v
             })
             .await
