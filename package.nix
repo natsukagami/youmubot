@@ -1,27 +1,41 @@
-{ craneLib
+{ rustPlatform
 , lib
 , stdenv
 , pkg-config
 , openssl
 
-, enableCodeforces ? true
+, enableCodeforces ? false
 , enableOsu ? true
 , ...
 }:
 let
   customizeFeatures = !(enableCodeforces && enableOsu);
-  featureFlags = lib.optionals customizeFeatures (
-    [ "--no-default-features" "--features=core" ]
-    ++ lib.optional enableCodeforces "--features=codeforces"
-    ++ lib.optional enableOsu "--features=osu"
-  );
 in
-craneLib.buildPackage {
+rustPlatform.buildRustPackage {
   pname = "youmubot";
   version = "0.1.0";
 
   src = ./.;
-  cargoExtraArgs = builtins.concatStringsSep " " ([ "--locked" "--package youmubot" ] ++ featureFlags);
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "poise-0.6.1" = "sha256-44pPe02JJ97GEpzAXdQmDq/9bb4KS9G7ZFVlBRC6EYs=";
+      "rosu-v2-0.9.0" = "sha256-dx0EwqqgkLaHwCPHyn5vMkhZ2NZcahH5SACFcsJKP1E=";
+    };
+  };
+
+  buildNoDefaultFeatures = customizeFeatures;
+  buildFeatures = lib.optionals customizeFeatures (
+    [ "core" ]
+    ++ lib.optional enableCodeforces "codeforces"
+    ++ lib.optional enableOsu "osu"
+  );
+
+  cargoBuildFlags = [
+    "--locked"
+    "--package"
+    "youmubot"
+  ];
 
   buildInputs = [
     openssl
@@ -33,4 +47,3 @@ craneLib.buildPackage {
 
   SQLX_OFFLINE = "true";
 }
-

@@ -2,7 +2,6 @@
   description = "A discord bot for Dự Tuyển Tổng Hợp server";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -14,9 +13,6 @@
     extra-trusted-public-keys = [ "natsukagami.cachix.org-1:3U6GV8i8gWEaXRUuXd2S4ASfYgdl2QFPWg4BKPbmYiQ=" ];
   };
   outputs = { self, nixpkgs, flake-utils, ... }@inputs:
-    let
-      rustVersion = "1.83.0";
-    in
     flake-utils.lib.eachDefaultSystem
       (system:
         let
@@ -24,11 +20,9 @@
             {
               inherit system; overlays = [ (import inputs.rust-overlay) ];
             };
-          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable.${rustVersion}.default);
-          # craneLib = inputs.crane.mkLib pkgs;
         in
         rec {
-          packages.youmubot = pkgs.callPackage ./package.nix { inherit craneLib; };
+          packages.youmubot = pkgs.callPackage ./package.nix { };
 
           defaultPackage = packages.youmubot;
 
@@ -54,9 +48,7 @@
             };
         }) // {
       overlays.default = final: prev: {
-        youmubot = final.callPackage ./package.nix {
-          craneLib = (inputs.crane.mkLib final).overrideToolchain (p: p.rust-bin.stable.${rustVersion}.default);
-        };
+        youmubot = final.callPackage ./package.nix { };
       };
       # module
       nixosModules.default = import ./module.nix;
