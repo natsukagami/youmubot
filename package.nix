@@ -1,4 +1,4 @@
-{ pkgs
+{ rustPlatform
 , lib
 , stdenv
 , pkg-config
@@ -11,7 +11,7 @@
 let
   customizeFeatures = !(enableCodeforces && enableOsu);
 in
-pkgs.rustPlatform.buildRustPackage {
+rustPlatform.buildRustPackage {
   pname = "youmubot";
   version = "0.1.0";
 
