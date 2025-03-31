@@ -22,7 +22,7 @@
             };
         in
         rec {
-          packages.youmubot = pkgs.callPackage ./package.nix {};
+          packages.youmubot = pkgs.callPackage ./package.nix { };
 
           defaultPackage = packages.youmubot;
 
@@ -48,7 +48,7 @@
             };
         }) // {
       overlays.default = final: prev: {
-        youmubot = final.callPackage ./package.nix {};
+        youmubot = final.callPackage ./package.nix { };
       };
       # module
       nixosModules.default = import ./module.nix;
