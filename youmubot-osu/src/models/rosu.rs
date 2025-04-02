@@ -113,7 +113,7 @@ impl From<rosu::score::Score> for Score {
     fn from(s: rosu::score::Score) -> Self {
         let legacy_stats = s.statistics.as_legacy(s.mode);
         let score = if s.set_on_lazer {
-            s.score
+            s.score as u64
         } else {
             s.classic_score
         } as u64;
