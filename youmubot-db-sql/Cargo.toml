@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
-thiserror = "1.0.31"
+thiserror = "2"
 chrono = "0.4.19"
 futures-util = "0.3.21"
 either = "1.6.1"

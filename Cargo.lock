@@ -3894,7 +3894,7 @@ dependencies = [
  "either",
  "futures-util",
  "sqlx",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -3938,7 +3938,7 @@ dependencies = [
  "poise",
  "reqwest",
  "serenity",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "youmubot-db",
  "youmubot-db-sql",
