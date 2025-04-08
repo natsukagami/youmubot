@@ -13,7 +13,7 @@ workspace = true
 anyhow = "1.0.57"
 async-trait = "0.1.56"
 futures-util = "0.3.21"
-tokio = { version = "1.19.2", features = ["time"] }
+tokio = { version = "1.44.2", features = ["time"] }
 youmubot-db = { path = "../youmubot-db" }
 youmubot-db-sql = { path = "../youmubot-db-sql" }
 reqwest = { version = "0.11.10", features = ["json"] }
