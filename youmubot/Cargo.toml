@@ -17,7 +17,7 @@ codeforces = ["youmubot-cf"]
 [dependencies]
 serenity = "0.12"
 poise = { git = "https://github.com/serenity-rs/poise", branch = "current" }
-tokio = { version = "1.19.2", features = ["rt-multi-thread"] }
+tokio = { version = "1.44.2", features = ["rt-multi-thread"] }
 dotenv = "0.15.0"
 env_logger = "0.9.0"
 youmubot-db = { path = "../youmubot-db" }
