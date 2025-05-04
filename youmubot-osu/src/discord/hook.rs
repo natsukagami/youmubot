@@ -135,12 +135,14 @@ pub fn dot_osu_hook<'a>(
             .collect::<Vec<_>>()
             .await;
 
+        const ARCHIVE_EXTS: [&'static str; 2] = [".osz", ".olz"];
         let osz_embeds = msg
             .attachments
             .iter()
-            .filter(
-                |a| a.filename.ends_with(".osz") && a.size < 20 * 1024 * 1024, /* 20mb */
-            )
+            .filter(|a| {
+                ARCHIVE_EXTS.iter().any(|ext| a.filename.ends_with(*ext))
+                    && a.size < 20 * 1024 * 1024 /* 20mb */
+            })
             .map(|attachment| {
                 let url = attachment.url.clone();
                 async move {
