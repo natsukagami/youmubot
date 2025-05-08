@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use futures::TryStream;
 use futures_util::lock::Mutex;
 use models::*;
 use request::builders::*;
@@ -92,39 +93,39 @@ impl OsuClient {
         r.build(self).await
     }
 
-    pub async fn user_best(
+    pub fn user_best(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
-        self.user_scores(UserScoreType::Best, user, f).await
+    ) -> impl TryStream<Ok = Score, Error = Error> {
+        self.user_scores(UserScoreType::Best, user, f)
     }
 
-    pub async fn user_recent(
+    pub fn user_recent(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
-        self.user_scores(UserScoreType::Recent, user, f).await
+    ) -> impl TryStream<Ok = Score, Error = Error> {
+        self.user_scores(UserScoreType::Recent, user, f)
     }
 
-    pub async fn user_pins(
+    pub fn user_pins(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
-        self.user_scores(UserScoreType::Pin, user, f).await
+    ) -> impl TryStream<Ok = Score, Error = Error> {
+        self.user_scores(UserScoreType::Pin, user, f)
     }
 
-    async fn user_scores(
+    fn user_scores(
         &self,
         u: UserScoreType,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
+    ) -> impl TryStream<Ok = Score, Error = Error> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
-        r.build(self).await
+        r.build(self.clone())
     }
 
     pub async fn score(&self, score_id: u64) -> Result<Option<Score>, Error> {

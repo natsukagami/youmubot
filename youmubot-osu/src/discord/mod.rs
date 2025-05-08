@@ -35,7 +35,7 @@ use crate::{
     },
     models::{Beatmap, Mode, Mods, Score, User},
     mods::UnparsedMods,
-    request::{BeatmapRequestKind, UserID},
+    request::{BeatmapRequestKind, UserID, SCORE_COUNT_LIMIT},
     OsuClient as OsuHttpClient, UserHeader,
 };
 
@@ -304,6 +304,7 @@ pub(crate) async fn find_save_requirements(
         ] {
             let scores = client
                 .user_best(UserID::ID(u.id), |f| f.mode(*mode))
+                .try_collect::<Vec<_>>()
                 .await?;
             if let Some(v) = scores.into_iter().choose(&mut rand::thread_rng()) {
                 return Ok(Some((v, *mode)));
@@ -350,12 +351,10 @@ pub(crate) async fn handle_save_respond(
 ) -> Result<()> {
     let osu_client = &env.client;
     async fn check(client: &OsuHttpClient, u: &User, mode: Mode, map_id: u64) -> Result<bool> {
-        Ok(client
+        client
             .user_recent(UserID::ID(u.id), |f| f.mode(mode).limit(1))
-            .await?
-            .into_iter()
-            .take(1)
-            .any(|s| s.beatmap_id == map_id))
+            .try_any(|s| future::ready(s.beatmap_id == map_id))
+            .await
     }
     let msg_id = reply.get_message().await?.id;
     let recv = InteractionCollector::create(&ctx, msg_id).await?;
@@ -501,7 +500,8 @@ impl UserExtras {
     pub async fn from_user(env: &OsuEnv, user: &User, mode: Mode) -> Result<Self> {
         let scores = env
             .client
-            .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
+            .user_best(UserID::ID(user.id), |f| f.mode(mode))
+            .try_collect::<Vec<_>>()
             .await
             .pls_ok()
             .unwrap_or_else(std::vec::Vec::new);
@@ -589,7 +589,7 @@ impl ListingArgs {
         sender: serenity::all::UserId,
     ) -> Result<Self> {
         let nth = index
-            .filter(|&v| 1 <= v && v <= 100)
+            .filter(|&v| 1 <= v && v <= SCORE_COUNT_LIMIT as u8)
             .map(|v| v - 1)
             .map(Nth::Nth)
             .unwrap_or_default();
@@ -678,9 +678,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     } = ListingArgs::parse(&env, msg, &mut args, ScoreListStyle::Table).await?;
 
     let osu_client = &env.client;
-    let plays = osu_client
-        .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))
-        .await?;
+    let plays = osu_client.user_recent(UserID::ID(user.id), |f| f.mode(mode));
     match nth {
         Nth::All => {
             let reply = msg
@@ -690,18 +688,24 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 )
                 .await?;
             style
-                .display_scores(plays, ctx, reply.guild_id, (reply, ctx))
+                .display_scores(
+                    plays.try_collect::<Vec<_>>().await?,
+                    ctx,
+                    reply.guild_id,
+                    (reply, ctx),
+                )
                 .await?;
         }
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("No such play"))?
-            };
-            let attempts = plays
-                .iter()
-                .skip(nth as usize)
-                .take_while(|p| p.beatmap_id == play.beatmap_id && p.mods == play.mods)
-                .count();
+            let plays = std::pin::pin!(plays.into_stream());
+            let (play, rest) = plays.skip(nth as usize).into_future().await;
+            let play = play.ok_or(Error::msg("No such play"))??;
+            let attempts = rest
+                .try_take_while(|p| {
+                    future::ok(p.beatmap_id == play.beatmap_id && p.mods == play.mods)
+                })
+                .count()
+                .await;
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
@@ -716,7 +720,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                             user.mention()
                         ))
                         .embed(
-                            score_embed(play, &beatmap_mode, &content, user)
+                            score_embed(&play, &beatmap_mode, &content, user)
                                 .footer(format!("Attempt #{}", attempts))
                                 .build(),
                         )
@@ -751,9 +755,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     let osu_client = &env.client;
 
-    let plays = osu_client
-        .user_pins(UserID::ID(user.id), |f| f.mode(mode).limit(50))
-        .await?;
+    let plays = osu_client.user_pins(UserID::ID(user.id), |f| f.mode(mode));
     match nth {
         Nth::All => {
             let reply = msg
@@ -763,13 +765,20 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 )
                 .await?;
             style
-                .display_scores(plays, ctx, reply.guild_id, (reply, ctx))
+                .display_scores(
+                    plays.try_collect::<Vec<_>>().await?,
+                    ctx,
+                    reply.guild_id,
+                    (reply, ctx),
+                )
                 .await?;
         }
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("No such play"))?
-            };
+            let play = std::pin::pin!(plays.into_stream())
+                .skip(nth as usize)
+                .next()
+                .await
+                .ok_or(Error::msg("No such play"))??;
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
@@ -779,7 +788,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     &ctx,
                     CreateMessage::new()
                         .content("Here is the play that you requested".to_string())
-                        .embed(score_embed(play, &beatmap_mode, &content, user).build())
+                        .embed(score_embed(&play, &beatmap_mode, &content, user).build())
                         .components(vec![score_components(msg.guild_id)])
                         .reference_message(msg),
                 )
@@ -1086,18 +1095,15 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
     } = ListingArgs::parse(&env, msg, &mut args, ScoreListStyle::default()).await?;
     let osu_client = &env.client;
 
-    let mut plays = osu_client
-        .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
-        .await?;
-
-    plays.sort_unstable_by(|a, b| b.pp.partial_cmp(&a.pp).unwrap());
-    let plays = plays;
+    let plays = osu_client.user_best(UserID::ID(user.id), |f| f.mode(mode));
 
     match nth {
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("no such play"))?
-            };
+            let play = std::pin::pin!(plays.into_stream())
+                .skip(nth as usize)
+                .next()
+                .await
+                .ok_or(Error::msg("No such play"))??;
 
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
@@ -1131,7 +1137,12 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 )
                 .await?;
             style
-                .display_scores(plays, ctx, msg.guild_id, (reply, ctx))
+                .display_scores(
+                    plays.try_collect::<Vec<_>>().await?,
+                    ctx,
+                    msg.guild_id,
+                    (reply, ctx),
+                )
                 .await?;
         }
     }
@@ -1193,11 +1204,6 @@ fn scales() -> &'static [f64] {
     SCALES.get_or_init(|| {
         (0..256)
             .map(|r| SCALING_FACTOR.powi(r))
-            // .scan(1.0, |a, _| {
-            //     let old = *a;
-            //     *a *= SCALING_FACTOR;
-            //     Some(old)
-            // })
             .collect::<Vec<_>>()
             .into_boxed_slice()
     })
@@ -1244,6 +1250,7 @@ pub(in crate::discord) async fn calculate_weighted_map_age(
         .collect::<FuturesOrdered<_>>()
         .try_collect::<Vec<_>>()
         .await?;
+    println!("Calculating score from {} scores", scores.len());
     Ok((scores
         .iter()
         .zip(scales().iter())

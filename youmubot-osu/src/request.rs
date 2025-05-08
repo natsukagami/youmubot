@@ -5,6 +5,9 @@ use crate::OsuClient;
 use rosu_v2::error::OsuError;
 use youmubot_prelude::*;
 
+/// Maximum number of scores returned by the osu! api.
+pub const SCORE_COUNT_LIMIT: usize = 200;
+
 #[derive(Clone, Debug)]
 pub enum UserID {
     Username(String),
@@ -54,6 +57,7 @@ fn handle_not_found<T>(v: Result<T, OsuError>) -> Result<Option<T>, OsuError> {
 }
 
 pub mod builders {
+    use futures_util::TryStream;
     use rosu_v2::model::mods::GameModsIntermode;
 
     use crate::models;
@@ -196,7 +200,9 @@ pub mod builders {
         }
 
         pub fn limit(&mut self, limit: u8) -> &mut Self {
-            self.limit = Some(limit).filter(|&v| v <= 100).or(self.limit);
+            self.limit = Some(limit)
+                .filter(|&v| v <= SCORE_COUNT_LIMIT as u8)
+                .or(self.limit);
             self
         }
 
@@ -237,17 +243,19 @@ pub mod builders {
         }
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) enum UserScoreType {
         Recent,
         Best,
         Pin,
     }
 
+    #[derive(Debug, Clone)]
     pub struct UserScoreRequestBuilder {
         score_type: UserScoreType,
         user: UserID,
         mode: Option<Mode>,
-        limit: Option<u8>,
+        limit: Option<usize>,
         include_fails: bool,
     }
 
@@ -267,8 +275,12 @@ pub mod builders {
             self
         }
 
-        pub fn limit(&mut self, limit: u8) -> &mut Self {
-            self.limit = Some(limit).filter(|&v| v <= 100).or(self.limit);
+        pub fn limit(&mut self, limit: usize) -> &mut Self {
+            self.limit = if limit > SCORE_COUNT_LIMIT {
+                self.limit
+            } else {
+                Some(limit)
+            };
             self
         }
 
@@ -277,9 +289,30 @@ pub mod builders {
             self
         }
 
-        pub(crate) async fn build(self, client: &OsuClient) -> Result<Vec<models::Score>> {
+        async fn with_offset(
+            self,
+            offset: Option<usize>,
+            client: OsuClient,
+        ) -> Result<Option<(Vec<models::Score>, Option<usize>)>> {
+            const MAXIMUM_LIMIT: usize = 100;
+            let offset = if let Some(offset) = offset {
+                offset
+            } else {
+                return Ok(None);
+            };
+            let count = match self.limit {
+                Some(limit) => (limit - offset).min(MAXIMUM_LIMIT),
+                None => MAXIMUM_LIMIT,
+            };
+            if count == 0 {
+                return Ok(None);
+            }
             let scores = handle_not_found({
-                let mut r = client.rosu.user_scores(self.user);
+                let mut r = client
+                    .rosu
+                    .user_scores(self.user.clone())
+                    .limit(count)
+                    .offset(offset);
                 r = match self.score_type {
                     UserScoreType::Recent => r.recent().include_fails(self.include_fails),
                     UserScoreType::Best => r.best(),
@@ -288,13 +321,29 @@ pub mod builders {
                 if let Some(mode) = self.mode {
                     r = r.mode(mode.into());
                 }
-                if let Some(limit) = self.limit {
-                    r = r.limit(limit as usize);
-                }
                 r.await
             })?
             .ok_or_else(|| error!("user not found"))?;
-            Ok(scores.into_iter().map(|v| v.into()).collect())
+            let count = scores.len();
+            Ok(Some((
+                scores.into_iter().map(|v| v.into()).collect(),
+                if count == MAXIMUM_LIMIT {
+                    Some(offset + MAXIMUM_LIMIT)
+                } else {
+                    None
+                },
+            )))
+        }
+
+        pub(crate) fn build(
+            self,
+            client: OsuClient,
+        ) -> impl TryStream<Ok = models::Score, Error = Error> {
+            futures::stream::try_unfold(Some(0), move |off| {
+                self.clone().with_offset(off, client.clone())
+            })
+            .map_ok(|v| futures::stream::iter(v).map(|v| Ok(v) as Result<_>))
+            .try_flatten()
         }
     }
 }

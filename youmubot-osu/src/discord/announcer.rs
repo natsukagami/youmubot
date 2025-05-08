@@ -212,7 +212,8 @@ impl Announcer {
         };
         let top_scores = env
             .client
-            .user_best(user_id.clone(), |f| f.mode(mode).limit(100));
+            .user_best(user_id.clone(), |f| f.mode(mode))
+            .try_collect::<Vec<_>>();
         let (user, top_scores) = try_join!(user, top_scores)?;
         let mut user = user.unwrap();
         // if top scores exist, user would too

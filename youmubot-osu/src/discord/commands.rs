@@ -4,6 +4,7 @@ use super::*;
 use cache::save_beatmap;
 use display::display_beatmapset;
 use embeds::ScoreEmbedBuilder;
+use futures::TryStream;
 use link_parser::EmbedType;
 use poise::{ChoiceParameter, CreateReply};
 use serenity::all::{CreateAttachment, User};
@@ -40,7 +41,7 @@ async fn top<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
     #[description = "Index of the score"]
     #[min = 1]
-    #[max = 100]
+    #[max = 200] // SCORE_COUNT_LIMIT
     index: Option<u8>,
     #[description = "Score listing style"] style: Option<ScoreListStyle>,
     #[description = "Game mode"] mode: Option<Mode>,
@@ -61,11 +62,8 @@ async fn top<U: HasOsuEnv>(
 
     ctx.defer().await?;
     let osu_client = &env.client;
-    let mut plays = osu_client
-        .user_best(UserID::ID(args.user.id), |f| f.mode(args.mode).limit(100))
-        .await?;
-
-    plays.sort_unstable_by(|a, b| b.pp.partial_cmp(&a.pp).unwrap());
+    let mode = args.mode;
+    let plays = osu_client.user_best(UserID::ID(args.user.id), |f| f.mode(mode));
 
     handle_listing(ctx, plays, args, |nth, b| b.top_record(nth), "top").await
 }
@@ -135,11 +133,10 @@ async fn recent<U: HasOsuEnv>(
     ctx.defer().await?;
 
     let osu_client = &env.client;
-    let plays = osu_client
-        .user_recent(UserID::ID(args.user.id), |f| {
-            f.mode(args.mode).include_fails(include_fails).limit(50)
-        })
-        .await?;
+    let mode = args.mode;
+    let plays = osu_client.user_recent(UserID::ID(args.user.id), |f| {
+        f.mode(mode).include_fails(include_fails).limit(50)
+    });
 
     handle_listing(ctx, plays, args, |_, b| b, "recent").await
 }
@@ -168,9 +165,8 @@ async fn pinned<U: HasOsuEnv>(
     ctx.defer().await?;
 
     let osu_client = &env.client;
-    let plays = osu_client
-        .user_pins(UserID::ID(args.user.id), |f| f.mode(args.mode).limit(50))
-        .await?;
+    let mode = args.mode;
+    let plays = osu_client.user_pins(UserID::ID(args.user.id), |f| f.mode(mode));
 
     handle_listing(ctx, plays, args, |_, b| b, "pinned").await
 }
@@ -254,7 +250,7 @@ pub async fn forcesave<U: HasOsuEnv>(
 
 async fn handle_listing<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
-    plays: Vec<Score>,
+    plays: impl TryStream<Ok = Score, Error = Error>,
     listing_args: ListingArgs,
     transform: impl for<'a> Fn(u8, ScoreEmbedBuilder<'a>) -> ScoreEmbedBuilder<'a>,
     listing_kind: &'static str,
@@ -269,8 +265,14 @@ async fn handle_listing<U: HasOsuEnv>(
 
     match nth {
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("no such play"))?
+            let play = std::pin::pin!(plays.into_stream())
+                .skip(nth as usize)
+                .next()
+                .await;
+            let play = if let Some(play) = play {
+                play?
+            } else {
+                return Err(Error::msg("no such play"))?;
             };
 
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
@@ -311,7 +313,7 @@ async fn handle_listing<U: HasOsuEnv>(
                 .await?;
             style
                 .display_scores(
-                    plays,
+                    plays.try_collect::<Vec<_>>().await?,
                     ctx.clone().serenity_context(),
                     ctx.guild_id(),
                     (reply, ctx),
