@@ -307,7 +307,7 @@ async fn handle_listing<U: HasOsuEnv>(
             let reply = ctx.clone().reply(&header).await?;
             style
                 .display_scores(
-                    plays.try_collect::<Vec<_>>().await?,
+                    plays.try_collect::<Vec<_>>(),
                     ctx.clone().serenity_context(),
                     ctx.guild_id(),
                     (reply, ctx).with_header(header),
@@ -489,7 +489,7 @@ async fn check<U: HasOsuEnv>(
 
     style
         .display_scores(
-            scores,
+            future::ok(scores),
             ctx.clone().serenity_context(),
             ctx.guild_id(),
             (msg, ctx).with_header(header),
@@ -612,7 +612,7 @@ async fn leaderboard<U: HasOsuEnv>(
             let reply = ctx.reply(header).await?;
             style
                 .display_scores(
-                    scores.into_iter().map(|s| s.score).collect(),
+                    future::ok(scores.into_iter().map(|s| s.score).collect()),
                     ctx.serenity_context(),
                     Some(guild.id),
                     (reply, ctx),

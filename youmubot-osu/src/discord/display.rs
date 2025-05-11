@@ -76,6 +76,7 @@ mod scores {
         ) -> Result<()> {
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
             let channel_id = on.get_message().await?.channel_id;
+            let scores = scores.await?;
             if scores.is_empty() {
                 on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;
@@ -85,7 +86,7 @@ mod scores {
             paginate_with_first_message(
                 Paginate {
                     env,
-                    scores: scores.await?,
+                    scores,
                     guild_id,
                     channel_id,
                 },
@@ -157,6 +158,7 @@ mod scores {
 
     pub mod table {
         use std::borrow::Cow;
+        use std::future::Future;
 
         use pagination::paginate_with_first_message;
         use serenity::all::{CreateActionRow, CreateAttachment};
@@ -170,27 +172,26 @@ mod scores {
         use crate::models::Score;
 
         pub async fn display_scores_as_file(
-            scores: Vec<Score>,
+            scores: impl Future<Output = Result<Vec<Score>>>,
             ctx: &Context,
             mut on: impl CanEdit,
         ) -> Result<()> {
+            let header = on.headers().unwrap_or("").to_owned();
+            let content = format!("{}\n\nPreparing file...", header);
+            let preparing = on.apply_edit(CreateReply::default().content(content));
+            let (_, scores) = future::try_join(preparing, scores).await?;
             if scores.is_empty() {
                 on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;
                 return Ok(());
             }
-            let header = on.headers().unwrap_or("").to_owned();
-            let content = format!("{}\n\nPreparing file...", header);
-            let first_edit = on
-                .apply_edit(CreateReply::default().content(content))
-                .map(|v| v.pls_ok());
 
             let p = Paginate {
                 env: ctx.data.read().await.get::<OsuEnv>().unwrap().clone(),
                 header: header.clone(),
                 scores,
             };
-            let (_, content) = future::join(first_edit, p.to_table(0, p.scores.len())).await;
+            let content = p.to_table(0, p.scores.len()).await;
             on.apply_edit(
                 CreateReply::default()
                     .content(header)
@@ -201,10 +202,11 @@ mod scores {
         }
 
         pub async fn display_scores_table(
-            scores: Vec<Score>,
+            scores: impl Future<Output = Result<Vec<Score>>>,
             ctx: &Context,
             mut on: impl CanEdit,
         ) -> Result<()> {
+            let scores = scores.await?;
             if scores.is_empty() {
                 on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;

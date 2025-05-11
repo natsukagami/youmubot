@@ -438,7 +438,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
             let reply = msg.reply(&ctx, header).await?;
             style
                 .display_scores(
-                    scores.into_iter().map(|s| s.score).collect(),
+                    future::ok(scores.into_iter().map(|s| s.score).collect()),
                     ctx,
                     Some(guild),
                     (reply, ctx),

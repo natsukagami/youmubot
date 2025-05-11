@@ -685,7 +685,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             let reply = msg.reply(ctx, &header).await?;
             style
                 .display_scores(
-                    plays.try_collect::<Vec<_>>().await?,
+                    plays.try_collect::<Vec<_>>(),
                     ctx,
                     reply.guild_id,
                     (reply, ctx).with_header(header),
@@ -758,7 +758,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             let reply = msg.reply(ctx, &header).await?;
             style
                 .display_scores(
-                    plays.try_collect::<Vec<_>>().await?,
+                    plays.try_collect::<Vec<_>>(),
                     ctx,
                     reply.guild_id,
                     (reply, ctx).with_header(header),
@@ -1016,7 +1016,12 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     );
     let reply = msg.reply(&ctx, &header).await?;
     style
-        .display_scores(scores, ctx, msg.guild_id, (reply, ctx).with_header(header))
+        .display_scores(
+            future::ok(scores),
+            ctx,
+            msg.guild_id,
+            (reply, ctx).with_header(header),
+        )
         .await?;
 
     Ok(())
@@ -1122,7 +1127,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             let reply = msg.reply(&ctx, &header).await?;
             style
                 .display_scores(
-                    plays.try_collect::<Vec<_>>().await?,
+                    plays.try_collect::<Vec<_>>(),
                     ctx,
                     msg.guild_id,
                     (reply, ctx).with_header(header),
