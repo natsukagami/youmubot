@@ -681,18 +681,14 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let plays = osu_client.user_recent(UserID::ID(user.id), |f| f.mode(mode));
     match nth {
         Nth::All => {
-            let reply = msg
-                .reply(
-                    ctx,
-                    format!("Here are the recent plays by {}!", user.mention()),
-                )
-                .await?;
+            let header = format!("Here are the recent plays by {}!", user.mention());
+            let reply = msg.reply(ctx, &header).await?;
             style
                 .display_scores(
                     plays.try_collect::<Vec<_>>().await?,
                     ctx,
                     reply.guild_id,
-                    (reply, ctx),
+                    (reply, ctx).with_header(header),
                 )
                 .await?;
         }
@@ -758,18 +754,14 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let plays = osu_client.user_pins(UserID::ID(user.id), |f| f.mode(mode));
     match nth {
         Nth::All => {
-            let reply = msg
-                .reply(
-                    ctx,
-                    format!("Here are the pinned plays by `{}`!", user.username),
-                )
-                .await?;
+            let header = format!("Here are the pinned plays by `{}`!", user.username);
+            let reply = msg.reply(ctx, &header).await?;
             style
                 .display_scores(
                     plays.try_collect::<Vec<_>>().await?,
                     ctx,
                     reply.guild_id,
-                    (reply, ctx),
+                    (reply, ctx).with_header(header),
                 )
                 .await?;
         }
@@ -1017,18 +1009,14 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         msg.reply(&ctx, "No scores found").await?;
         return Ok(());
     }
-    let reply = msg
-        .reply(
-            &ctx,
-            format!(
-                "Here are the scores by `{}` on {}!",
-                &user.username,
-                embed.mention()
-            ),
-        )
-        .await?;
+    let header = format!(
+        "Here are the scores by `{}` on {}!",
+        &user.username,
+        embed.mention()
+    );
+    let reply = msg.reply(&ctx, &header).await?;
     style
-        .display_scores(scores, ctx, msg.guild_id, (reply, ctx))
+        .display_scores(scores, ctx, msg.guild_id, (reply, ctx).with_header(header))
         .await?;
 
     Ok(())
@@ -1130,18 +1118,14 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             cache::save_beatmap(&env, msg.channel_id, &beatmap).await?;
         }
         Nth::All => {
-            let reply = msg
-                .reply(
-                    &ctx,
-                    format!("Here are the top plays by {}!", user.mention()),
-                )
-                .await?;
+            let header = format!("Here are the top plays by {}!", user.mention());
+            let reply = msg.reply(&ctx, &header).await?;
             style
                 .display_scores(
                     plays.try_collect::<Vec<_>>().await?,
                     ctx,
                     msg.guild_id,
-                    (reply, ctx),
+                    (reply, ctx).with_header(header),
                 )
                 .await?;
         }

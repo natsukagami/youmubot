@@ -2,6 +2,8 @@ pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
 mod scores {
+    use std::future::Future;
+
     use poise::ChoiceParameter;
     use serenity::all::GuildId;
 
@@ -41,7 +43,7 @@ mod scores {
     impl ScoreListStyle {
         pub async fn display_scores(
             self,
-            scores: Vec<Score>,
+            scores: impl Future<Output = Result<Vec<Score>>>,
             ctx: &Context,
             guild_id: Option<GuildId>,
             m: impl CanEdit,
@@ -55,6 +57,8 @@ mod scores {
     }
 
     mod grid {
+        use std::future::Future;
+
         use pagination::paginate_with_first_message;
         use serenity::all::{CreateActionRow, GuildId};
 
@@ -65,7 +69,7 @@ mod scores {
         use crate::models::Score;
 
         pub async fn display_scores_grid(
-            scores: Vec<Score>,
+            scores: impl Future<Output = Result<Vec<Score>>>,
             ctx: &Context,
             guild_id: Option<GuildId>,
             mut on: impl CanEdit,
@@ -81,7 +85,7 @@ mod scores {
             paginate_with_first_message(
                 Paginate {
                     env,
-                    scores,
+                    scores: scores.await?,
                     guild_id,
                     channel_id,
                 },
@@ -175,14 +179,22 @@ mod scores {
                     .await?;
                 return Ok(());
             }
+            let header = on.headers().unwrap_or("").to_owned();
+            let content = format!("{}\n\nPreparing file...", header);
+            let first_edit = on
+                .apply_edit(CreateReply::default().content(content))
+                .map(|v| v.pls_ok());
+
             let p = Paginate {
                 env: ctx.data.read().await.get::<OsuEnv>().unwrap().clone(),
-                header: on.get_message().await?.content.clone(),
+                header: header.clone(),
                 scores,
             };
-            let content = p.to_table(0, p.scores.len()).await;
+            let (_, content) = future::join(first_edit, p.to_table(0, p.scores.len())).await;
             on.apply_edit(
-                CreateReply::default().attachment(CreateAttachment::bytes(content, "table.txt")),
+                CreateReply::default()
+                    .content(header)
+                    .attachment(CreateAttachment::bytes(content, "table.md")),
             )
             .await?;
             Ok(())
@@ -202,7 +214,7 @@ mod scores {
             paginate_with_first_message(
                 Paginate {
                     env: ctx.data.read().await.get::<OsuEnv>().unwrap().clone(),
-                    header: on.get_message().await?.content.clone(),
+                    header: on.headers().unwrap_or("").to_owned(),
                     scores,
                 },
                 ctx,

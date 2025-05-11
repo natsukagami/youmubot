@@ -303,20 +303,14 @@ async fn handle_listing<U: HasOsuEnv>(
             cache::save_beatmap(&env, ctx.channel_id(), &beatmap).await?;
         }
         Nth::All => {
-            let reply = ctx
-                .clone()
-                .reply(format!(
-                    "Here are the {} plays by {}!",
-                    listing_kind,
-                    user.mention()
-                ))
-                .await?;
+            let header = format!("Here are the {} plays by {}!", listing_kind, user.mention());
+            let reply = ctx.clone().reply(&header).await?;
             style
                 .display_scores(
                     plays.try_collect::<Vec<_>>().await?,
                     ctx.clone().serenity_context(),
                     ctx.guild_id(),
-                    (reply, ctx),
+                    (reply, ctx).with_header(header),
                 )
                 .await?;
         }
@@ -480,14 +474,12 @@ async fn check<U: HasOsuEnv>(
         scores.reverse();
     }
 
-    let msg = ctx
-        .clone()
-        .reply(format!(
-            "Here are the plays by {} on {}!",
-            args.user.mention(),
-            display
-        ))
-        .await?;
+    let header = format!(
+        "Here are the plays by {} on {}!",
+        args.user.mention(),
+        display
+    );
+    let msg = ctx.clone().reply(&header).await?;
 
     let style = style.unwrap_or(if scores.len() <= 5 {
         ScoreListStyle::Grid
@@ -500,7 +492,7 @@ async fn check<U: HasOsuEnv>(
             scores,
             ctx.clone().serenity_context(),
             ctx.guild_id(),
-            (msg, ctx),
+            (msg, ctx).with_header(header),
         )
         .await?;
 
