@@ -1245,7 +1245,6 @@ pub(in crate::discord) async fn calculate_weighted_map_age(
         .collect::<FuturesOrdered<_>>()
         .try_collect::<Vec<_>>()
         .await?;
-    println!("Calculating score from {} scores", scores.len());
     Ok((scores
         .iter()
         .zip(scales().iter())
