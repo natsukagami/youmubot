@@ -160,7 +160,7 @@ impl<T: FetchScores> Scores for ScoresFetcher<T> {
 
     /// Get all scores.
     async fn get_all(mut self) -> Result<Vec<Score>> {
-        let _ = self.get_range(0..usize::max_value()).await?;
+        let _ = self.get_range(0..usize::MAX).await?;
         Ok(self.scores)
     }
 

@@ -11,3 +11,6 @@ members = [
 ]
 [workspace.lints.rust]
 deprecated = "allow"
+
+[workspace.lints.clippy]
+too_many_arguments = "allow"

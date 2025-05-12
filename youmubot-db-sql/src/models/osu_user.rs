@@ -188,7 +188,7 @@ impl OsuUser {
 
 impl OsuUser {
     /// Stores the user.
-    pub async fn store<'a>(&self, conn: &mut Transaction<'a, Database>) -> Result<bool> {
+    pub async fn store(&self, conn: &mut Transaction<'_, Database>) -> Result<bool> {
         let old_user_id = {
             query!(
                 r#"SELECT id as "id: i64" FROM osu_users WHERE user_id = ?"#,

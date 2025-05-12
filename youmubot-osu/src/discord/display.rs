@@ -194,7 +194,7 @@ mod scores {
                 header: header.clone(),
                 scores,
             };
-            let Some(content) = p.to_table(0, usize::max_value()).await? else {
+            let Some(content) = p.format_table(0, usize::MAX).await? else {
                 on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;
                 return Ok(());
@@ -240,7 +240,7 @@ mod scores {
         }
 
         impl<T: Scores> Paginate<T> {
-            async fn to_table(&mut self, start: usize, end: usize) -> Result<Option<String>> {
+            async fn format_table(&mut self, start: usize, end: usize) -> Result<Option<String>> {
                 let scores = self.scores.get_range(start..end).await?;
                 if scores.is_empty() {
                     return Ok(None);
@@ -374,7 +374,7 @@ mod scores {
                 let start = page * ITEMS_PER_PAGE;
                 let end = start + ITEMS_PER_PAGE;
 
-                let Some(score_table) = self.to_table(start, end).await? else {
+                let Some(score_table) = self.format_table(start, end).await? else {
                     return Ok(None);
                 };
                 let mut content = serenity::utils::MessageBuilder::new();

@@ -449,31 +449,28 @@ pub async fn forcesave(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
 async fn add_user(target: serenity::model::id::UserId, user: &User, env: &OsuEnv) -> Result<()> {
     let modes = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
         .into_iter()
-        .map(|mode| {
-            let mode = mode;
-            async move {
-                let pp = async {
-                    env.client
-                        .user(&UserID::ID(user.id), |f| f.mode(mode))
-                        .await
-                        .pls_ok()
-                        .unwrap_or(None)
-                        .and_then(|u| u.pp)
-                };
-                let map_length_age = UserExtras::from_user(env, user, mode);
-                let (pp, ex) = join!(pp, map_length_age);
-                pp.zip(ex.ok()).map(|(pp, ex)| {
-                    (
-                        mode,
-                        OsuUserMode {
-                            pp,
-                            map_length: ex.map_length,
-                            map_age: ex.map_age,
-                            last_update: Utc::now(),
-                        },
-                    )
-                })
-            }
+        .map(|mode| async move {
+            let pp = async {
+                env.client
+                    .user(&UserID::ID(user.id), |f| f.mode(mode))
+                    .await
+                    .pls_ok()
+                    .unwrap_or(None)
+                    .and_then(|u| u.pp)
+            };
+            let map_length_age = UserExtras::from_user(env, user, mode);
+            let (pp, ex) = join!(pp, map_length_age);
+            pp.zip(ex.ok()).map(|(pp, ex)| {
+                (
+                    mode,
+                    OsuUserMode {
+                        pp,
+                        map_length: ex.map_length,
+                        map_age: ex.map_age,
+                        last_update: Utc::now(),
+                    },
+                )
+            })
         })
         .collect::<stream::FuturesOrdered<_>>()
         .filter_map(future::ready)
@@ -832,7 +829,7 @@ pub(crate) async fn load_beatmap_from_channel(
     Some(EmbedType::Beatmap(
         Box::new(b),
         m,
-        info,
+        Box::new(info),
         Mods::NOMOD.clone(),
     ))
 }

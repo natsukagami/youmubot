@@ -337,7 +337,7 @@ async fn beatmap<U: HasOsuEnv>(
         EmbedType::Beatmap(beatmap, bmode, info, bmmods) => {
             let (beatmap, info, mods) =
                 if mods.is_none() && mode.is_none_or(|v| v == bmode.unwrap_or(beatmap.mode)) {
-                    (*beatmap, info, bmmods)
+                    (*beatmap, *info, bmmods)
                 } else {
                     let mode = bmode.unwrap_or(beatmap.mode);
                     let mods = match mods {
@@ -678,7 +678,7 @@ async fn parse_map_input(
                 return Ok(EmbedType::Beatmap(
                     Box::new(beatmap),
                     None,
-                    info,
+                    Box::new(info),
                     Mods::NOMOD.clone(),
                 ));
             }

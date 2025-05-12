@@ -11,7 +11,7 @@ use super::{oppai_cache::BeatmapInfoWithPP, OsuEnv};
 
 #[derive(Debug, Clone)]
 pub enum EmbedType {
-    Beatmap(Box<Beatmap>, Option<Mode>, BeatmapInfoWithPP, Mods),
+    Beatmap(Box<Beatmap>, Option<Mode>, Box<BeatmapInfoWithPP>, Mods),
     Beatmapset(Vec<Beatmap>, Option<Mode>),
 }
 
@@ -166,7 +166,7 @@ impl EmbedType {
                 .await
                 .map(|b| b.get_possible_pp_with(mode, &mods))?
         };
-        Ok(Self::Beatmap(Box::new(bm), mode, info, mods))
+        Ok(Self::Beatmap(Box::new(bm), mode, Box::new(info), mods))
     }
 
     pub(crate) async fn from_beatmapset_id(

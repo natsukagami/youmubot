@@ -254,7 +254,7 @@ pub fn hook<'a>(
             .then(|l| async move {
                 match l.embed {
                     EmbedType::Beatmap(b, mode, info, mods) => {
-                        handle_beatmap(ctx, &b, info, l.link, mode, mods, msg)
+                        handle_beatmap(ctx, &b, *info, l.link, mode, mods, msg)
                             .await
                             .pls_ok();
                         let bm = super::BeatmapWithMode(*b, mode);
@@ -277,7 +277,7 @@ pub fn hook<'a>(
     })
 }
 
-async fn handle_beatmap<'a, 'b>(
+async fn handle_beatmap(
     ctx: &Context,
     beatmap: &Beatmap,
     info: BeatmapInfoWithPP,
@@ -316,7 +316,7 @@ async fn handle_beatmap<'a, 'b>(
     Ok(())
 }
 
-async fn handle_beatmapset<'a, 'b>(
+async fn handle_beatmapset(
     ctx: &Context,
     beatmaps: Vec<Beatmap>,
     link: &'_ str,
