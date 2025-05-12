@@ -40,7 +40,7 @@ async fn top<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
     #[description = "Index of the score"]
     #[min = 1]
-    #[max = 100]
+    #[max = 200] // SCORE_COUNT_LIMIT
     index: Option<u8>,
     #[description = "Score listing style"] style: Option<ScoreListStyle>,
     #[description = "Game mode"] mode: Option<Mode>,
@@ -61,11 +61,10 @@ async fn top<U: HasOsuEnv>(
 
     ctx.defer().await?;
     let osu_client = &env.client;
-    let mut plays = osu_client
-        .user_best(UserID::ID(args.user.id), |f| f.mode(args.mode).limit(100))
+    let mode = args.mode;
+    let plays = osu_client
+        .user_best(UserID::ID(args.user.id), |f| f.mode(mode))
         .await?;
-
-    plays.sort_unstable_by(|a, b| b.pp.partial_cmp(&a.pp).unwrap());
 
     handle_listing(ctx, plays, args, |nth, b| b.top_record(nth), "top").await
 }
@@ -135,9 +134,10 @@ async fn recent<U: HasOsuEnv>(
     ctx.defer().await?;
 
     let osu_client = &env.client;
+    let mode = args.mode;
     let plays = osu_client
         .user_recent(UserID::ID(args.user.id), |f| {
-            f.mode(args.mode).include_fails(include_fails).limit(50)
+            f.mode(mode).include_fails(include_fails)
         })
         .await?;
 
@@ -168,8 +168,9 @@ async fn pinned<U: HasOsuEnv>(
     ctx.defer().await?;
 
     let osu_client = &env.client;
+    let mode = args.mode;
     let plays = osu_client
-        .user_pins(UserID::ID(args.user.id), |f| f.mode(args.mode).limit(50))
+        .user_pins(UserID::ID(args.user.id), |f| f.mode(mode))
         .await?;
 
     handle_listing(ctx, plays, args, |_, b| b, "pinned").await
@@ -254,7 +255,7 @@ pub async fn forcesave<U: HasOsuEnv>(
 
 async fn handle_listing<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
-    plays: Vec<Score>,
+    mut plays: impl Scores,
     listing_args: ListingArgs,
     transform: impl for<'a> Fn(u8, ScoreEmbedBuilder<'a>) -> ScoreEmbedBuilder<'a>,
     listing_kind: &'static str,
@@ -269,8 +270,10 @@ async fn handle_listing<U: HasOsuEnv>(
 
     match nth {
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("no such play"))?
+            let play = if let Some(play) = plays.get(nth as usize).await? {
+                play
+            } else {
+                return Err(Error::msg("no such play"))?;
             };
 
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
@@ -301,20 +304,14 @@ async fn handle_listing<U: HasOsuEnv>(
             cache::save_beatmap(&env, ctx.channel_id(), &beatmap).await?;
         }
         Nth::All => {
-            let reply = ctx
-                .clone()
-                .reply(format!(
-                    "Here are the {} plays by {}!",
-                    listing_kind,
-                    user.mention()
-                ))
-                .await?;
+            let header = format!("Here are the {} plays by {}!", listing_kind, user.mention());
+            let reply = ctx.clone().reply(&header).await?;
             style
                 .display_scores(
                     plays,
                     ctx.clone().serenity_context(),
                     ctx.guild_id(),
-                    (reply, ctx),
+                    (reply, ctx).with_header(header),
                 )
                 .await?;
         }
@@ -478,14 +475,12 @@ async fn check<U: HasOsuEnv>(
         scores.reverse();
     }
 
-    let msg = ctx
-        .clone()
-        .reply(format!(
-            "Here are the plays by {} on {}!",
-            args.user.mention(),
-            display
-        ))
-        .await?;
+    let header = format!(
+        "Here are the plays by {} on {}!",
+        args.user.mention(),
+        display
+    );
+    let msg = ctx.clone().reply(&header).await?;
 
     let style = style.unwrap_or(if scores.len() <= 5 {
         ScoreListStyle::Grid
@@ -498,7 +493,7 @@ async fn check<U: HasOsuEnv>(
             scores,
             ctx.clone().serenity_context(),
             ctx.guild_id(),
-            (msg, ctx),
+            (msg, ctx).with_header(header),
         )
         .await?;
 
@@ -618,7 +613,7 @@ async fn leaderboard<U: HasOsuEnv>(
             let reply = ctx.reply(header).await?;
             style
                 .display_scores(
-                    scores.into_iter().map(|s| s.score).collect(),
+                    scores.into_iter().map(|s| s.score).collect::<Vec<_>>(),
                     ctx.serenity_context(),
                     Some(guild.id),
                     (reply, ctx),

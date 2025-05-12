@@ -22,6 +22,7 @@ use youmubot_prelude::*;
 
 use crate::discord::calculate_weighted_map_age;
 use crate::discord::db::OsuUserMode;
+use crate::scores::Scores;
 use crate::{
     discord::cache::save_beatmap,
     discord::oppai_cache::BeatmapContent,
@@ -212,7 +213,8 @@ impl Announcer {
         };
         let top_scores = env
             .client
-            .user_best(user_id.clone(), |f| f.mode(mode).limit(100));
+            .user_best(user_id.clone(), move |f| f.mode(mode))
+            .and_then(|v| v.get_all());
         let (user, top_scores) = try_join!(user, top_scores)?;
         let mut user = user.unwrap();
         // if top scores exist, user would too
@@ -263,14 +265,14 @@ impl<'a> CollectedScore<'a> {
         user: &'a User,
         event: UserEventRank,
     ) -> Result<CollectedScore<'a>> {
-        let scores = osu
+        let mut scores = osu
             .scores(event.beatmap_id, |f| {
                 f.user(UserID::ID(user.id)).mode(event.mode)
             })
             .await?;
         let score = match scores
-            .into_iter()
             .find(|s| (s.date - event.date).abs() < chrono::TimeDelta::seconds(5))
+            .await?
         {
             Some(v) => v,
             None => {
@@ -282,7 +284,7 @@ impl<'a> CollectedScore<'a> {
         };
         Ok(Self {
             user,
-            score,
+            score: score.clone(),
             mode: event.mode,
             kind: ScoreType::world(event.rank),
         })

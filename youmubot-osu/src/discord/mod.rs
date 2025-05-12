@@ -36,7 +36,8 @@ use crate::{
     models::{Beatmap, Mode, Mods, Score, User},
     mods::UnparsedMods,
     request::{BeatmapRequestKind, UserID},
-    OsuClient as OsuHttpClient, UserHeader,
+    scores::Scores,
+    OsuClient as OsuHttpClient, UserHeader, MAX_TOP_SCORES_INDEX,
 };
 
 mod announcer;
@@ -304,6 +305,8 @@ pub(crate) async fn find_save_requirements(
         ] {
             let scores = client
                 .user_best(UserID::ID(u.id), |f| f.mode(*mode))
+                .await?
+                .get_all()
                 .await?;
             if let Some(v) = scores.into_iter().choose(&mut rand::thread_rng()) {
                 return Ok(Some((v, *mode)));
@@ -351,11 +354,11 @@ pub(crate) async fn handle_save_respond(
     let osu_client = &env.client;
     async fn check(client: &OsuHttpClient, u: &User, mode: Mode, map_id: u64) -> Result<bool> {
         Ok(client
-            .user_recent(UserID::ID(u.id), |f| f.mode(mode).limit(1))
+            .user_recent(UserID::ID(u.id), |f| f.mode(mode))
             .await?
-            .into_iter()
-            .take(1)
-            .any(|s| s.beatmap_id == map_id))
+            .get(0)
+            .await?
+            .is_some_and(|s| s.beatmap_id == map_id))
     }
     let msg_id = reply.get_message().await?.id;
     let recv = InteractionCollector::create(&ctx, msg_id).await?;
@@ -501,10 +504,11 @@ impl UserExtras {
     pub async fn from_user(env: &OsuEnv, user: &User, mode: Mode) -> Result<Self> {
         let scores = env
             .client
-            .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
+            .user_best(UserID::ID(user.id), |f| f.mode(mode))
+            .and_then(|v| v.get_all())
             .await
             .pls_ok()
-            .unwrap_or_else(std::vec::Vec::new);
+            .unwrap_or_else(Vec::new);
 
         let (length, age) = join!(
             calculate_weighted_map_length(&scores, &env.beatmaps, mode),
@@ -589,7 +593,7 @@ impl ListingArgs {
         sender: serenity::all::UserId,
     ) -> Result<Self> {
         let nth = index
-            .filter(|&v| 1 <= v && v <= 100)
+            .filter(|&v| 1 <= v && v <= MAX_TOP_SCORES_INDEX as u8)
             .map(|v| v - 1)
             .map(Nth::Nth)
             .unwrap_or_default();
@@ -632,7 +636,7 @@ async fn user_header_or_default_id(
         Some(UsernameArg::Raw(r)) => {
             let user = env
                 .client
-                .user(&UserID::Username(r), |f| f)
+                .user(&UserID::Username(Arc::new(r)), |f| f)
                 .await?
                 .ok_or(Error::msg("User not found"))?;
             (user.preferred_mode, user.into())
@@ -678,30 +682,40 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     } = ListingArgs::parse(&env, msg, &mut args, ScoreListStyle::Table).await?;
 
     let osu_client = &env.client;
-    let plays = osu_client
-        .user_recent(UserID::ID(user.id), |f| f.mode(mode).limit(50))
+    let mut plays = osu_client
+        .user_recent(UserID::ID(user.id), |f| f.mode(mode))
         .await?;
     match nth {
         Nth::All => {
-            let reply = msg
-                .reply(
-                    ctx,
-                    format!("Here are the recent plays by {}!", user.mention()),
-                )
-                .await?;
+            let header = format!("Here are the recent plays by {}!", user.mention());
+            let reply = msg.reply(ctx, &header).await?;
             style
-                .display_scores(plays, ctx, reply.guild_id, (reply, ctx))
+                .display_scores(plays, ctx, reply.guild_id, (reply, ctx).with_header(header))
                 .await?;
         }
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("No such play"))?
+            let play = plays
+                .get(nth as usize)
+                .await?
+                .ok_or(Error::msg("No such play"))?
+                .clone();
+            let attempts = {
+                let mut count = 0usize;
+                while plays
+                    .get(nth as usize + count + 1)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some_and(|p| {
+                        p.beatmap_id == play.beatmap_id
+                            && p.mode == play.mode
+                            && p.mods == play.mods
+                    })
+                {
+                    count += 1;
+                }
+                count
             };
-            let attempts = plays
-                .iter()
-                .skip(nth as usize)
-                .take_while(|p| p.beatmap_id == play.beatmap_id && p.mods == play.mods)
-                .count();
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
@@ -716,7 +730,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                             user.mention()
                         ))
                         .embed(
-                            score_embed(play, &beatmap_mode, &content, user)
+                            score_embed(&play, &beatmap_mode, &content, user)
                                 .footer(format!("Attempt #{}", attempts))
                                 .build(),
                         )
@@ -751,25 +765,22 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     let osu_client = &env.client;
 
-    let plays = osu_client
-        .user_pins(UserID::ID(user.id), |f| f.mode(mode).limit(50))
+    let mut plays = osu_client
+        .user_pins(UserID::ID(user.id), |f| f.mode(mode))
         .await?;
     match nth {
         Nth::All => {
-            let reply = msg
-                .reply(
-                    ctx,
-                    format!("Here are the pinned plays by `{}`!", user.username),
-                )
-                .await?;
+            let header = format!("Here are the pinned plays by `{}`!", user.username);
+            let reply = msg.reply(ctx, &header).await?;
             style
-                .display_scores(plays, ctx, reply.guild_id, (reply, ctx))
+                .display_scores(plays, ctx, reply.guild_id, (reply, ctx).with_header(header))
                 .await?;
         }
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("No such play"))?
-            };
+            let play = plays
+                .get(nth as usize)
+                .await?
+                .ok_or(Error::msg("No such play"))?;
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
@@ -779,7 +790,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     &ctx,
                     CreateMessage::new()
                         .content("Here is the play that you requested".to_string())
-                        .embed(score_embed(play, &beatmap_mode, &content, user).build())
+                        .embed(score_embed(&play, &beatmap_mode, &content, user).build())
                         .components(vec![score_components(msg.guild_id)])
                         .reference_message(msg),
                 )
@@ -1008,18 +1019,14 @@ pub async fn check(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         msg.reply(&ctx, "No scores found").await?;
         return Ok(());
     }
-    let reply = msg
-        .reply(
-            &ctx,
-            format!(
-                "Here are the scores by `{}` on {}!",
-                &user.username,
-                embed.mention()
-            ),
-        )
-        .await?;
+    let header = format!(
+        "Here are the scores by `{}` on {}!",
+        &user.username,
+        embed.mention()
+    );
+    let reply = msg.reply(&ctx, &header).await?;
     style
-        .display_scores(scores, ctx, msg.guild_id, (reply, ctx))
+        .display_scores(scores, ctx, msg.guild_id, (reply, ctx).with_header(header))
         .await?;
 
     Ok(())
@@ -1043,6 +1050,7 @@ pub(crate) async fn do_check(
         let mods = mods.clone().and_then(|t| t.to_mods(m).ok());
         osu_client
             .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
+            .and_then(|v| v.get_all())
             .map_ok(move |mut v| {
                 v.retain(|s| mods.as_ref().is_none_or(|m| s.mods.contains(&m)));
                 v
@@ -1087,17 +1095,15 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
     let osu_client = &env.client;
 
     let mut plays = osu_client
-        .user_best(UserID::ID(user.id), |f| f.mode(mode).limit(100))
+        .user_best(UserID::ID(user.id), |f| f.mode(mode))
         .await?;
-
-    plays.sort_unstable_by(|a, b| b.pp.partial_cmp(&a.pp).unwrap());
-    let plays = plays;
 
     match nth {
         Nth::Nth(nth) => {
-            let Some(play) = plays.get(nth as usize) else {
-                Err(Error::msg("no such play"))?
-            };
+            let play = plays
+                .get(nth as usize)
+                .await?
+                .ok_or(Error::msg("No such play"))?;
 
             let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
@@ -1124,14 +1130,10 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
             cache::save_beatmap(&env, msg.channel_id, &beatmap).await?;
         }
         Nth::All => {
-            let reply = msg
-                .reply(
-                    &ctx,
-                    format!("Here are the top plays by {}!", user.mention()),
-                )
-                .await?;
+            let header = format!("Here are the top plays by {}!", user.mention());
+            let reply = msg.reply(&ctx, &header).await?;
             style
-                .display_scores(plays, ctx, msg.guild_id, (reply, ctx))
+                .display_scores(plays, ctx, msg.guild_id, (reply, ctx).with_header(header))
                 .await?;
         }
     }
@@ -1193,11 +1195,6 @@ fn scales() -> &'static [f64] {
     SCALES.get_or_init(|| {
         (0..256)
             .map(|r| SCALING_FACTOR.powi(r))
-            // .scan(1.0, |a, _| {
-            //     let old = *a;
-            //     *a *= SCALING_FACTOR;
-            //     Some(old)
-            // })
             .collect::<Vec<_>>()
             .into_boxed_slice()
     })

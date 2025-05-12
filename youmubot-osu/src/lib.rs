@@ -12,6 +12,8 @@ pub mod discord;
 pub mod models;
 pub mod request;
 
+pub const MAX_TOP_SCORES_INDEX: usize = 200;
+
 /// Client is the client that will perform calls to the osu! api server.
 #[derive(Clone)]
 pub struct OsuClient {
@@ -86,7 +88,7 @@ impl OsuClient {
         &self,
         beatmap_id: u64,
         f: impl FnOnce(&mut ScoreRequestBuilder) -> &mut ScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
+    ) -> Result<impl Scores> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
         r.build(self).await
@@ -96,7 +98,7 @@ impl OsuClient {
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
+    ) -> Result<impl Scores> {
         self.user_scores(UserScoreType::Best, user, f).await
     }
 
@@ -104,7 +106,7 @@ impl OsuClient {
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
+    ) -> Result<impl Scores> {
         self.user_scores(UserScoreType::Recent, user, f).await
     }
 
@@ -112,7 +114,7 @@ impl OsuClient {
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
+    ) -> Result<impl Scores> {
         self.user_scores(UserScoreType::Pin, user, f).await
     }
 
@@ -121,10 +123,10 @@ impl OsuClient {
         u: UserScoreType,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
+    ) -> Result<impl Scores> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
-        r.build(self).await
+        r.build(self.clone()).await
     }
 
     pub async fn score(&self, score_id: u64) -> Result<Option<Score>, Error> {

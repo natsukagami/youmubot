@@ -26,7 +26,8 @@ serenity = "0.12"
 poise = { git = "https://github.com/serenity-rs/poise", branch = "current" }
 zip = "0.6.2"
 rand = "0.8"
-futures-util = "0.3.30"
+futures = "0.3"
+futures-util = "0.3"
 thiserror = "2"
 
 youmubot-db = { path = "../youmubot-db" }

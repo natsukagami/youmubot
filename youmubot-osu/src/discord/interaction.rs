@@ -95,20 +95,21 @@ pub fn handle_check_button<'a>(
             return Ok(());
         }
 
+        let header = format!(
+            "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on {}!",
+            user.username,
+            user.id,
+            embed.mention()
+        );
         comp.create_followup(
             &ctx,
-            CreateInteractionResponseFollowup::new().content(format!(
-                "Here are the scores by [`{}`](<https://osu.ppy.sh/users/{}>) on {}!",
-                user.username,
-                user.id,
-                embed.mention()
-            )),
+            CreateInteractionResponseFollowup::new().content(&header),
         )
         .await?;
 
         let guild_id = comp.guild_id;
         ScoreListStyle::Grid
-            .display_scores(scores, &ctx, guild_id, (comp, ctx))
+            .display_scores(scores, &ctx, guild_id, (comp, ctx).with_header(header))
             .await
             .pls_ok();
         Ok(())

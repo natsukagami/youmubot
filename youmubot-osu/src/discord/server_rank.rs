@@ -30,6 +30,7 @@ use crate::{
     },
     models::Mode,
     request::UserID,
+    scores::Scores,
     Beatmap, Score,
 };
 
@@ -438,7 +439,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
             let reply = msg.reply(&ctx, header).await?;
             style
                 .display_scores(
-                    scores.into_iter().map(|s| s.score).collect(),
+                    scores.into_iter().map(|s| s.score).collect::<Vec<_>>(),
                     ctx,
                     Some(guild),
                     (reply, ctx),
@@ -503,6 +504,7 @@ async fn get_leaderboard(
                     .scores(b.beatmap_id, move |f| {
                         f.user(UserID::ID(osu_id)).mode(mode_override)
                     })
+                    .and_then(|v| v.get_all())
                     .map(move |r| Some((b, op, mem.clone(), r.ok()?)))
             })
         })

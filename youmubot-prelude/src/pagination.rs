@@ -14,9 +14,33 @@ const PREV: &str = "youmubot_pagination_prev";
 const FAST_NEXT: &str = "youmubot_pagination_fast_next";
 const FAST_PREV: &str = "youmubot_pagination_fast_prev";
 
-pub trait CanEdit: Send {
+pub trait CanEdit: Send + Sized {
     fn get_message(&self) -> impl Future<Output = Result<Message>> + Send;
     fn apply_edit(&mut self, edit: CreateReply) -> impl Future<Output = Result<()>> + Send;
+
+    fn headers(&self) -> Option<&str> {
+        None
+    }
+
+    fn with_header(self, header: String) -> impl CanEdit {
+        WithHeaders(self, header)
+    }
+}
+
+struct WithHeaders<T>(T, String);
+
+impl<T: CanEdit> CanEdit for WithHeaders<T> {
+    fn get_message(&self) -> impl Future<Output = Result<Message>> + Send {
+        self.0.get_message()
+    }
+
+    fn apply_edit(&mut self, edit: CreateReply) -> impl Future<Output = Result<()>> + Send {
+        self.0.apply_edit(edit)
+    }
+
+    fn headers(&self) -> Option<&str> {
+        Some(&self.1)
+    }
 }
 
 impl<'a> CanEdit for (Message, &'a Context) {
