@@ -2,14 +2,12 @@ pub use beatmapset::display_beatmapset;
 pub use scores::ScoreListStyle;
 
 mod scores {
-    use std::future::Future;
-
     use poise::ChoiceParameter;
     use serenity::all::GuildId;
 
     use youmubot_prelude::*;
 
-    use crate::models::Score;
+    use crate::scores::Scores;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, ChoiceParameter)]
     /// The style for the scores list to be displayed.
@@ -43,7 +41,7 @@ mod scores {
     impl ScoreListStyle {
         pub async fn display_scores(
             self,
-            scores: impl Future<Output = Result<Vec<Score>>>,
+            scores: impl Scores,
             ctx: &Context,
             guild_id: Option<GuildId>,
             m: impl CanEdit,
@@ -57,8 +55,6 @@ mod scores {
     }
 
     mod grid {
-        use std::future::Future;
-
         use pagination::paginate_with_first_message;
         use serenity::all::{CreateActionRow, GuildId};
 
@@ -66,17 +62,16 @@ mod scores {
 
         use crate::discord::interaction::score_components;
         use crate::discord::{cache::save_beatmap, BeatmapWithMode, OsuEnv};
-        use crate::models::Score;
+        use crate::scores::Scores;
 
         pub async fn display_scores_grid(
-            scores: impl Future<Output = Result<Vec<Score>>>,
+            scores: impl Scores,
             ctx: &Context,
             guild_id: Option<GuildId>,
             mut on: impl CanEdit,
         ) -> Result<()> {
             let env = ctx.data.read().await.get::<OsuEnv>().unwrap().clone();
             let channel_id = on.get_message().await?.channel_id;
-            let scores = scores.await?;
             if scores.is_empty() {
                 on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;
@@ -98,15 +93,22 @@ mod scores {
             Ok(())
         }
 
-        pub struct Paginate {
+        pub struct Paginate<T: Scores> {
             env: OsuEnv,
-            scores: Vec<Score>,
+            scores: T,
             guild_id: Option<GuildId>,
             channel_id: serenity::all::ChannelId,
         }
 
+        impl<T: Scores> Paginate<T> {
+            fn pages_fake(&self) -> usize {
+                let size = self.scores.length_fetched();
+                size.count() + if size.is_total() { 0 } else { 1 }
+            }
+        }
+
         #[async_trait]
-        impl pagination::Paginate for Paginate {
+        impl<T: Scores> pagination::Paginate for Paginate<T> {
             async fn render(
                 &mut self,
                 page: u8,
@@ -114,7 +116,10 @@ mod scores {
             ) -> Result<Option<CreateReply>> {
                 let env = &self.env;
                 let page = page as usize;
-                let score = &self.scores[page];
+                let Some(score) = self.scores.get(page).await? else {
+                    return Ok(None);
+                };
+                let score = score.clone();
 
                 let beatmap = env
                     .beatmaps
@@ -137,8 +142,12 @@ mod scores {
                 Ok(Some(
                     CreateReply::default()
                         .embed({
-                            crate::discord::embeds::score_embed(score, &bm, &content, &user)
-                                .footer(format!("Page {}/{}", page + 1, self.scores.len()))
+                            crate::discord::embeds::score_embed(&score, &bm, &content, &user)
+                                .footer(format!(
+                                    "Page {} / {}",
+                                    page + 1,
+                                    self.scores.length_fetched()
+                                ))
                                 .build()
                         })
                         .components(
@@ -151,14 +160,13 @@ mod scores {
             }
 
             fn len(&self) -> Option<usize> {
-                Some(self.scores.len())
+                Some(self.pages_fake())
             }
         }
     }
 
     pub mod table {
         use std::borrow::Cow;
-        use std::future::Future;
 
         use pagination::paginate_with_first_message;
         use serenity::all::{CreateActionRow, CreateAttachment};
@@ -169,29 +177,28 @@ mod scores {
 
         use crate::discord::oppai_cache::Stats;
         use crate::discord::{time_before_now, Beatmap, BeatmapInfo, OsuEnv};
-        use crate::models::Score;
+        use crate::scores::Scores;
 
         pub async fn display_scores_as_file(
-            scores: impl Future<Output = Result<Vec<Score>>>,
+            scores: impl Scores,
             ctx: &Context,
             mut on: impl CanEdit,
         ) -> Result<()> {
             let header = on.headers().unwrap_or("").to_owned();
             let content = format!("{}\n\nPreparing file...", header);
-            let preparing = on.apply_edit(CreateReply::default().content(content));
-            let (_, scores) = future::try_join(preparing, scores).await?;
-            if scores.is_empty() {
-                on.apply_edit(CreateReply::default().content("No plays found"))
-                    .await?;
-                return Ok(());
-            }
+            on.apply_edit(CreateReply::default().content(content))
+                .await?;
 
-            let p = Paginate {
+            let mut p = Paginate {
                 env: ctx.data.read().await.get::<OsuEnv>().unwrap().clone(),
                 header: header.clone(),
                 scores,
             };
-            let content = p.to_table(0, p.scores.len()).await;
+            let Some(content) = p.to_table(0, usize::max_value()).await? else {
+                on.apply_edit(CreateReply::default().content("No plays found"))
+                    .await?;
+                return Ok(());
+            };
             on.apply_edit(
                 CreateReply::default()
                     .content(header)
@@ -202,11 +209,10 @@ mod scores {
         }
 
         pub async fn display_scores_table(
-            scores: impl Future<Output = Result<Vec<Score>>>,
+            scores: impl Scores,
             ctx: &Context,
             mut on: impl CanEdit,
         ) -> Result<()> {
-            let scores = scores.await?;
             if scores.is_empty() {
                 on.apply_edit(CreateReply::default().content("No plays found"))
                     .await?;
@@ -227,19 +233,18 @@ mod scores {
             Ok(())
         }
 
-        pub struct Paginate {
+        pub struct Paginate<T: Scores> {
             env: OsuEnv,
             header: String,
-            scores: Vec<Score>,
+            scores: T,
         }
 
-        impl Paginate {
-            fn total_pages(&self) -> usize {
-                (self.scores.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE
-            }
-
-            async fn to_table(&self, start: usize, end: usize) -> String {
-                let scores = &self.scores[start..end];
+        impl<T: Scores> Paginate<T> {
+            async fn to_table(&mut self, start: usize, end: usize) -> Result<Option<String>> {
+                let scores = self.scores.get_range(start..end).await?;
+                if scores.is_empty() {
+                    return Ok(None);
+                }
                 let meta_cache = &self.env.beatmaps;
                 let oppai = &self.env.oppai;
 
@@ -348,14 +353,18 @@ mod scores {
                     })
                     .collect::<Vec<_>>();
 
-                table_formatting(&SCORE_HEADERS, &SCORE_ALIGNS, score_arr)
+                Ok(Some(table_formatting(
+                    &SCORE_HEADERS,
+                    &SCORE_ALIGNS,
+                    score_arr,
+                )))
             }
         }
 
         const ITEMS_PER_PAGE: usize = 5;
 
         #[async_trait]
-        impl pagination::Paginate for Paginate {
+        impl<T: Scores> pagination::Paginate for Paginate<T> {
             async fn render(
                 &mut self,
                 page: u8,
@@ -363,23 +372,20 @@ mod scores {
             ) -> Result<Option<CreateReply>> {
                 let page = page as usize;
                 let start = page * ITEMS_PER_PAGE;
-                let end = self.scores.len().min(start + ITEMS_PER_PAGE);
-                if start >= end {
+                let end = start + ITEMS_PER_PAGE;
+
+                let Some(score_table) = self.to_table(start, end).await? else {
                     return Ok(None);
-                }
-                let plays = &self.scores[start..end];
-
-                let has_oppai = plays.iter().any(|p| p.pp.is_none());
-
-                let score_table = self.to_table(start, end).await;
+                };
                 let mut content = serenity::utils::MessageBuilder::new();
                 content
                     .push_line(&self.header)
                     .push_line(score_table)
-                    .push_line(format!("Page **{}/{}**", page + 1, self.total_pages()));
-                if has_oppai {
-                    content.push_line("[?] means pp was predicted by oppai-rs.");
-                };
+                    .push_line(format!(
+                        "Page **{} / {}**",
+                        page + 1,
+                        self.scores.length_fetched().as_pages(ITEMS_PER_PAGE)
+                    ));
                 let content = content.build();
 
                 Ok(Some(
@@ -388,7 +394,9 @@ mod scores {
             }
 
             fn len(&self) -> Option<usize> {
-                Some(self.total_pages())
+                let size = self.scores.length_fetched();
+                let pages = size.count().div_ceil(ITEMS_PER_PAGE);
+                Some(pages + if size.is_total() { 0 } else { 1 })
             }
         }
     }

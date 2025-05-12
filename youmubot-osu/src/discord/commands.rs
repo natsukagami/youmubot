@@ -4,7 +4,6 @@ use super::*;
 use cache::save_beatmap;
 use display::display_beatmapset;
 use embeds::ScoreEmbedBuilder;
-use futures::TryStream;
 use link_parser::EmbedType;
 use poise::{ChoiceParameter, CreateReply};
 use serenity::all::{CreateAttachment, User};
@@ -63,7 +62,9 @@ async fn top<U: HasOsuEnv>(
     ctx.defer().await?;
     let osu_client = &env.client;
     let mode = args.mode;
-    let plays = osu_client.user_best(UserID::ID(args.user.id), |f| f.mode(mode));
+    let plays = osu_client
+        .user_best(UserID::ID(args.user.id), |f| f.mode(mode))
+        .await?;
 
     handle_listing(ctx, plays, args, |nth, b| b.top_record(nth), "top").await
 }
@@ -134,9 +135,11 @@ async fn recent<U: HasOsuEnv>(
 
     let osu_client = &env.client;
     let mode = args.mode;
-    let plays = osu_client.user_recent(UserID::ID(args.user.id), |f| {
-        f.mode(mode).include_fails(include_fails).limit(50)
-    });
+    let plays = osu_client
+        .user_recent(UserID::ID(args.user.id), |f| {
+            f.mode(mode).include_fails(include_fails)
+        })
+        .await?;
 
     handle_listing(ctx, plays, args, |_, b| b, "recent").await
 }
@@ -166,7 +169,9 @@ async fn pinned<U: HasOsuEnv>(
 
     let osu_client = &env.client;
     let mode = args.mode;
-    let plays = osu_client.user_pins(UserID::ID(args.user.id), |f| f.mode(mode));
+    let plays = osu_client
+        .user_pins(UserID::ID(args.user.id), |f| f.mode(mode))
+        .await?;
 
     handle_listing(ctx, plays, args, |_, b| b, "pinned").await
 }
@@ -250,7 +255,7 @@ pub async fn forcesave<U: HasOsuEnv>(
 
 async fn handle_listing<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
-    plays: impl TryStream<Ok = Score, Error = Error>,
+    mut plays: impl Scores,
     listing_args: ListingArgs,
     transform: impl for<'a> Fn(u8, ScoreEmbedBuilder<'a>) -> ScoreEmbedBuilder<'a>,
     listing_kind: &'static str,
@@ -265,12 +270,8 @@ async fn handle_listing<U: HasOsuEnv>(
 
     match nth {
         Nth::Nth(nth) => {
-            let play = std::pin::pin!(plays.into_stream())
-                .skip(nth as usize)
-                .next()
-                .await;
-            let play = if let Some(play) = play {
-                play?
+            let play = if let Some(play) = plays.get(nth as usize).await? {
+                play
             } else {
                 return Err(Error::msg("no such play"))?;
             };
@@ -307,7 +308,7 @@ async fn handle_listing<U: HasOsuEnv>(
             let reply = ctx.clone().reply(&header).await?;
             style
                 .display_scores(
-                    plays.try_collect::<Vec<_>>(),
+                    plays,
                     ctx.clone().serenity_context(),
                     ctx.guild_id(),
                     (reply, ctx).with_header(header),
@@ -489,7 +490,7 @@ async fn check<U: HasOsuEnv>(
 
     style
         .display_scores(
-            future::ok(scores),
+            scores,
             ctx.clone().serenity_context(),
             ctx.guild_id(),
             (msg, ctx).with_header(header),
@@ -612,7 +613,7 @@ async fn leaderboard<U: HasOsuEnv>(
             let reply = ctx.reply(header).await?;
             style
                 .display_scores(
-                    future::ok(scores.into_iter().map(|s| s.score).collect()),
+                    scores.into_iter().map(|s| s.score).collect::<Vec<_>>(),
                     ctx.serenity_context(),
                     Some(guild.id),
                     (reply, ctx),

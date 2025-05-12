@@ -1,16 +1,18 @@
 use core::fmt;
+use std::sync::Arc;
 
 use crate::models::{Mode, Mods};
 use crate::OsuClient;
 use rosu_v2::error::OsuError;
 use youmubot_prelude::*;
 
-/// Maximum number of scores returned by the osu! api.
-pub const SCORE_COUNT_LIMIT: usize = 200;
+pub(crate) mod scores;
+
+pub use scores::Scores;
 
 #[derive(Clone, Debug)]
 pub enum UserID {
-    Username(String),
+    Username(Arc<String>),
     ID(u64),
 }
 
@@ -26,7 +28,7 @@ impl fmt::Display for UserID {
 impl From<UserID> for rosu_v2::prelude::UserId {
     fn from(value: UserID) -> Self {
         match value {
-            UserID::Username(s) => rosu_v2::request::UserId::Name(s.into()),
+            UserID::Username(s) => rosu_v2::request::UserId::Name(s[..].into()),
             UserID::ID(id) => rosu_v2::request::UserId::Id(id as u32),
         }
     }
@@ -37,7 +39,7 @@ impl UserID {
         let s = s.into();
         match s.parse::<u64>() {
             Ok(id) => UserID::ID(id),
-            Err(_) => UserID::Username(s),
+            Err(_) => UserID::Username(Arc::new(s)),
         }
     }
 }
@@ -57,11 +59,11 @@ fn handle_not_found<T>(v: Result<T, OsuError>) -> Result<Option<T>, OsuError> {
 }
 
 pub mod builders {
-    use futures_util::TryStream;
     use rosu_v2::model::mods::GameModsIntermode;
 
-    use crate::models;
+    use crate::models::{self, Score};
 
+    use super::scores::{FetchScores, ScoresFetcher};
     use super::OsuClient;
     use super::*;
     /// A builder for a Beatmap request.
@@ -170,7 +172,6 @@ pub mod builders {
         user: Option<UserID>,
         mode: Option<Mode>,
         mods: Option<Mods>,
-        limit: Option<u8>,
     }
 
     impl ScoreRequestBuilder {
@@ -180,7 +181,6 @@ pub mod builders {
                 user: None,
                 mode: None,
                 mods: None,
-                limit: None,
             }
         }
 
@@ -199,23 +199,21 @@ pub mod builders {
             self
         }
 
-        pub fn limit(&mut self, limit: u8) -> &mut Self {
-            self.limit = Some(limit)
-                .filter(|&v| v <= SCORE_COUNT_LIMIT as u8)
-                .or(self.limit);
-            self
-        }
-
-        pub(crate) async fn build(self, osu: &OsuClient) -> Result<Vec<models::Score>> {
-            let scores = handle_not_found(match self.user {
+        async fn fetch_scores(
+            &self,
+            osu: &crate::OsuClient,
+            _offset: usize,
+        ) -> Result<Vec<models::Score>> {
+            let scores = handle_not_found(match &self.user {
                 Some(user) => {
-                    let mut r = osu.rosu.beatmap_user_scores(self.beatmap_id as u32, user);
+                    let mut r = osu
+                        .rosu
+                        .beatmap_user_scores(self.beatmap_id as u32, user.clone());
                     if let Some(mode) = self.mode {
                         r = r.mode(mode.into());
                     }
-                    match self.mods {
+                    match &self.mods {
                         Some(mods) => r.await.map(|mut ss| {
-                            // let mods = GameModsIntermode::from(mods.inner);
                             ss.retain(|s| {
                                 Mods::from_gamemods(s.mods.clone(), s.set_on_lazer).contains(&mods)
                             });
@@ -226,20 +224,24 @@ pub mod builders {
                 }
                 None => {
                     let mut r = osu.rosu.beatmap_scores(self.beatmap_id as u32).global();
-                    if let Some(mode) = self.mode {
-                        r = r.mode(mode.into());
+                    if let Some(mode) = &self.mode {
+                        r = r.mode(mode.clone().into());
                     }
-                    if let Some(mods) = self.mods {
-                        r = r.mods(GameModsIntermode::from(mods.inner));
+                    if let Some(mods) = &self.mods {
+                        r = r.mods(GameModsIntermode::from(mods.inner.clone()));
                     }
-                    if let Some(limit) = self.limit {
-                        r = r.limit(limit as u32);
-                    }
+                    // r = r.limit(limit); // can't do this just yet because of offset not working
                     r.await
                 }
             })?
             .ok_or_else(|| error!("beatmap or user not found"))?;
             Ok(scores.into_iter().map(|v| v.into()).collect())
+        }
+
+        pub(crate) async fn build(self, osu: &OsuClient) -> Result<impl Scores> {
+            // user queries always return all scores, so no need to consider offset.
+            // otherwise, it's not working anyway...
+            Ok(self.fetch_scores(osu, 0).await?)
         }
     }
 
@@ -255,7 +257,6 @@ pub mod builders {
         score_type: UserScoreType,
         user: UserID,
         mode: Option<Mode>,
-        limit: Option<usize>,
         include_fails: bool,
     }
 
@@ -265,7 +266,6 @@ pub mod builders {
                 score_type,
                 user,
                 mode: None,
-                limit: None,
                 include_fails: true,
             }
         }
@@ -275,43 +275,19 @@ pub mod builders {
             self
         }
 
-        pub fn limit(&mut self, limit: usize) -> &mut Self {
-            self.limit = if limit > SCORE_COUNT_LIMIT {
-                self.limit
-            } else {
-                Some(limit)
-            };
-            self
-        }
-
         pub fn include_fails(&mut self, include_fails: bool) -> &mut Self {
             self.include_fails = include_fails;
             self
         }
 
-        async fn with_offset(
-            self,
-            offset: Option<usize>,
-            client: OsuClient,
-        ) -> Result<Option<(Vec<models::Score>, Option<usize>)>> {
-            const MAXIMUM_LIMIT: usize = 100;
-            let offset = if let Some(offset) = offset {
-                offset
-            } else {
-                return Ok(None);
-            };
-            let count = match self.limit {
-                Some(limit) => (limit - offset).min(MAXIMUM_LIMIT),
-                None => MAXIMUM_LIMIT,
-            };
-            if count == 0 {
-                return Ok(None);
-            }
+        const SCORES_PER_PAGE: usize = 100;
+
+        async fn with_offset(&self, client: &OsuClient, offset: usize) -> Result<Vec<Score>> {
             let scores = handle_not_found({
                 let mut r = client
                     .rosu
                     .user_scores(self.user.clone())
-                    .limit(count)
+                    .limit(Self::SCORES_PER_PAGE)
                     .offset(offset);
                 r = match self.score_type {
                     UserScoreType::Recent => r.recent().include_fails(self.include_fails),
@@ -324,27 +300,24 @@ pub mod builders {
                 r.await
             })?
             .ok_or_else(|| error!("user not found"))?;
-            let count = scores.len();
-            Ok(Some((
-                scores.into_iter().map(|v| v.into()).collect(),
-                if count == MAXIMUM_LIMIT {
-                    Some(offset + MAXIMUM_LIMIT)
-                } else {
-                    None
-                },
-            )))
+            Ok(scores.into_iter().map(|v| v.into()).collect())
         }
 
-        pub(crate) fn build(
-            self,
-            client: OsuClient,
-        ) -> impl TryStream<Ok = models::Score, Error = Error> {
-            futures::stream::try_unfold(Some(0), move |off| {
-                self.clone().with_offset(off, client.clone())
-            })
-            .map_ok(|v| futures::stream::iter(v).map(|v| Ok(v) as Result<_>))
-            .try_flatten()
+        pub(crate) async fn build(self, client: OsuClient) -> Result<impl Scores> {
+            ScoresFetcher::new(client, self).await
         }
+    }
+
+    impl FetchScores for UserScoreRequestBuilder {
+        async fn fetch_scores(
+            &self,
+            client: &crate::OsuClient,
+            offset: usize,
+        ) -> Result<Vec<Score>> {
+            self.with_offset(client, offset).await
+        }
+
+        const SCORES_PER_PAGE: usize = Self::SCORES_PER_PAGE;
     }
 }
 

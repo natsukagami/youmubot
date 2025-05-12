@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use futures::TryStream;
 use futures_util::lock::Mutex;
 use models::*;
 use request::builders::*;
@@ -12,6 +11,8 @@ use youmubot_prelude::*;
 pub mod discord;
 pub mod models;
 pub mod request;
+
+pub const MAX_TOP_SCORES_INDEX: usize = 200;
 
 /// Client is the client that will perform calls to the osu! api server.
 #[derive(Clone)]
@@ -87,45 +88,45 @@ impl OsuClient {
         &self,
         beatmap_id: u64,
         f: impl FnOnce(&mut ScoreRequestBuilder) -> &mut ScoreRequestBuilder,
-    ) -> Result<Vec<Score>, Error> {
+    ) -> Result<impl Scores> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
         r.build(self).await
     }
 
-    pub fn user_best(
+    pub async fn user_best(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> impl TryStream<Ok = Score, Error = Error> {
-        self.user_scores(UserScoreType::Best, user, f)
+    ) -> Result<impl Scores> {
+        self.user_scores(UserScoreType::Best, user, f).await
     }
 
-    pub fn user_recent(
+    pub async fn user_recent(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> impl TryStream<Ok = Score, Error = Error> {
-        self.user_scores(UserScoreType::Recent, user, f)
+    ) -> Result<impl Scores> {
+        self.user_scores(UserScoreType::Recent, user, f).await
     }
 
-    pub fn user_pins(
+    pub async fn user_pins(
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> impl TryStream<Ok = Score, Error = Error> {
-        self.user_scores(UserScoreType::Pin, user, f)
+    ) -> Result<impl Scores> {
+        self.user_scores(UserScoreType::Pin, user, f).await
     }
 
-    fn user_scores(
+    async fn user_scores(
         &self,
         u: UserScoreType,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> impl TryStream<Ok = Score, Error = Error> {
+    ) -> Result<impl Scores> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
-        r.build(self.clone())
+        r.build(self.clone()).await
     }
 
     pub async fn score(&self, score_id: u64) -> Result<Option<Score>, Error> {

@@ -109,12 +109,7 @@ pub fn handle_check_button<'a>(
 
         let guild_id = comp.guild_id;
         ScoreListStyle::Grid
-            .display_scores(
-                future::ok(scores),
-                &ctx,
-                guild_id,
-                (comp, ctx).with_header(header),
-            )
+            .display_scores(scores, &ctx, guild_id, (comp, ctx).with_header(header))
             .await
             .pls_ok();
         Ok(())
