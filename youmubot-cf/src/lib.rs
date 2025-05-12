@@ -176,7 +176,7 @@ pub async fn ranks(ctx: &Context, m: &Message) -> CommandResult {
     let ranks = Arc::new(ranks);
 
     const ITEMS_PER_PAGE: usize = 10;
-    let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+    let total_pages = ranks.len().div_ceil(ITEMS_PER_PAGE);
     let last_updated = ranks.iter().map(|(_, cfu)| cfu.last_update).min().unwrap();
 
     paginate_reply(
@@ -308,7 +308,7 @@ pub(crate) async fn contest_rank_table(
     ranks: Vec<(Member, String, codeforces::RanklistRow)>,
 ) -> Result<()> {
     const ITEMS_PER_PAGE: usize = 10;
-    let total_pages = (ranks.len() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+    let total_pages = ranks.len().div_ceil(ITEMS_PER_PAGE);
 
     if ranks.is_empty() {
         reply_to

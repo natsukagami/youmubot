@@ -106,7 +106,7 @@ impl Scores for Vec<Score> {
     }
 
     async fn find<F: FnMut(&Score) -> bool + Send>(&mut self, mut f: F) -> Result<Option<&Score>> {
-        Ok(self.iter().find(|v| f(*v)))
+        Ok(self.iter().find(|v| f(v)))
     }
 }
 
@@ -155,7 +155,7 @@ impl<T: FetchScores> Scores for ScoresFetcher<T> {
 
     /// Get the index-th score.
     async fn get(&mut self, index: usize) -> Result<Option<&Score>> {
-        Ok(self.get_range(index..(index + 1)).await?.get(0))
+        Ok(self.get_range(index..(index + 1)).await?.first())
     }
 
     /// Get all scores.

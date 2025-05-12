@@ -135,7 +135,7 @@ pub fn dot_osu_hook<'a>(
             .collect::<Vec<_>>()
             .await;
 
-        const ARCHIVE_EXTS: [&'static str; 2] = [".osz", ".olz"];
+        const ARCHIVE_EXTS: [&str; 2] = [".osz", ".olz"];
         let osz_embeds = msg
             .attachments
             .iter()

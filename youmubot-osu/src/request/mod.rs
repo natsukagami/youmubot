@@ -215,7 +215,7 @@ pub mod builders {
                     match &self.mods {
                         Some(mods) => r.await.map(|mut ss| {
                             ss.retain(|s| {
-                                Mods::from_gamemods(s.mods.clone(), s.set_on_lazer).contains(&mods)
+                                Mods::from_gamemods(s.mods.clone(), s.set_on_lazer).contains(mods)
                             });
                             ss
                         }),
@@ -225,7 +225,7 @@ pub mod builders {
                 None => {
                     let mut r = osu.rosu.beatmap_scores(self.beatmap_id as u32).global();
                     if let Some(mode) = &self.mode {
-                        r = r.mode(mode.clone().into());
+                        r = r.mode((*mode).into());
                     }
                     if let Some(mods) = &self.mods {
                         r = r.mods(GameModsIntermode::from(mods.inner.clone()));
@@ -241,7 +241,7 @@ pub mod builders {
         pub(crate) async fn build(self, osu: &OsuClient) -> Result<impl Scores> {
             // user queries always return all scores, so no need to consider offset.
             // otherwise, it's not working anyway...
-            Ok(self.fetch_scores(osu, 0).await?)
+            self.fetch_scores(osu, 0).await
         }
     }
 

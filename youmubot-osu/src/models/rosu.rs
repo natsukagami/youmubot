@@ -116,7 +116,7 @@ impl From<rosu::score::Score> for Score {
             s.score as u64
         } else {
             s.classic_score
-        } as u64;
+        };
         Self {
             id: Some(s.id),
             user_id: s.user_id as u64,

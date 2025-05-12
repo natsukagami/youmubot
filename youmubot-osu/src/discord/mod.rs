@@ -361,7 +361,7 @@ pub(crate) async fn handle_save_respond(
             .is_some_and(|s| s.beatmap_id == map_id))
     }
     let msg_id = reply.get_message().await?.id;
-    let recv = InteractionCollector::create(&ctx, msg_id).await?;
+    let recv = InteractionCollector::create(ctx, msg_id).await?;
     let timeout = std::time::Duration::from_secs(300) + beatmap.difficulty.total_length;
     let completed = loop {
         let Some(reaction) = recv.next(timeout).await else {
@@ -385,7 +385,7 @@ pub(crate) async fn handle_save_respond(
         return Ok(());
     }
 
-    add_user(sender, &user, &env).await?;
+    add_user(sender, &user, env).await?;
     let ex = UserExtras::from_user(env, &user, mode).await?;
     reply
         .apply_edit(
@@ -450,7 +450,7 @@ async fn add_user(target: serenity::model::id::UserId, user: &User, env: &OsuEnv
     let modes = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania]
         .into_iter()
         .map(|mode| {
-            let mode = mode.clone();
+            let mode = mode;
             async move {
                 let pp = async {
                     env.client
@@ -790,7 +790,7 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     &ctx,
                     CreateMessage::new()
                         .content("Here is the play that you requested".to_string())
-                        .embed(score_embed(&play, &beatmap_mode, &content, user).build())
+                        .embed(score_embed(play, &beatmap_mode, &content, user).build())
                         .components(vec![score_components(msg.guild_id)])
                         .reference_message(msg),
                 )
@@ -908,13 +908,11 @@ pub(crate) async fn load_beatmap(
         None => load_beatmap_from_channel(env, channel_id).await,
     };
 
-    if req == LoadRequest::Beatmapset {
-        if embed.is_none() {
-            if let Some(EmbedType::Beatmap(b, mode, _, _)) = fallback {
-                return EmbedType::from_beatmapset_id(env, b.beatmapset_id, mode)
-                    .await
-                    .ok();
-            }
+    if req == LoadRequest::Beatmapset && embed.is_none() {
+        if let Some(EmbedType::Beatmap(b, mode, _, _)) = fallback {
+            return EmbedType::from_beatmapset_id(env, b.beatmapset_id, mode)
+                .await
+                .ok();
         }
     }
     embed
@@ -1052,7 +1050,7 @@ pub(crate) async fn do_check(
             .scores(b.beatmap_id, |f| f.user(UserID::ID(user.id)).mode(m))
             .and_then(|v| v.get_all())
             .map_ok(move |mut v| {
-                v.retain(|s| mods.as_ref().is_none_or(|m| s.mods.contains(&m)));
+                v.retain(|s| mods.as_ref().is_none_or(|m| s.mods.contains(m)));
                 v
             })
             .await
@@ -1060,7 +1058,7 @@ pub(crate) async fn do_check(
 
     let mut scores = match embed {
         EmbedType::Beatmap(beatmap, mode, _, _) => {
-            fetch_for_beatmap(env, &**beatmap, *mode, &mods, user).await?
+            fetch_for_beatmap(env, beatmap, *mode, &mods, user).await?
         }
         EmbedType::Beatmapset(vec, mode) => vec
             .iter()
@@ -1118,7 +1116,7 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                             user.mention()
                         ))
                         .embed(
-                            score_embed(&play, &beatmap, &content, user)
+                            score_embed(play, &beatmap, &content, user)
                                 .top_record(nth + 1)
                                 .build(),
                         )

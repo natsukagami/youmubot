@@ -473,7 +473,7 @@ const FIRST_NAMES: [&str; 440] = [
     "Yusuke",
 ];
 
-const LAST_NAMES: [&str; 1051] = [
+static LAST_NAMES: [&str; 1051] = [
     // A Surnames
     "Abe",
     "Abukara",

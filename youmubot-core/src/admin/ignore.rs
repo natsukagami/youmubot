@@ -82,7 +82,7 @@ async fn list<U: HasCoreEnv>(ctx: CmdContext<'_, U>) -> Result<()> {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let users = if users == "" {
+    let users = if users.is_empty() {
         "No one is being ignored!"
     } else {
         &users[..]
@@ -118,10 +118,7 @@ impl IgnoredUsers {
         Ok(Self { list: Arc::new(mp) })
     }
 
-    pub fn query<'a>(
-        &'a self,
-        id: UserId,
-    ) -> Option<impl std::ops::Deref<Target = IgnoredUser> + 'a> {
+    pub fn query(&self, id: UserId) -> Option<impl std::ops::Deref<Target = IgnoredUser> + '_> {
         self.list.get(&id)
     }
 

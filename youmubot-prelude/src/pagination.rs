@@ -43,7 +43,7 @@ impl<T: CanEdit> CanEdit for WithHeaders<T> {
     }
 }
 
-impl<'a> CanEdit for (Message, &'a Context) {
+impl CanEdit for (Message, &Context) {
     async fn get_message(&self) -> Result<Message> {
         Ok(self.0.clone())
     }
@@ -56,7 +56,7 @@ impl<'a> CanEdit for (Message, &'a Context) {
     }
 }
 
-impl<'a, 'b> CanEdit for (&'a ComponentInteraction, &'b Context) {
+impl CanEdit for (&ComponentInteraction, &Context) {
     async fn get_message(&self) -> Result<Message> {
         Ok(self.0.get_response(&self.1.http).await?)
     }
@@ -72,7 +72,7 @@ impl<'a, 'b> CanEdit for (&'a ComponentInteraction, &'b Context) {
     }
 }
 
-impl<'a, 'e, Env: Send + Sync> CanEdit for (ReplyHandle<'a>, CmdContext<'e, Env>) {
+impl<Env: Send + Sync> CanEdit for (ReplyHandle<'_>, CmdContext<'_, Env>) {
     async fn get_message(&self) -> Result<Message> {
         Ok(self.0.message().await?.into_owned())
     }
@@ -326,13 +326,7 @@ pub async fn handle_pagination_reaction(
     let new_page = match reaction {
         PREV | FAST_PREV if page == 0 => return Ok(page),
         PREV => page - 1,
-        FAST_PREV => {
-            if page < fast {
-                0
-            } else {
-                page - fast
-            }
-        }
+        FAST_PREV => page.saturating_sub(fast),
         NEXT if pages.filter(|&pages| page as usize + 1 >= pages).is_some() => return Ok(page),
         NEXT => page + 1,
         FAST_NEXT => (pages.unwrap() as u8 - 1).min(page + fast),

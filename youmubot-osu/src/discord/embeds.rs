@@ -269,7 +269,7 @@ pub(crate) struct ScoreEmbedBuilder<'a> {
     footer: Option<String>,
 }
 
-impl<'a> ScoreEmbedBuilder<'a> {
+impl ScoreEmbedBuilder<'_> {
     pub fn top_record(mut self, rank: u8) -> Self {
         self.top_record = Some(rank);
         self
@@ -304,7 +304,7 @@ pub(crate) fn score_embed<'a>(
     }
 }
 
-impl<'a> ScoreEmbedBuilder<'a> {
+impl ScoreEmbedBuilder<'_> {
     #[allow(clippy::many_single_char_names)]
     pub fn build(mut self) -> CreateEmbed {
         let mode = self.bm.mode();
@@ -471,7 +471,7 @@ pub(crate) struct FakeScore<'a> {
     pub max_combo: Option<u32>,
 }
 
-impl<'a> FakeScore<'a> {
+impl FakeScore<'_> {
     fn score_origin(&self, attrs: &OsuPerformanceAttributes) -> OsuScoreOrigin {
         if !self.mods.is_lazer {
             OsuScoreOrigin::Stable

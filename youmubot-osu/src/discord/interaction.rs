@@ -109,7 +109,7 @@ pub fn handle_check_button<'a>(
 
         let guild_id = comp.guild_id;
         ScoreListStyle::Grid
-            .display_scores(scores, &ctx, guild_id, (comp, ctx).with_header(header))
+            .display_scores(scores, ctx, guild_id, (comp, ctx).with_header(header))
             .await
             .pls_ok();
         Ok(())
@@ -209,7 +209,7 @@ pub fn handle_simulate_button<'a>(
 
         let Some(query) = comp
             .quick_modal(
-                &ctx,
+                ctx,
                 CreateQuickModal::new(format!(
                     "Simulate Score on beatmap `{}`",
                     b.short_link(None, Mods::NOMOD)
@@ -263,7 +263,7 @@ async fn handle_simluate_query(
         let (mods, max_combo, c100, c50, cmiss) =
             (&inputs[0], &inputs[1], &inputs[2], &inputs[3], &inputs[4]);
         let mods = UnparsedMods::from_str(mods)
-            .map_err(|v| Error::msg(v))?
+            .map_err(Error::msg)?
             .to_mods(mode)?;
         let info = content.get_info_with(mode, &mods);
         let max_combo = max_combo.parse::<u32>().ok();
@@ -351,7 +351,7 @@ async fn handle_last_req(
                 &ctx,
                 serenity::all::CreateInteractionResponseFollowup::new()
                     .content(content_type)
-                    .embed(beatmap_embed(&*b, m.unwrap_or(b.mode), &mods, &info))
+                    .embed(beatmap_embed(&b, m.unwrap_or(b.mode), &mods, &info))
                     .components(vec![beatmap_components(m.unwrap_or(b.mode), comp.guild_id)]),
             )
             .await?;

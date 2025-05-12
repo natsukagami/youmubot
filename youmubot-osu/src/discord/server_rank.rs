@@ -234,7 +234,7 @@ where
     let users = Arc::new(users);
     let last_update = last_update.unwrap();
     let total_len = users.len();
-    let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+    let total_pages = total_len.div_ceil(ITEMS_PER_PAGE);
     paginate_with_first_message(
         paginate_from_fn(move |page: u8, btns| {
             let header = header.clone();
@@ -404,7 +404,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
 
     let header = format!(
         "Here are the top scores of **{}** on {}",
-        guild.name(&ctx).unwrap(),
+        guild.name(ctx).unwrap(),
         scoreboard_msg,
     );
     let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
@@ -587,7 +587,7 @@ pub async fn get_leaderboard_from_embed(
             let iter = std::iter::once(*map);
             let scores = get_leaderboard(
                 ctx,
-                &env,
+                env,
                 iter,
                 mode_override.or(mode),
                 show_unranked,
@@ -603,7 +603,7 @@ pub async fn get_leaderboard_from_embed(
             (
                 get_leaderboard(
                     ctx,
-                    &env,
+                    env,
                     maps,
                     mode_override.or(mode),
                     show_unranked,
@@ -689,7 +689,7 @@ pub(crate) fn rankings_to_table(
                         } else {
                             beatmap.difficulty_name.clone()
                         };
-                        format!("[{:.2}*] {} {}", star, trimmed_diff, score.mods.to_string())
+                        format!("[{:.2}*] {} {}", star, trimmed_diff, score.mods)
                     } else {
                         score.mods.to_string()
                     },
@@ -716,7 +716,7 @@ pub async fn display_rankings_table(
 ) -> Result<()> {
     const ITEMS_PER_PAGE: usize = 5;
     let total_len = scores.len();
-    let total_pages = (total_len + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
+    let total_pages = total_len.div_ceil(ITEMS_PER_PAGE);
     let header = to.content.clone();
 
     paginate_with_first_message(

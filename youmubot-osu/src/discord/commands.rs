@@ -186,7 +186,6 @@ pub async fn save<U: HasOsuEnv>(
     ctx.defer().await?;
     let (u, mode, score, beatmap, info) = find_save_requirements(env, username).await?;
     let reply = ctx
-        .clone()
         .send(
             CreateReply::default()
                 .content(save_request_message(&u.username, score.beatmap_id, mode))
@@ -197,10 +196,10 @@ pub async fn save<U: HasOsuEnv>(
                 ]),
         )
         .await?;
-    let mut p = (reply, ctx.clone());
+    let mut p = (reply, ctx);
     match handle_save_respond(
         ctx.serenity_context(),
-        &env,
+        env,
         ctx.author().id,
         &mut p,
         &beatmap,
@@ -212,7 +211,7 @@ pub async fn save<U: HasOsuEnv>(
         Ok(_) => (),
         Err(e) => {
             p.0.delete(ctx).await?;
-            return Err(e.into());
+            return Err(e);
         }
     };
 
@@ -235,8 +234,8 @@ pub async fn forcesave<U: HasOsuEnv>(
     else {
         return Err(Error::msg("osu! user not found"));
     };
-    add_user(discord_name.id, &u, &env).await?;
-    let ex = UserExtras::from_user(&env, &u, u.preferred_mode).await?;
+    add_user(discord_name.id, &u, env).await?;
+    let ex = UserExtras::from_user(env, &u, u.preferred_mode).await?;
     ctx.send(
         CreateReply::default()
             .content(
@@ -289,8 +288,7 @@ async fn handle_listing<U: HasOsuEnv>(
                         user.mention()
                     ))
                     .embed({
-                        let mut b =
-                            transform(nth + 1, score_embed(&play, &beatmap, &content, user));
+                        let mut b = transform(nth + 1, score_embed(play, &beatmap, &content, user));
                         if let Some(rank) = play.global_rank {
                             b = b.world_record(rank as u16);
                         }
@@ -301,15 +299,15 @@ async fn handle_listing<U: HasOsuEnv>(
             .await?;
 
             // Save the beatmap...
-            cache::save_beatmap(&env, ctx.channel_id(), &beatmap).await?;
+            cache::save_beatmap(env, ctx.channel_id(), &beatmap).await?;
         }
         Nth::All => {
             let header = format!("Here are the {} plays by {}!", listing_kind, user.mention());
-            let reply = ctx.clone().reply(&header).await?;
+            let reply = ctx.reply(&header).await?;
             style
                 .display_scores(
                     plays,
-                    ctx.clone().serenity_context(),
+                    ctx.serenity_context(),
                     ctx.guild_id(),
                     (reply, ctx).with_header(header),
                 )
@@ -380,11 +378,10 @@ async fn beatmap<U: HasOsuEnv>(
         EmbedType::Beatmapset(vec, _) => {
             let b0 = &vec[0];
             let msg = ctx
-                .clone()
                 .reply(format!("Information for {}", b0.beatmapset_mention()))
                 .await?;
             display_beatmapset(
-                ctx.clone().serenity_context(),
+                ctx.serenity_context(),
                 vec,
                 mode,
                 mods,
@@ -480,7 +477,7 @@ async fn check<U: HasOsuEnv>(
         args.user.mention(),
         display
     );
-    let msg = ctx.clone().reply(&header).await?;
+    let msg = ctx.reply(&header).await?;
 
     let style = style.unwrap_or(if scores.len() <= 5 {
         ScoreListStyle::Grid
@@ -491,7 +488,7 @@ async fn check<U: HasOsuEnv>(
     style
         .display_scores(
             scores,
-            ctx.clone().serenity_context(),
+            ctx.serenity_context(),
             ctx.guild_id(),
             (msg, ctx).with_header(header),
         )
@@ -512,7 +509,7 @@ async fn ranks<U: HasOsuEnv>(
     let guild = ctx.partial_guild().await.unwrap();
     ctx.defer().await?;
     server_rank::do_server_ranks(
-        ctx.clone().serenity_context(),
+        ctx.serenity_context(),
         env,
         &guild,
         mode,
@@ -551,7 +548,7 @@ async fn leaderboard<U: HasOsuEnv>(
     let scoreboard_msg = embed.mention();
     let (mut scores, show_diff) = get_leaderboard_from_embed(
         ctx.serenity_context(),
-        &env,
+        env,
         embed,
         None,
         unranked.unwrap_or(true),

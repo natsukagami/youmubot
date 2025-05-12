@@ -64,7 +64,7 @@ where
     }
 }
 
-impl<'a, T> DBWriteGuard<'a, T>
+impl<T> DBWriteGuard<'_, T>
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
@@ -79,7 +79,7 @@ where
     }
 }
 
-impl<'a, T> Drop for DBWriteGuard<'a, T>
+impl<T> Drop for DBWriteGuard<'_, T>
 where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {

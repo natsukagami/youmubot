@@ -45,8 +45,8 @@ impl<T: AsRef<CoreEnv> + Send + Sync> HasCoreEnv for T {
 pub async fn setup(path: &std::path::Path, data: &mut TypeMap, prelude: Env) -> Result<CoreEnv> {
     db::load_role_list(
         &mut *data,
-        &path.join("roles_v2.yaml"),
-        &path.join("roles.yaml"),
+        path.join("roles_v2.yaml"),
+        path.join("roles.yaml"),
     )?;
 
     // Start reaction handlers

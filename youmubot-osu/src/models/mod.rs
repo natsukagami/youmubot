@@ -125,9 +125,9 @@ impl Difficulty {
 
         if let Some(ratio) = mods.inner.clock_rate() {
             if ratio != 1.0 {
-                diff.apply_length_by_ratio(1.0 / ratio as f64);
-                diff.apply_ar_by_time_ratio(1.0 / ratio as f64);
-                diff.apply_od_by_time_ratio(1.0 / ratio as f64);
+                diff.apply_length_by_ratio(1.0 / ratio);
+                diff.apply_ar_by_time_ratio(1.0 / ratio);
+                diff.apply_od_by_time_ratio(1.0 / ratio);
             }
         }
 
@@ -587,7 +587,7 @@ pub struct User {
 }
 
 impl User {
-    pub fn mention<'a>(&'a self) -> impl Display + 'a {
+    pub fn mention(&self) -> impl Display + '_ {
         UserHeaderLink(&self.username, self.id)
     }
 
@@ -603,14 +603,14 @@ impl User {
 #[derive(Debug, Clone)]
 struct UserHeaderLink<'a>(&'a String, u64);
 
-impl<'a> Display for UserHeaderLink<'a> {
+impl Display for UserHeaderLink<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}](<https://osu.ppy.sh/users/{}>)", self.0, self.1)
     }
 }
 
 impl UserHeader {
-    pub fn mention<'a>(&'a self) -> impl Display + 'a {
+    pub fn mention(&self) -> impl Display + '_ {
         UserHeaderLink(&self.username, self.id)
     }
 

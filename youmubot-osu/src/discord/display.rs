@@ -138,7 +138,7 @@ mod scores {
                     .await?
                     .ok_or_else(|| Error::msg("user not found"))?;
 
-                save_beatmap(&env, self.channel_id, &bm).await?;
+                save_beatmap(env, self.channel_id, &bm).await?;
                 Ok(Some(
                     CreateReply::default()
                         .embed({
@@ -479,7 +479,7 @@ mod beatmapset {
                 .oppai
                 .get_beatmap(b.beatmap_id)
                 .await
-                .map(move |v| v.get_possible_pp_with(b.mode.with_override(self.mode), &mods))
+                .map(move |v| v.get_possible_pp_with(b.mode.with_override(self.mode), mods))
         }
     }
 

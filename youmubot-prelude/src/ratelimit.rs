@@ -50,14 +50,14 @@ impl<T> Ratelimit<T> {
     }
 }
 
-impl<'a, T> Deref for RatelimitGuard<'a, T> {
+impl<T> Deref for RatelimitGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         self.inner
     }
 }
 
-impl<'a, T> Drop for RatelimitGuard<'a, T> {
+impl<T> Drop for RatelimitGuard<'_, T> {
     fn drop(&mut self) {
         let send = self.send.clone();
         let wait_time = *self.wait_time;

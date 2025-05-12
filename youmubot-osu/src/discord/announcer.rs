@@ -291,7 +291,7 @@ impl<'a> CollectedScore<'a> {
     }
 }
 
-impl<'a> CollectedScore<'a> {
+impl CollectedScore<'_> {
     async fn send_message(
         self,
         ctx: impl CacheHttp,

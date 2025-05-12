@@ -42,6 +42,12 @@ impl Drop for InteractionCollectorGuard {
     }
 }
 
+impl Default for InteractionCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InteractionCollector {
     pub fn new() -> Self {
         Self {
@@ -51,7 +57,7 @@ impl InteractionCollector {
     /// Create a new collector, returning a receiver.
     pub fn create_collector(&self, msg: MessageId) -> InteractionCollectorGuard {
         let (send, recv) = flume::unbounded();
-        self.channels.insert(msg.clone(), send);
+        self.channels.insert(msg, send);
         InteractionCollectorGuard {
             msg_id: msg,
             ch: recv,

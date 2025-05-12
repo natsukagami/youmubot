@@ -176,7 +176,7 @@ impl From<model::OsuUser> for OsuUser {
 impl From<OsuUser> for crate::models::UserHeader {
     fn from(value: OsuUser) -> Self {
         Self {
-            id: value.id as u64,
+            id: value.id,
             username: value.username.to_string(),
         }
     }
