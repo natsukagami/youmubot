@@ -502,17 +502,13 @@ pub(crate) struct UserExtras {
 impl UserExtras {
     // Collect UserExtras from the given user.
     pub async fn from_user(env: &OsuEnv, user: &User, mode: Mode) -> Result<Self> {
-        let scores = {
-            match env
-                .client
-                .user_best(UserID::ID(user.id), |f| f.mode(mode))
-                .await
-                .pls_ok()
-            {
-                Some(v) => v.get_all().await.pls_ok().unwrap_or_else(Vec::new),
-                None => Vec::new(),
-            }
-        };
+        let scores = env
+            .client
+            .user_best(UserID::ID(user.id), |f| f.mode(mode))
+            .and_then(|v| v.get_all())
+            .await
+            .pls_ok()
+            .unwrap_or_else(Vec::new);
 
         let (length, age) = join!(
             calculate_weighted_map_length(&scores, &env.beatmaps, mode),
