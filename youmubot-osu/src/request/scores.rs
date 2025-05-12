@@ -102,12 +102,17 @@ impl Scores for Vec<Score> {
     }
 
     fn get_range(&mut self, range: Range<usize>) -> impl Future<Output = Result<&[Score]>> + Send {
-        future::ok(&self[range])
+        future::ok(&self[fit_range_to_len(self.len(), range)])
     }
 
     async fn find<F: FnMut(&Score) -> bool + Send>(&mut self, mut f: F) -> Result<Option<&Score>> {
         Ok(self.iter().find(|v| f(*v)))
     }
+}
+
+#[inline]
+fn fit_range_to_len(len: usize, range: Range<usize>) -> Range<usize> {
+    range.start.min(len)..range.end.min(len)
 }
 
 /// A scores stream with a fetcher.
@@ -166,7 +171,7 @@ impl<T: FetchScores> Scores for ScoresFetcher<T> {
                 break;
             }
         }
-        Ok(&self.scores[range.start.min(self.len())..range.end.min(self.len())])
+        Ok(&self.scores[fit_range_to_len(self.len(), range)])
     }
 
     async fn find<F: FnMut(&Score) -> bool + Send>(&mut self, mut f: F) -> Result<Option<&Score>> {
