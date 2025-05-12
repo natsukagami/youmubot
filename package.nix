@@ -1,12 +1,13 @@
-{ rustPlatform
-, lib
-, stdenv
-, pkg-config
-, openssl
+{
+  rustPlatform,
+  lib,
+  stdenv,
+  pkg-config,
+  openssl,
 
-, enableCodeforces ? false
-, enableOsu ? true
-, ...
+  enableCodeforces ? false,
+  enableOsu ? true,
+  ...
 }:
 let
   customizeFeatures = !(enableCodeforces && enableOsu);
@@ -15,7 +16,10 @@ rustPlatform.buildRustPackage {
   pname = "youmubot";
   version = "0.1.0";
 
-  src = ./.;
+  src = lib.cleanSourceWith {
+    filter = name: type: !(type == "directory" && (baseNameOf (toString name)) == ".github");
+    src = lib.cleanSource ./.;
+  };
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
@@ -28,9 +32,7 @@ rustPlatform.buildRustPackage {
 
   buildNoDefaultFeatures = customizeFeatures;
   buildFeatures = lib.optionals customizeFeatures (
-    [ "core" ]
-    ++ lib.optional enableCodeforces "codeforces"
-    ++ lib.optional enableOsu "osu"
+    [ "core" ] ++ lib.optional enableCodeforces "codeforces" ++ lib.optional enableOsu "osu"
   );
 
   cargoBuildFlags = [
