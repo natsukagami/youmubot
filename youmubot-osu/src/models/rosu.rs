@@ -20,7 +20,7 @@ impl ApprovalStatus {
     }
 }
 
-pub(super) fn time_to_utc(s: time::OffsetDateTime) -> DateTime<Utc> {
+pub fn time_to_utc(s: time::OffsetDateTime) -> DateTime<Utc> {
     chrono::DateTime::from_timestamp(s.unix_timestamp(), 0).unwrap()
 }
 

@@ -183,7 +183,10 @@ impl Announcer {
                 let recents = recents
                     .into_iter()
                     .inspect(|v| {
-                        if let Some(mp) = v.to_event_mapping() {
+                        if let Some(mp) = v.to_event_mapping().filter(|s| {
+                            let lu = last_update.values().max().cloned();
+                            Self::is_announceable_date(s.date, lu, now)
+                        }) {
                             mapping_events.push(mp);
                         }
                     })
@@ -191,8 +194,7 @@ impl Announcer {
                     .filter(|s| Self::is_worth_announcing(s))
                     .filter(|s| {
                         let lu = last_update.get(&s.mode).cloned();
-                        let f = Self::is_announceable_date(s.date, lu, now);
-                        f
+                        Self::is_announceable_date(s.date, lu, now)
                     })
                     .map(|e| CollectedScore::from_event(&env.client, header.clone(), e))
                     .collect::<FuturesUnordered<_>>()
