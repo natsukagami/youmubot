@@ -1,7 +1,7 @@
 use super::{oppai_cache::Stats, BeatmapWithMode, UserExtras};
 use crate::{
     discord::oppai_cache::{BeatmapContent, BeatmapInfoWithPP},
-    models::{Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
+    models::{ApprovalStatus, Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
     UserHeader,
 };
 use rosu_pp::osu::{OsuPerformanceAttributes, OsuScoreOrigin};
@@ -188,7 +188,7 @@ pub fn beatmap_embed(
     info: &BeatmapInfoWithPP,
 ) -> CreateEmbed {
     let diff = b.difficulty.apply_mods(mods, info.0.attrs.stars());
-    CreateEmbed::new()
+    let mut m = CreateEmbed::new()
         .title(beatmap_title(&b.artist, &b.title, &b.difficulty_name, mods))
         .author(
             CreateEmbedAuthor::new(&b.creator)
@@ -210,7 +210,16 @@ pub fn beatmap_embed(
             ))
         })
         .field("Information", diff.format_info(m, mods, b), false)
-        .description(beatmap_description(b, mods))
+        .description(beatmap_description(b, mods));
+    if !matches!(
+        b.approval,
+        ApprovalStatus::Ranked(_) | ApprovalStatus::Loved
+    ) {
+        m = m
+            .footer(CreateEmbedFooter::new("Last updated"))
+            .timestamp(b.last_update);
+    }
+    m
 }
 
 const MAX_DIFFS: usize = 25 - 4;
@@ -249,6 +258,14 @@ pub fn beatmapset_embed(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
                 false,
             )
         }));
+    if !matches!(
+        b.approval,
+        ApprovalStatus::Ranked(_) | ApprovalStatus::Loved
+    ) {
+        m = m
+            .footer(CreateEmbedFooter::new("Last updated"))
+            .timestamp(b.last_update);
+    }
     if too_many_diffs {
         m = m.footer(CreateEmbedFooter::new(format!(
             "This map has {} diffs, we are showing the last {}.",
