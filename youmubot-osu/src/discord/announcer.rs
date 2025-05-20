@@ -1,8 +1,7 @@
 use chrono::{DateTime, Utc};
-use future::Future;
 use futures_util::try_join;
 use serenity::all::Member;
-use std::pin::Pin;
+use std::collections::HashMap;
 use std::sync::Arc;
 use stream::FuturesUnordered;
 
@@ -17,12 +16,12 @@ use serenity::{
 
 use announcer::MemberToChannels;
 use youmubot_prelude::announcer::CacheAndHttp;
-use youmubot_prelude::stream::TryStreamExt;
 use youmubot_prelude::*;
 
 use crate::discord::calculate_weighted_map_age;
 use crate::discord::db::OsuUserMode;
-use crate::scores::Scores;
+use crate::models::UserHeader;
+use crate::scores::LazyBuffer;
 use crate::{
     discord::cache::save_beatmap,
     discord::oppai_cache::BeatmapContent,
@@ -89,11 +88,16 @@ impl Announcer {
             return;
         }
         const MODES: [Mode; 4] = [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania];
+        let last_update = user
+            .modes
+            .iter()
+            .map(|(k, v)| (*k, v.last_update))
+            .collect::<HashMap<_, _>>();
         let now = chrono::Utc::now();
         let broadcast_to = Arc::new(broadcast_to);
-        let mut to_announce = Vec::<Pin<Box<dyn Future<Output = ()> + Send>>>::new();
+        let mut to_announce = Vec::<CollectedScore>::new();
         for mode in MODES {
-            let (u, top, events) = match self.fetch_user_data(env, now, &user, mode).await {
+            let (u, top) = match self.fetch_user_data(env, &user, mode).await {
                 Ok(v) => v,
                 Err(err) => {
                     eprintln!(
@@ -130,41 +134,56 @@ impl Announcer {
             let last = user.modes.insert(mode, stats);
 
             // broadcast
-            let mention = user.user_id;
-            let broadcast_to = broadcast_to.clone();
-            let ctx = ctx.clone();
-            let env = env.clone();
             if let Some(last) = last {
-                to_announce.push(Box::pin(async move {
-                    let top = top
-                        .into_iter()
+                to_announce.extend(
+                    top.into_iter()
                         .enumerate()
                         .filter(|(_, s)| Self::is_announceable_date(s.date, last.last_update, now))
                         .map(|(rank, score)| {
                             CollectedScore::from_top_score(&u, score, mode, rank as u8 + 1)
-                        });
-                    let recents = events
-                        .into_iter()
-                        .map(|e| CollectedScore::from_event(&env.client, &u, e))
-                        .collect::<FuturesUnordered<_>>()
-                        .filter_map(|v| future::ready(v.pls_ok()))
-                        .collect::<Vec<_>>()
-                        .await
-                        .into_iter();
-                    CollectedScore::merge(top.chain(recents))
-                        .map(|v| v.send_message(&ctx, &env, mention, &broadcast_to))
-                        .collect::<FuturesUnordered<_>>()
-                        .filter_map(|v| future::ready(v.pls_ok().map(|_| ())))
-                        .collect::<()>()
-                        .await
-                }));
+                        }),
+                );
             }
         }
+        if let Some(recents) = env
+            .client
+            .user_events(UserID::ID(user.id))
+            .and_then(|v| v.get_all())
+            .await
+            .pls_ok()
+        {
+            if let Some(header) = env.client.user_header(user.id).await.pls_ok().flatten() {
+                let recents = recents
+                    .into_iter()
+                    .filter_map(|v| v.to_event_rank())
+                    .filter(|s| Self::is_worth_announcing(s))
+                    .filter(|s| {
+                        let lu = last_update.get(&s.mode).cloned();
+                        let f = Self::is_announceable_date(s.date, lu, now);
+                        f
+                    })
+                    .map(|e| CollectedScore::from_event(&env.client, header.clone(), e))
+                    .collect::<FuturesUnordered<_>>()
+                    .filter_map(|v| future::ready(v.pls_ok()))
+                    .collect::<Vec<_>>()
+                    .await;
+                to_announce =
+                    CollectedScore::merge(to_announce.into_iter().chain(recents)).collect();
+            }
+        }
+
         user.failures = 0;
         let user_id = user.user_id;
         if let Some(true) = env.saved_users.save(user).await.pls_ok() {
-            to_announce.into_iter().for_each(|v| {
-                spawn_future(v);
+            let env = env.clone();
+            let ctx = ctx.clone();
+            let broadcast_to = broadcast_to.clone();
+            spawn_future(async move {
+                for v in to_announce.into_iter() {
+                    v.send_message(&ctx, &env, user_id, &broadcast_to)
+                        .await
+                        .pls_ok();
+                }
             });
         } else {
             eprintln!("[osu] Skipping user {} due to raced update", user_id)
@@ -194,48 +213,31 @@ impl Announcer {
     async fn fetch_user_data(
         &self,
         env: &OsuEnv,
-        now: chrono::DateTime<chrono::Utc>,
         osu_user: &OsuUser,
         mode: Mode,
-    ) -> Result<(User, Vec<Score>, Vec<UserEventRank>), Error> {
-        let stats = osu_user.modes.get(&mode).cloned();
-        let last_update = stats.as_ref().map(|v| v.last_update);
+    ) -> Result<(User, Vec<Score>), Error> {
         let user_id = UserID::ID(osu_user.id);
-        let user = {
-            let days_since_last_update = stats
-                .as_ref()
-                .map(|v| (now - v.last_update).num_days() + 1)
-                .unwrap_or(30);
-            env.client.user(&user_id, move |f| {
-                f.mode(mode)
-                    .event_days(days_since_last_update.min(31) as u8)
-            })
-        };
+        let user = env.client.user(&user_id, move |f| f.mode(mode));
         let top_scores = env
             .client
             .user_best(user_id.clone(), move |f| f.mode(mode))
             .and_then(|v| v.get_all());
         let (user, top_scores) = try_join!(user, top_scores)?;
-        let mut user = user.unwrap();
-        // if top scores exist, user would too
-        let events = std::mem::take(&mut user.events)
-            .into_iter()
-            .filter_map(|v| v.to_event_rank())
-            .filter(|s| s.mode == mode && Self::is_worth_announcing(s))
-            .filter(|s| Self::is_announceable_date(s.date, last_update, now))
-            .collect::<Vec<_>>();
-        Ok((user, top_scores, events))
+        let Some(user) = user else {
+            return Err(error!("user not found"));
+        };
+        Ok((user, top_scores))
     }
 }
 
-struct CollectedScore<'a> {
-    pub user: &'a User,
+struct CollectedScore {
+    pub user: UserHeader,
     pub score: Score,
     pub mode: Mode,
     pub kind: ScoreType,
 }
 
-impl<'a> CollectedScore<'a> {
+impl CollectedScore {
     fn merge(scores: impl IntoIterator<Item = Self>) -> impl Iterator<Item = Self> {
         let mut mp = std::collections::HashMap::<u64, Self>::new();
         scores
@@ -251,9 +253,9 @@ impl<'a> CollectedScore<'a> {
         mp.into_values()
     }
 
-    fn from_top_score(user: &'a User, score: Score, mode: Mode, rank: u8) -> Self {
+    fn from_top_score(user: impl Into<UserHeader>, score: Score, mode: Mode, rank: u8) -> Self {
         Self {
-            user,
+            user: user.into(),
             score,
             mode,
             kind: ScoreType::top(rank),
@@ -262,12 +264,14 @@ impl<'a> CollectedScore<'a> {
 
     async fn from_event(
         osu: &Osu,
-        user: &'a User,
+        user: impl Into<UserHeader>,
         event: UserEventRank,
-    ) -> Result<CollectedScore<'a>> {
+    ) -> Result<CollectedScore> {
+        let user = user.into();
+        let user_id = user.id;
         let mut scores = osu
             .scores(event.beatmap_id, |f| {
-                f.user(UserID::ID(user.id)).mode(event.mode)
+                f.user(UserID::ID(user_id)).mode(event.mode)
             })
             .await?;
         let score = match scores
@@ -291,7 +295,7 @@ impl<'a> CollectedScore<'a> {
     }
 }
 
-impl CollectedScore<'_> {
+impl CollectedScore {
     async fn send_message(
         self,
         ctx: impl CacheHttp,
@@ -300,12 +304,13 @@ impl CollectedScore<'_> {
         channels: &[ChannelId],
     ) -> Result<Vec<Message>> {
         let (bm, content) = self.get_beatmap(env).await?;
-        channels
+        Ok(channels
             .iter()
             .map(|c| self.send_message_to(mention, *c, &ctx, env, &bm, &content))
             .collect::<stream::FuturesUnordered<_>>()
-            .try_collect()
-            .await
+            .filter_map(|v| future::ready(v.pls_ok()))
+            .collect::<Vec<_>>()
+            .await)
     }
 
     async fn get_beatmap(&self, env: &OsuEnv) -> Result<(BeatmapWithMode, BeatmapContent)> {
@@ -347,7 +352,7 @@ impl CollectedScore<'_> {
                 CreateMessage::new()
                     .content(self.kind.announcement_msg(self.mode, &member))
                     .embed({
-                        let b = score_embed(&self.score, bm, content, self.user);
+                        let b = score_embed(&self.score, bm, content, self.user.clone());
                         let b = if let Some(rank) = self.kind.top_record {
                             b.top_record(rank)
                         } else {

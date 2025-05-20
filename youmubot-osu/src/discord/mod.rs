@@ -36,7 +36,7 @@ use crate::{
     models::{Beatmap, Mode, Mods, Score, User},
     mods::UnparsedMods,
     request::{BeatmapRequestKind, UserID},
-    scores::Scores,
+    scores::LazyBuffer,
     OsuClient as OsuHttpClient, UserHeader, MAX_TOP_SCORES_INDEX,
 };
 

@@ -73,7 +73,6 @@ impl User {
     pub(crate) fn from_rosu(
         user: rosu::user::UserExtended,
         stats: rosu::user::UserStatistics,
-        events: Vec<rosu::event::Event>,
     ) -> Self {
         Self {
             id: user.user_id as u64,
@@ -93,7 +92,6 @@ impl User {
             count_s: stats.grade_counts.s as u64,
             count_sh: stats.grade_counts.sh as u64,
             count_a: stats.grade_counts.a as u64,
-            events: events.into_iter().map(UserEvent::from).collect(),
             rank: stats.global_rank.unwrap_or(0) as u64,
             country_rank: stats.country_rank.unwrap_or(0) as u64,
             level: stats.level.current as f64 + stats.level.progress as f64 / 100.0,

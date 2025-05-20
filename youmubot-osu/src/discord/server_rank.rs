@@ -30,7 +30,7 @@ use crate::{
     },
     models::Mode,
     request::UserID,
-    scores::Scores,
+    scores::LazyBuffer,
     Beatmap, Score,
 };
 

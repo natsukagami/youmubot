@@ -7,7 +7,7 @@ mod scores {
 
     use youmubot_prelude::*;
 
-    use crate::scores::Scores;
+    use crate::{models::Score, scores::LazyBuffer};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, ChoiceParameter)]
     /// The style for the scores list to be displayed.
@@ -41,7 +41,7 @@ mod scores {
     impl ScoreListStyle {
         pub async fn display_scores(
             self,
-            scores: impl Scores,
+            scores: impl LazyBuffer<Score>,
             ctx: &Context,
             guild_id: Option<GuildId>,
             m: impl CanEdit,
@@ -62,10 +62,11 @@ mod scores {
 
         use crate::discord::interaction::score_components;
         use crate::discord::{cache::save_beatmap, BeatmapWithMode, OsuEnv};
-        use crate::scores::Scores;
+        use crate::models::Score;
+        use crate::scores::LazyBuffer;
 
         pub async fn display_scores_grid(
-            scores: impl Scores,
+            scores: impl LazyBuffer<Score>,
             ctx: &Context,
             guild_id: Option<GuildId>,
             mut on: impl CanEdit,
@@ -93,14 +94,14 @@ mod scores {
             Ok(())
         }
 
-        pub struct Paginate<T: Scores> {
+        pub struct Paginate<T: LazyBuffer<Score>> {
             env: OsuEnv,
             scores: T,
             guild_id: Option<GuildId>,
             channel_id: serenity::all::ChannelId,
         }
 
-        impl<T: Scores> Paginate<T> {
+        impl<T: LazyBuffer<Score>> Paginate<T> {
             fn pages_fake(&self) -> usize {
                 let size = self.scores.length_fetched();
                 size.count() + if size.is_total() { 0 } else { 1 }
@@ -108,7 +109,7 @@ mod scores {
         }
 
         #[async_trait]
-        impl<T: Scores> pagination::Paginate for Paginate<T> {
+        impl<T: LazyBuffer<Score>> pagination::Paginate for Paginate<T> {
             async fn render(
                 &mut self,
                 page: u8,
@@ -177,10 +178,11 @@ mod scores {
 
         use crate::discord::oppai_cache::Stats;
         use crate::discord::{time_before_now, Beatmap, BeatmapInfo, OsuEnv};
-        use crate::scores::Scores;
+        use crate::models::Score;
+        use crate::scores::LazyBuffer;
 
         pub async fn display_scores_as_file(
-            scores: impl Scores,
+            scores: impl LazyBuffer<Score>,
             ctx: &Context,
             mut on: impl CanEdit,
         ) -> Result<()> {
@@ -209,7 +211,7 @@ mod scores {
         }
 
         pub async fn display_scores_table(
-            scores: impl Scores,
+            scores: impl LazyBuffer<Score>,
             ctx: &Context,
             mut on: impl CanEdit,
         ) -> Result<()> {
@@ -233,13 +235,13 @@ mod scores {
             Ok(())
         }
 
-        pub struct Paginate<T: Scores> {
+        pub struct Paginate<T: LazyBuffer<Score>> {
             env: OsuEnv,
             header: String,
             scores: T,
         }
 
-        impl<T: Scores> Paginate<T> {
+        impl<T: LazyBuffer<Score>> Paginate<T> {
             async fn format_table(&mut self, start: usize, end: usize) -> Result<Option<String>> {
                 let scores = self.scores.get_range(start..end).await?;
                 if scores.is_empty() {
@@ -364,7 +366,7 @@ mod scores {
         const ITEMS_PER_PAGE: usize = 5;
 
         #[async_trait]
-        impl<T: Scores> pagination::Paginate for Paginate<T> {
+        impl<T: LazyBuffer<Score>> pagination::Paginate for Paginate<T> {
             async fn render(
                 &mut self,
                 page: u8,

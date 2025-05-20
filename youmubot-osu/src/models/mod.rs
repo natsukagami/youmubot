@@ -577,7 +577,6 @@ pub struct User {
     pub count_s: u64,
     pub count_sh: u64,
     pub count_a: u64,
-    pub events: Vec<UserEvent>,
     // Rankings
     pub rank: u64,
     pub country_rank: u64,

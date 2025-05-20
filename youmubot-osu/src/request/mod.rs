@@ -1,14 +1,15 @@
 use core::fmt;
 use std::sync::Arc;
 
-use crate::models::{Mode, Mods};
+use crate::models::{Mode, Mods, UserEvent};
 use crate::OsuClient;
 use rosu_v2::error::OsuError;
+use scores::Fetch;
 use youmubot_prelude::*;
 
 pub(crate) mod scores;
 
-pub use scores::Scores;
+pub use scores::LazyBuffer;
 
 #[derive(Clone, Debug)]
 pub enum UserID {
@@ -63,7 +64,7 @@ pub mod builders {
 
     use crate::models::{self, Score};
 
-    use super::scores::{FetchScores, ScoresFetcher};
+    use super::scores::Fetch;
     use super::OsuClient;
     use super::*;
     /// A builder for a Beatmap request.
@@ -126,25 +127,15 @@ pub mod builders {
     pub struct UserRequestBuilder {
         user: UserID,
         mode: Option<Mode>,
-        event_days: Option<u8>,
     }
 
     impl UserRequestBuilder {
         pub(crate) fn new(user: UserID) -> Self {
-            UserRequestBuilder {
-                user,
-                mode: None,
-                event_days: None,
-            }
+            UserRequestBuilder { user, mode: None }
         }
 
         pub fn mode(&mut self, mode: impl Into<Option<Mode>>) -> &mut Self {
             self.mode = mode.into();
-            self
-        }
-
-        pub fn event_days(&mut self, event_days: u8) -> &mut Self {
-            self.event_days = Some(event_days).filter(|&v| v <= 31).or(self.event_days);
             self
         }
 
@@ -157,13 +148,8 @@ pub mod builders {
                 Some(v) => v,
                 None => return Ok(None),
             };
-            let now = time::OffsetDateTime::now_utc()
-                - time::Duration::DAY * self.event_days.unwrap_or(31);
-            let mut events = handle_not_found(client.rosu.recent_activity(user.user_id).await)?
-                .unwrap_or(vec![]);
-            events.retain(|e: &rosu_v2::model::event::Event| (now <= e.created_at));
             let stats = user.statistics.take().unwrap();
-            Ok(Some(models::User::from_rosu(user, stats, events)))
+            Ok(Some(models::User::from_rosu(user, stats)))
         }
     }
 
@@ -238,7 +224,7 @@ pub mod builders {
             Ok(scores.into_iter().map(|v| v.into()).collect())
         }
 
-        pub(crate) async fn build(self, osu: &OsuClient) -> Result<impl Scores> {
+        pub(crate) async fn build(self, osu: &OsuClient) -> Result<impl LazyBuffer<Score>> {
             // user queries always return all scores, so no need to consider offset.
             // otherwise, it's not working anyway...
             self.fetch_scores(osu, 0).await
@@ -303,21 +289,18 @@ pub mod builders {
             Ok(scores.into_iter().map(|v| v.into()).collect())
         }
 
-        pub(crate) async fn build(self, client: OsuClient) -> Result<impl Scores> {
-            ScoresFetcher::new(client, self).await
+        pub(crate) async fn build(self, client: OsuClient) -> Result<impl LazyBuffer<Score>> {
+            self.make_buffer(client).await
         }
     }
 
-    impl FetchScores for UserScoreRequestBuilder {
-        async fn fetch_scores(
-            &self,
-            client: &crate::OsuClient,
-            offset: usize,
-        ) -> Result<Vec<Score>> {
+    impl Fetch for UserScoreRequestBuilder {
+        type Item = Score;
+        async fn fetch(&self, client: &crate::OsuClient, offset: usize) -> Result<Vec<Score>> {
             self.with_offset(client, offset).await
         }
 
-        const SCORES_PER_PAGE: usize = Self::SCORES_PER_PAGE;
+        const ITEMS_PER_PAGE: usize = Self::SCORES_PER_PAGE;
     }
 }
 
@@ -328,4 +311,28 @@ pub struct UserBestRequest {
 pub struct UserRecentRequest {
     pub user: UserID,
     pub mode: Option<Mode>,
+}
+
+pub struct UserEventRequest {
+    pub user: UserID,
+}
+
+impl Fetch for UserEventRequest {
+    type Item = UserEvent;
+    const ITEMS_PER_PAGE: usize = 50;
+
+    async fn fetch(&self, client: &crate::OsuClient, offset: usize) -> Result<Vec<Self::Item>> {
+        Ok(handle_not_found(
+            client
+                .rosu
+                .recent_activity(self.user.clone())
+                .limit(Self::ITEMS_PER_PAGE)
+                .offset(offset)
+                .await,
+        )?
+        .ok_or_else(|| error!("user not found"))?
+        .into_iter()
+        .map(Into::into)
+        .collect())
+    }
 }

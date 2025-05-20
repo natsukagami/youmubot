@@ -5,6 +5,7 @@ use std::sync::Arc;
 use futures_util::lock::Mutex;
 use models::*;
 use request::builders::*;
+use request::scores::Fetch;
 use request::*;
 use youmubot_prelude::*;
 
@@ -73,6 +74,13 @@ impl OsuClient {
         Ok(u)
     }
 
+    /// Fetch user events for an user.
+    pub async fn user_events(&self, user: UserID) -> Result<impl LazyBuffer<UserEvent>> {
+        request::UserEventRequest { user }
+            .make_buffer(self.clone())
+            .await
+    }
+
     /// Fetch the user header.
     pub async fn user_header(&self, id: u64) -> Result<Option<UserHeader>, Error> {
         Ok({
@@ -88,7 +96,7 @@ impl OsuClient {
         &self,
         beatmap_id: u64,
         f: impl FnOnce(&mut ScoreRequestBuilder) -> &mut ScoreRequestBuilder,
-    ) -> Result<impl Scores> {
+    ) -> Result<impl LazyBuffer<Score>> {
         let mut r = ScoreRequestBuilder::new(beatmap_id);
         f(&mut r);
         r.build(self).await
@@ -98,7 +106,7 @@ impl OsuClient {
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<impl Scores> {
+    ) -> Result<impl LazyBuffer<Score>> {
         self.user_scores(UserScoreType::Best, user, f).await
     }
 
@@ -106,7 +114,7 @@ impl OsuClient {
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<impl Scores> {
+    ) -> Result<impl LazyBuffer<Score>> {
         self.user_scores(UserScoreType::Recent, user, f).await
     }
 
@@ -114,7 +122,7 @@ impl OsuClient {
         &self,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<impl Scores> {
+    ) -> Result<impl LazyBuffer<Score>> {
         self.user_scores(UserScoreType::Pin, user, f).await
     }
 
@@ -123,7 +131,7 @@ impl OsuClient {
         u: UserScoreType,
         user: UserID,
         f: impl FnOnce(&mut UserScoreRequestBuilder) -> &mut UserScoreRequestBuilder,
-    ) -> Result<impl Scores> {
+    ) -> Result<impl LazyBuffer<Score>> {
         let mut r = UserScoreRequestBuilder::new(u, user);
         f(&mut r);
         r.build(self.clone()).await

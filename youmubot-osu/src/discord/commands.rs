@@ -254,7 +254,7 @@ pub async fn forcesave<U: HasOsuEnv>(
 
 async fn handle_listing<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
-    mut plays: impl Scores,
+    mut plays: impl LazyBuffer<Score>,
     listing_args: ListingArgs,
     transform: impl for<'a> Fn(u8, ScoreEmbedBuilder<'a>) -> ScoreEmbedBuilder<'a>,
     listing_kind: &'static str,
