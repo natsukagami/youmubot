@@ -130,7 +130,11 @@ pub async fn setup(
     let beatmap_cache = BeatmapMetaCache::new(osu_client.clone(), prelude.sql.clone());
 
     // Announcer
-    announcers.add(announcer::ANNOUNCER_KEY, announcer::Announcer::new());
+    let ann = announcer::Announcer::new();
+    let map_ann = ann.mapping_announcer();
+    announcers
+        .add(announcer::ANNOUNCER_KEY, ann)
+        .add(announcer::ANNOUNCER_MAPPING_KEY, map_ann);
 
     // Legacy data
     data.insert::<OsuLastBeatmap>(last_beatmaps.clone());

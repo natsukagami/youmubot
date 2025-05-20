@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use futures_util::try_join;
-use serenity::all::Member;
-use std::collections::HashMap;
+use serenity::all::{Member, MessageBuilder};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use stream::FuturesUnordered;
 
@@ -20,7 +21,8 @@ use youmubot_prelude::*;
 
 use crate::discord::calculate_weighted_map_age;
 use crate::discord::db::OsuUserMode;
-use crate::models::UserHeader;
+use crate::discord::interaction::mapset_button;
+use crate::models::{UserEventMapping, UserHeader};
 use crate::scores::LazyBuffer;
 use crate::{
     discord::cache::save_beatmap,
@@ -37,15 +39,38 @@ use super::{embeds::score_embed, BeatmapWithMode};
 
 /// osu! announcer's unique announcer key.
 pub const ANNOUNCER_KEY: &str = "osu";
+pub const ANNOUNCER_MAPPING_KEY: &str = "osu-mapping";
 const MAX_FAILURES: u8 = 64;
 
 /// The announcer struct implementing youmubot_prelude::Announcer
-pub struct Announcer {}
+pub struct Announcer {
+    mapping_events: Arc<DashMap<UserId, Vec<UserEventMapping>>>,
+    filled: flume::Sender<()>,
+    filled_recv: flume::Receiver<()>,
+}
 
 impl Announcer {
     pub fn new() -> Self {
-        Self {}
+        let (send, recv) = flume::bounded(1);
+        Self {
+            mapping_events: Arc::new(DashMap::new()),
+            filled: send,
+            filled_recv: recv,
+        }
     }
+
+    /// Create a [MappingAnnouncer] linked to the current Announcer.
+    pub fn mapping_announcer(&self) -> impl youmubot_prelude::Announcer + Sync + 'static {
+        MappingAnnouncer {
+            mapping_events: self.mapping_events.clone(),
+            filled_recv: self.filled_recv.clone(),
+        }
+    }
+}
+
+struct MappingAnnouncer {
+    mapping_events: Arc<DashMap<UserId, Vec<UserEventMapping>>>,
+    filled_recv: flume::Receiver<()>,
 }
 
 #[async_trait]
@@ -69,6 +94,7 @@ impl youmubot_prelude::Announcer for Announcer {
             .collect::<stream::FuturesUnordered<_>>()
             .collect::<()>()
             .await;
+        self.filled.try_send(()).ok();
         Ok(())
     }
 }
@@ -153,8 +179,14 @@ impl Announcer {
             .pls_ok()
         {
             if let Some(header) = env.client.user_header(user.id).await.pls_ok().flatten() {
+                let mut mapping_events = Vec::<UserEventMapping>::new();
                 let recents = recents
                     .into_iter()
+                    .inspect(|v| {
+                        if let Some(mp) = v.to_event_mapping() {
+                            mapping_events.push(mp);
+                        }
+                    })
                     .filter_map(|v| v.to_event_rank())
                     .filter(|s| Self::is_worth_announcing(s))
                     .filter(|s| {
@@ -167,6 +199,12 @@ impl Announcer {
                     .filter_map(|v| future::ready(v.pls_ok()))
                     .collect::<Vec<_>>()
                     .await;
+
+                self.mapping_events
+                    .entry(user.user_id)
+                    .or_default()
+                    .extend(mapping_events);
+
                 to_announce =
                     CollectedScore::merge(to_announce.into_iter().chain(recents)).collect();
             }
@@ -417,6 +455,135 @@ impl ScoreType {
             format!("{} from {}!", title, mention.mention())
         } else {
             format!("{} from **{}**!", title, mention.distinct())
+        }
+    }
+}
+
+#[async_trait]
+impl youmubot_prelude::Announcer for MappingAnnouncer {
+    async fn updates(
+        &mut self,
+        ctx: CacheAndHttp,
+        d: AppData,
+        channels: MemberToChannels,
+    ) -> Result<()> {
+        let env = d.read().await.get::<OsuEnv>().unwrap().clone();
+        self.filled_recv.recv_async().await?;
+        self.mapping_events
+            .iter_mut()
+            .map(|mut r| (r.key().clone(), std::mem::take(r.value_mut())))
+            .map(|(user_id, maps)| {
+                struct R<'a> {
+                    pub ann: &'a MappingAnnouncer,
+                    pub ctx: &'a CacheAndHttp,
+                    pub env: &'a OsuEnv,
+                    pub user_id: UserId,
+                    pub maps: Vec<UserEventMapping>,
+                }
+                let r = R {
+                    ann: self,
+                    ctx: &ctx,
+                    env: &env,
+                    user_id,
+                    maps,
+                };
+                channels.channels_of(ctx.clone(), user_id).then(move |chs| {
+                    r.ann
+                        .update_user(r.ctx.clone(), r.env, r.user_id, r.maps, chs)
+                })
+            })
+            .collect::<stream::FuturesUnordered<_>>()
+            .collect::<()>()
+            .await;
+        Ok(())
+    }
+}
+
+impl MappingAnnouncer {
+    async fn update_user(
+        &self,
+        ctx: CacheAndHttp,
+        env: &OsuEnv,
+        user_id: UserId,
+        mut events: Vec<UserEventMapping>,
+        channels: Vec<ChannelId>,
+    ) {
+        // first we filter out obsolete events
+        let events = {
+            let mut seen = HashSet::new();
+            events.sort_by(|a, b| b.date.cmp(&a.date));
+            events.retain(|v| seen.insert(v.beatmapset_id));
+            events
+        };
+        let Some(user) = user_id.to_user(&ctx).await.pls_ok() else {
+            return;
+        };
+        for e in events {
+            use rosu_v2::prelude::*;
+            let msg = CreateMessage::new()
+                .content({
+                    let mut builder = MessageBuilder::new();
+                    builder
+                        .push_bold_safe(user.display_name())
+                        .push("'s beatmap ")
+                        .push_bold(format!(
+                            "[{}](<https://osu.ppy.sh/beatmapsets/{}>)",
+                            e.beatmapset_title, e.beatmapset_id
+                        ));
+                    match e.kind {
+                        crate::models::UserEventMappingKind::StatusChanged(rank_status) => {
+                            let new_status = match rank_status {
+                                RankStatus::Graveyard => "🪦 Graveyarded 🪦",
+                                RankStatus::WIP => "🛠️ Work in Progress 🛠️",
+                                RankStatus::Pending => "⏲️ Pending ⏲️",
+                                RankStatus::Ranked => "🏆 Ranked 🏆",
+                                RankStatus::Approved => "✅ Approved ✅",
+                                RankStatus::Qualified => "🙏 Qualified 🙏",
+                                RankStatus::Loved => "❤️ Loved ❤️",
+                            };
+                            builder.push(" is now ").push_bold(new_status);
+                        }
+                        crate::models::UserEventMappingKind::Deleted => {
+                            builder.push(" has been ").push_bold("♻️ Deleted ♻️");
+                        }
+                        crate::models::UserEventMappingKind::Revived => {
+                            builder.push(" has been ").push_bold("🧟‍♂️ Revived 🧟‍♂️");
+                        }
+                        crate::models::UserEventMappingKind::Updated => {
+                            builder.push(" has been ").push_bold("✨ Updated ✨");
+                        }
+                        crate::models::UserEventMappingKind::Uploaded => {
+                            builder.push(" has been ").push_bold("🌐 Uploaded 🌐");
+                        }
+                    }
+                    builder.push("!").build()
+                })
+                .button(mapset_button())
+                .add_embeds(if e.kind == crate::models::UserEventMappingKind::Deleted {
+                    vec![]
+                } else {
+                    if let Some(mut beatmaps) = env
+                        .client
+                        .beatmaps(
+                            crate::request::BeatmapRequestKind::Beatmapset(e.beatmapset_id),
+                            |f| f,
+                        )
+                        .await
+                        .pls_ok()
+                    {
+                        beatmaps.sort_by(|a, b| {
+                            a.difficulty.stars.partial_cmp(&b.difficulty.stars).unwrap()
+                        });
+                        let embed = super::embeds::beatmapset_embed(&beatmaps, None);
+                        vec![embed]
+                    } else {
+                        vec![]
+                    }
+                });
+
+            for ch in &channels {
+                ch.send_message(&ctx, msg.clone()).await.pls_ok();
+            }
         }
     }
 }

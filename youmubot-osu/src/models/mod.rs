@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
 use mods::Stats;
-use rosu_v2::prelude::{GameModIntermode, ScoreStatistics};
+use rosu_v2::prelude::{GameModIntermode, RankStatus, ScoreStatistics};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{self, Display};
 use std::time::Duration;
+use time::OffsetDateTime;
 
 pub mod mods;
 pub(crate) mod rosu;
@@ -474,6 +475,14 @@ impl Beatmap {
         format!("https://b.ppy.sh/thumb/{}l.jpg", self.beatmapset_id)
     }
 
+    pub fn set_title(&self) -> String {
+        MessageBuilder::new()
+            .push_safe(&self.artist)
+            .push(" - ")
+            .push_safe(&self.title)
+            .build()
+    }
+
     /// Beatmap title and difficulty name
     pub fn map_title(&self) -> String {
         MessageBuilder::new()
@@ -520,6 +529,24 @@ pub struct UserEventRank {
     pub date: DateTime<Utc>,
 }
 
+/// Represents a "beatmap updated" event.
+#[derive(Clone, Debug)]
+pub struct UserEventMapping {
+    pub kind: UserEventMappingKind,
+    pub beatmapset_title: String, // in case deleted
+    pub beatmapset_id: u64,
+    pub date: DateTime<Utc>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UserEventMappingKind {
+    StatusChanged(RankStatus),
+    Deleted,
+    Revived,
+    Updated,
+    Uploaded,
+}
+
 impl UserEvent {
     /// Try to parse the event into a "rank" event.
     pub fn to_event_rank(&self) -> Option<UserEventRank> {
@@ -546,6 +573,63 @@ impl UserEvent {
                 mode: (*mode).into(),
                 date: rosu::time_to_utc(self.0.created_at),
             }),
+            _ => None,
+        }
+    }
+
+    /// Try to parse the event into a "mapping" event.
+    pub fn to_event_mapping(&self) -> Option<UserEventMapping> {
+        use rosu_v2::model::event::EventType::*;
+        use rosu_v2::prelude::*;
+        fn parse_beatmapset_id(p: &EventBeatmapset) -> Option<u64> {
+            p.url.trim_start_matches("/beatmapsets/").parse().ok()
+        }
+        fn make(
+            kind: UserEventMappingKind,
+            eb: &EventBeatmapset,
+            date: OffsetDateTime,
+        ) -> Option<UserEventMapping> {
+            Some(UserEventMapping {
+                kind,
+                beatmapset_title: eb.title.clone(),
+                beatmapset_id: parse_beatmapset_id(eb)?,
+                date: rosu::time_to_utc(date),
+            })
+        }
+        match &self.0.event_type {
+            // When a beatmapset changes state
+            BeatmapsetApprove {
+                approval,
+                beatmapset,
+                user: _,
+            } => make(
+                UserEventMappingKind::StatusChanged(*approval),
+                beatmapset,
+                self.0.created_at,
+            ),
+            // When a beatmapset is deleted
+            BeatmapsetDelete { beatmapset } => {
+                make(UserEventMappingKind::Deleted, beatmapset, self.0.created_at)
+            }
+            // When a beatmapset in graveyard is updated
+            BeatmapsetRevive {
+                beatmapset,
+                user: _,
+            } => make(UserEventMappingKind::Revived, beatmapset, self.0.created_at),
+            // When a beatmapset is updated
+            BeatmapsetUpdate {
+                beatmapset,
+                user: _,
+            } => make(UserEventMappingKind::Updated, beatmapset, self.0.created_at),
+            // When a new beatmapset is uploaded
+            BeatmapsetUpload {
+                beatmapset,
+                user: _,
+            } => make(
+                UserEventMappingKind::Uploaded,
+                beatmapset,
+                self.0.created_at,
+            ),
             _ => None,
         }
     }
