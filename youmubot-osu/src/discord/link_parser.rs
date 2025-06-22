@@ -147,6 +147,15 @@ pub fn parse_short_links<'a>(
         .filter_map(|v: Result<ToPrint>| future::ready(v.pls_ok()))
 }
 
+/// Parse the given input as a score link.
+pub fn parse_score_links(input: &str) -> Vec<u64> {
+    SCORE_LINK_REGEX
+        .captures_iter(input)
+        .filter_map(|caps| caps.name("score_id"))
+        .filter_map(|score_id| score_id.as_str().parse::<u64>().ok())
+        .collect()
+}
+
 impl EmbedType {
     pub(crate) async fn from_beatmap_id(
         env: &OsuEnv,

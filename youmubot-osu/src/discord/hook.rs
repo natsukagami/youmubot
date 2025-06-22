@@ -33,10 +33,8 @@ pub fn score_hook<'a>(
             data.get::<OsuEnv>().unwrap().clone()
         };
 
-        let scores = SCORE_LINK_REGEX
-            .captures_iter(&msg.content)
-            .filter_map(|caps| caps.name("score_id"))
-            .filter_map(|score_id| score_id.as_str().parse::<u64>().ok())
+        let scores = parse_score_links(&msg.content)
+            .into_iter()
             .map(|id| env.client.score(id))
             .collect::<FuturesOrdered<_>>()
             .collect::<Vec<_>>()

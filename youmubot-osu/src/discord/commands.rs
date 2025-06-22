@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use crate::discord::link_parser::parse_score_links;
+
 use super::*;
 use cache::save_beatmap;
 use display::display_beatmapset;
@@ -20,6 +22,7 @@ use server_rank::get_leaderboard_from_embed;
         "save",
         "forcesave",
         "beatmap",
+        "score",
         "check",
         "ranks",
         "leaderboard",
@@ -636,6 +639,52 @@ pub async fn clear_cache<U: HasOsuEnv>(
         env.oppai.clear().await?;
     }
     ctx.reply("Beatmap cache cleared!").await?;
+    Ok(())
+}
+
+/// Display the stats of the given score link.
+#[poise::command(slash_command, guild_only)]
+async fn score<U: HasOsuEnv>(
+    ctx: CmdContext<'_, U>,
+    #[description = "Score links or score ID"] link_or_id: String,
+) -> Result<()> {
+    let score_ids = {
+        let ids = parse_score_links(&link_or_id).into_iter().next();
+        if ids.is_some() {
+            ids
+        } else {
+            link_or_id.parse::<u64>().ok()
+        }
+    };
+    let Some(score_id) = score_ids else {
+        return Err(error!(
+            "Input cannot be parsed as a link or ID to any score"
+        ));
+    };
+
+    let env = ctx.data().osu_env();
+    let Some(score) = env.client.score(score_id).await? else {
+        return Err(error!("Score with ID `{}` not found", score_id));
+    };
+
+    let embed = {
+        let bm = env
+            .beatmaps
+            .get_beatmap(score.beatmap_id, score.mode)
+            .await?;
+        let mode = score.mode;
+        let content = env.oppai.get_beatmap(score.beatmap_id).await?;
+        let header = env.client.user_header(score.user_id).await?.unwrap();
+        score_embed(&score, &BeatmapWithMode(bm, Some(mode)), &content, header).build()
+    };
+
+    ctx.send(
+        CreateReply::default()
+            .content("Requested score")
+            .embed(embed)
+            .components(vec![score_components(ctx.guild_id())]),
+    )
+    .await?;
     Ok(())
 }
 
