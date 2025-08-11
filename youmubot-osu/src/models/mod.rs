@@ -550,6 +550,27 @@ pub enum UserEventMappingKind {
 impl UserEvent {
     /// Try to parse the event into a "rank" event.
     pub fn to_event_rank(&self) -> Option<UserEventRank> {
+        fn parse_beatmap_id(link: &str) -> Option<u64> {
+            if link.starts_with("/b/") {
+                link.trim_start_matches("/b/")
+                    .trim_end_matches("?m=0")
+                    .trim_end_matches("?m=1")
+                    .trim_end_matches("?m=2")
+                    .trim_end_matches("?m=3")
+                    .parse::<u64>()
+                    .ok()
+            } else if link.starts_with("/beatmaps/") {
+                link.trim_start_matches("/beatmaps/")
+                    .trim_end_matches("?ruleset=osu")
+                    .trim_end_matches("?ruleset=taiko")
+                    .trim_end_matches("?ruleset=fruits")
+                    .trim_end_matches("?ruleset=mania")
+                    .parse::<u64>()
+                    .ok()
+            } else {
+                None
+            }
+        }
         match &self.0.event_type {
             rosu_v2::model::event::EventType::Rank {
                 grade: _,
@@ -558,17 +579,7 @@ impl UserEvent {
                 beatmap,
                 user: _,
             } => Some(UserEventRank {
-                beatmap_id: {
-                    beatmap
-                        .url
-                        .trim_start_matches("/b/")
-                        .trim_end_matches("?m=0")
-                        .trim_end_matches("?m=1")
-                        .trim_end_matches("?m=2")
-                        .trim_end_matches("?m=3")
-                        .parse::<u64>()
-                        .unwrap()
-                },
+                beatmap_id: { parse_beatmap_id(&beatmap.url)? },
                 rank: *rank as u16,
                 mode: (*mode).into(),
                 date: rosu::time_to_utc(self.0.created_at),
