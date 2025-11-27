@@ -33,14 +33,14 @@ fn beatmap_description(b: &Beatmap, mods: &Mods) -> String {
         .push({
             let link = b.download_link(crate::BeatmapSite::Bancho);
             format!(
-                "Download: [[Link]]({}) [[No Video]]({}?noVideo=1) [[BeatConnect]]({}) [[Chimu]]({})",
+                "Download: [[Link]({})] [[No Video]({}?noVideo=1)] [[BeatConnect]({})] [[Chimu]({})]",
                 link,
                 link,
                 b.download_link(crate::BeatmapSite::Beatconnect),
                 b.download_link(crate::BeatmapSite::Chimu),
             )
         })
-        .push_line(format!(" [[Beatmapset]]({})", b.beatmapset_link()))
+        .push_line(format!(" [[Beatmapset]({})]", b.beatmapset_link()))
         .push("Language: ")
         .push_bold(b.language.to_string())
         .push(" | Genre: ")
@@ -418,10 +418,10 @@ impl ScoreEmbedBuilder<'_> {
                     s.date.format("<t:%s:R>"),
                     played_on_stable,
                     s.link()
-                        .map(|s| format!("[[Score]]({})", s).into())
+                        .map(|s| format!("[[Score]({})]", s).into())
                         .unwrap_or(Cow::from("")),
                     s.replay_download_link()
-                        .map(|s| format!("[[Replay]]({})", s).into())
+                        .map(|s| format!("[[Replay]({})]", s).into())
                         .unwrap_or(Cow::from("")),
                 )
                 .into(),

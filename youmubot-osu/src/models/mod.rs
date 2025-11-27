@@ -154,7 +154,7 @@ impl Difficulty {
                 original_beatmap
                     .map(|original_beatmap| {
                         format!(
-                            "[[Link]]({}) [[DL]]({}) [[B]({})|[C]({})] (`{}`)",
+                            "[[Link]({})] [[DL]({})] [[B]({})|[C]({})] (`{}`)",
                             original_beatmap.link(),
                             original_beatmap.download_link(BeatmapSite::Bancho),
                             original_beatmap.download_link(BeatmapSite::Beatconnect),
