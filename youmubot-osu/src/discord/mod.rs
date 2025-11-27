@@ -37,7 +37,7 @@ use crate::{
     mods::UnparsedMods,
     request::{BeatmapRequestKind, UserID},
     scores::LazyBuffer,
-    OsuClient as OsuHttpClient, UserHeader, MAX_TOP_SCORES_INDEX,
+    OsuClient as OsuHttpClient, Usage, UserHeader, MAX_TOP_SCORES_INDEX,
 };
 
 mod announcer;
@@ -114,7 +114,7 @@ pub async fn setup(
     let last_beatmaps = OsuLastBeatmap::new(prelude.sql.clone());
 
     // API client
-    let mk_osu_client = async || {
+    let mk_osu_client = async |usage: Usage| {
         OsuHttpClient::new(
             std::env::var("OSU_API_CLIENT_ID")
                 .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
@@ -122,11 +122,12 @@ pub async fn setup(
                 .expect("client_id should be u64"),
             std::env::var("OSU_API_CLIENT_SECRET")
                 .expect("Please set OSU_API_CLIENT_SECRET as osu! api v2 client secret."),
+            usage,
         )
         .await
         .expect("osu! should be initialized")
     };
-    let osu_client = mk_osu_client().await;
+    let osu_client = mk_osu_client(Usage::Foreground).await;
     let oppai_cache = BeatmapCache::new(prelude.http.clone(), prelude.sql.clone());
     let beatmap_cache = BeatmapMetaCache::new(prelude.sql.clone());
 
@@ -151,7 +152,7 @@ pub async fn setup(
     // Announcer
     let ann = announcer::Announcer::new(OsuEnv {
         // give the announcer its own osu client with a separate rate limiter
-        client: mk_osu_client().await,
+        client: mk_osu_client(Usage::Background).await,
         ..env.clone()
     });
     let map_ann = ann.mapping_announcer();

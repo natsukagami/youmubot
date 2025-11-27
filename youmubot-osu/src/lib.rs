@@ -30,19 +30,29 @@ pub struct OsuClient {
 
 pub(crate) struct Ratelimited<T> {
     inner: T,
+    usage: Usage,
     limiter: RateLimiter,
 }
 
 impl<T> Ratelimited<T> {
-    fn new(inner: T) -> Self {
+    fn new(inner: T, usage: Usage) -> Self {
+        let rpm = match usage {
+            Usage::Background => 60,
+            Usage::Foreground => 600,
+        };
+        let interval = Duration::from_millis(Duration::from_mins(1).as_millis() as u64 * 2 / rpm);
         let rl = RateLimiter::builder()
             .max(20)
-            .interval(Duration::from_secs(1))
-            .refill(1)
+            .interval(interval)
+            .refill(2)
             .initial(0)
             .fair(true)
             .build();
-        Ratelimited { inner, limiter: rl }
+        Ratelimited {
+            inner,
+            usage,
+            limiter: rl,
+        }
     }
 
     pub async fn acquire_one(&self) -> &T {
@@ -50,9 +60,17 @@ impl<T> Ratelimited<T> {
     }
 
     pub async fn acquire(&self, tokens: usize) -> &T {
-        debug!("acquiring when bucket = {}", self.limiter.balance());
+        debug!(
+            "[{:?}] acquiring when bucket = {}",
+            self.usage,
+            self.limiter.balance()
+        );
         self.limiter.acquire(tokens).await;
-        debug!("acquired when bucket = {}", self.limiter.balance());
+        debug!(
+            "[{:?}] acquired when bucket = {}",
+            self.usage,
+            self.limiter.balance()
+        );
         &self.inner
     }
 }
@@ -67,16 +85,27 @@ pub fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>,
     Ok(res)
 }
 
+/// How is this used?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Usage {
+    Background,
+    Foreground,
+}
+
 impl OsuClient {
     /// Create a new client from the given API key.
-    pub async fn new(client_id: u64, client_secret: impl Into<String>) -> Result<OsuClient> {
+    pub async fn new(
+        client_id: u64,
+        client_secret: impl Into<String>,
+        usage: Usage,
+    ) -> Result<OsuClient> {
         let rosu = rosu_v2::OsuBuilder::new()
             .client_id(client_id)
             .client_secret(client_secret)
             .build()
             .await?;
         Ok(OsuClient {
-            rosu: Arc::new(Ratelimited::new(rosu)),
+            rosu: Arc::new(Ratelimited::new(rosu, usage)),
             user_header_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
