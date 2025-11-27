@@ -3927,6 +3927,7 @@ dependencies = [
  "serenity",
  "thiserror 2.0.12",
  "time",
+ "tracing",
  "youmubot-db",
  "youmubot-db-sql",
  "youmubot-prelude",

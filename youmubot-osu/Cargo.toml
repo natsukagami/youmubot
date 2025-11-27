@@ -31,6 +31,7 @@ futures-util = "0.3"
 thiserror = "2"
 flume = "0.10"
 leaky-bucket = "1.1"
+tracing = "0.1"
 
 youmubot-db = { path = "../youmubot-db" }
 youmubot-db-sql = { path = "../youmubot-db-sql" }

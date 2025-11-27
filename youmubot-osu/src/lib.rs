@@ -9,6 +9,7 @@ use models::*;
 use request::builders::*;
 use request::scores::Fetch;
 use request::*;
+use tracing::debug;
 use youmubot_prelude::*;
 
 use crate::request::scores::FetchPure;
@@ -45,12 +46,13 @@ impl<T> Ratelimited<T> {
     }
 
     pub async fn acquire_one(&self) -> &T {
-        self.limiter.acquire_one().await;
-        &self.inner
+        self.acquire(1).await
     }
 
-    pub async fn _acquire(&self, tokens: usize) -> &T {
+    pub async fn acquire(&self, tokens: usize) -> &T {
+        debug!("acquiring when bucket = {}", self.limiter.balance());
         self.limiter.acquire(tokens).await;
+        debug!("acquired when bucket = {}", self.limiter.balance());
         &self.inner
     }
 }
