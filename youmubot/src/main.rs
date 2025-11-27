@@ -12,6 +12,7 @@ use serenity::{
     },
 };
 
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use youmubot_prelude::announcer::AnnouncerHandler;
 use youmubot_prelude::*;
 
@@ -158,26 +159,12 @@ async fn is_not_channel_mod(ctx: &Context, msg: &Message) -> bool {
     }
 }
 
-const LOG_LEVEL_KEY: &str = env_logger::DEFAULT_FILTER_ENV;
-
-fn trace_level() -> tracing::Level {
-    var(LOG_LEVEL_KEY)
-        .map(|v| v.parse().unwrap())
-        .unwrap_or(tracing::Level::WARN)
-}
-
 #[tokio::main]
 async fn main() {
-    env_logger::init_from_env(env_logger::Env::default().filter(LOG_LEVEL_KEY));
-    // a builder for `FmtSubscriber`.
-    let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
-        // will be written to stdout.
-        .with_max_level(trace_level())
-        // completes the builder.
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
 
     // Setup dotenv
     if let Ok(path) = dotenv::dotenv() {
