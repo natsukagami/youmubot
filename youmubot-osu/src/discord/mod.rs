@@ -723,7 +723,7 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 {
                     count += 1;
                 }
-                count
+                count + 1
             };
             let beatmap = env
                 .beatmaps

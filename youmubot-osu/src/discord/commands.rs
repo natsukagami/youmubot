@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, future::Future};
 
 use crate::discord::link_parser::parse_score_links;
 
@@ -69,7 +69,14 @@ async fn top<U: HasOsuEnv>(
         .user_best(UserID::ID(args.user.id), |f| f.mode(mode))
         .await?;
 
-    handle_listing(ctx, plays, args, |nth, b| b.top_record(nth), "top").await
+    handle_listing(
+        ctx,
+        plays,
+        args,
+        |ctx, b| Box::pin(async move { Ok(b.top_record(ctx.index)) }),
+        "top",
+    )
+    .await
 }
 
 /// Get an user's profile.
@@ -144,7 +151,32 @@ async fn recent<U: HasOsuEnv>(
         })
         .await?;
 
-    handle_listing(ctx, plays, args, |_, b| b, "recent").await
+    handle_listing(
+        ctx,
+        plays,
+        args,
+        |ctx, b| {
+            Box::pin(async move {
+                let attempts = {
+                    let mut count = 0usize;
+                    while ctx
+                        .plays
+                        .get(ctx.index as usize + count + 1)
+                        .await?
+                        .is_some_and(|p| {
+                            ctx.play.beatmap_id == p.beatmap_id && ctx.play.mods == p.mods
+                        })
+                    {
+                        count += 1;
+                    }
+                    count + 1
+                };
+                Ok(b.footer(format!("Attempt #{}", attempts)))
+            })
+        },
+        "recent",
+    )
+    .await
 }
 
 /// Returns pinned plays from a given player.
@@ -176,7 +208,14 @@ async fn pinned<U: HasOsuEnv>(
         .user_pins(UserID::ID(args.user.id), |f| f.mode(mode))
         .await?;
 
-    handle_listing(ctx, plays, args, |_, b| b, "pinned").await
+    handle_listing(
+        ctx,
+        plays,
+        args,
+        |_, b| Box::pin(async move { Ok(b) }),
+        "pinned",
+    )
+    .await
 }
 
 /// Save your osu! profile into Youmu's database for tracking and quick commands.
@@ -271,13 +310,28 @@ pub async fn forcesave<U: HasOsuEnv>(
     Ok(())
 }
 
-async fn handle_listing<U: HasOsuEnv>(
+pub struct ListingCtx<'score, 'buf, Buf> {
+    index: u8,
+    play: &'score Score,
+    plays: &'buf mut Buf,
+}
+
+async fn handle_listing<U, Buf>(
     ctx: CmdContext<'_, U>,
-    mut plays: impl LazyBuffer<Score>,
+    mut plays: Buf,
     listing_args: ListingArgs,
-    transform: impl for<'a> Fn(u8, ScoreEmbedBuilder<'a>) -> ScoreEmbedBuilder<'a>,
+    transform: impl for<'a> Fn(
+        ListingCtx<'a, 'a, Buf>,
+        ScoreEmbedBuilder<'a>,
+    ) -> std::pin::Pin<
+        Box<dyn Future<Output = Result<ScoreEmbedBuilder<'a>>> + Send + 'a>,
+    >,
     listing_kind: &'static str,
-) -> Result<()> {
+) -> Result<()>
+where
+    U: HasOsuEnv,
+    Buf: LazyBuffer<Score>,
+{
     let env = ctx.data().osu_env();
     let ListingArgs {
         nth,
@@ -289,7 +343,7 @@ async fn handle_listing<U: HasOsuEnv>(
     match nth {
         Nth::Nth(nth) => {
             let play = if let Some(play) = plays.get(nth as usize).await? {
-                play
+                play.clone()
             } else {
                 return Err(Error::msg("no such play"))?;
             };
@@ -310,7 +364,15 @@ async fn handle_listing<U: HasOsuEnv>(
                         user.mention()
                     ))
                     .embed({
-                        let mut b = transform(nth + 1, score_embed(play, &beatmap, &content, user));
+                        let mut b = transform(
+                            ListingCtx {
+                                index: nth,
+                                play: &play,
+                                plays: &mut plays,
+                            },
+                            score_embed(&play, &beatmap, &content, user),
+                        )
+                        .await?;
                         if let Some(rank) = play.global_rank {
                             b = b.world_record(rank as u16);
                         }

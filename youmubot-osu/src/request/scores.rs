@@ -7,7 +7,7 @@ use crate::OsuClient;
 pub const MAX_SCORE_PER_PAGE: usize = 1000;
 
 /// A stream of items.
-pub trait Fetch: Send {
+pub trait Fetch: Send + Sync {
     type Item: Send + Sync + 'static;
 
     /// Fetch the next batch of items.
@@ -33,7 +33,7 @@ pub trait Fetch: Send {
 }
 
 /// Fetch scores given an offset.
-pub trait FetchPure: Send {
+pub trait FetchPure: Send + Sync {
     type Item: Send + Sync + 'static;
 
     const ITEMS_PER_PAGE: usize = MAX_SCORE_PER_PAGE;
@@ -82,6 +82,17 @@ impl<T: FetchPure> Fetch for FetchPureImpl<T> {
         self.current_offset += results.len();
         Ok(Some(results))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.current_offset,
+            if self.ended {
+                Some(self.current_offset)
+            } else {
+                None
+            },
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,7 +137,7 @@ impl Size {
 }
 
 /// A scores stream.
-pub trait LazyBuffer<T: Send + Sync + 'static>: Send {
+pub trait LazyBuffer<T: Send + Sync + 'static>: Send + Sync {
     /// Total length of the pages.
     fn length_fetched(&self) -> Size;
 
@@ -267,7 +278,10 @@ impl<T: Fetch> Fetcher<T> {
             return Ok(false);
         }
         let scores = match self.fetcher.next(&self.client).await? {
-            None => return Ok(false),
+            None => {
+                self.more_exists = false;
+                return Ok(false);
+            }
             Some(res) => res,
         };
         self.items.extend(scores);
