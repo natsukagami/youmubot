@@ -225,12 +225,28 @@ pub async fn save<U: HasOsuEnv>(
 #[poise::command(slash_command, owners_only)]
 pub async fn forcesave<U: HasOsuEnv>(
     ctx: CmdContext<'_, U>,
-    #[description = "The osu! username to set to"] username: String,
+    #[description = "The osu! username to set to. Set to `-` to remove"] username: String,
     #[description = "The discord user to assign to"] discord_name: User,
 ) -> Result<()> {
     let env = ctx.data().osu_env();
     let osu_client = &env.client;
     ctx.defer().await?;
+    if username == "-" {
+        ctx.send(match env.saved_users.remove_user(discord_name.id).await? {
+            None => CreateReply::default().content("No user was found saved to this account."),
+            Some(u) => CreateReply::default().content(
+                MessageBuilder::new()
+                    .push("Account ")
+                    .push_bold_safe(u.username)
+                    .push(" has been unlinked from user ")
+                    .push_bold_safe(discord_name.display_name())
+                    .push(".")
+                    .build(),
+            ),
+        })
+        .await?;
+        return Ok(());
+    }
     let Some(u) = osu_client
         .user(&UserID::from_string(username.clone()), |f| f)
         .await?

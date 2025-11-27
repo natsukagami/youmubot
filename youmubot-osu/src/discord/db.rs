@@ -39,7 +39,7 @@ impl OsuSavedUsers {
 
     /// Get an user by their user_id.
     pub async fn by_user_id(&self, user_id: UserId) -> Result<Option<OsuUser>> {
-        let u = model::OsuUser::by_user_id(user_id.get() as i64, &self.pool)
+        let u = model::OsuUser::by_user_id(user_id.get() as i64, &mut self.pool.begin().await?)
             .await?
             .map(OsuUser::from);
         Ok(u)
@@ -70,6 +70,21 @@ impl OsuSavedUsers {
         );
         t.commit().await?;
         Ok(())
+    }
+
+    pub async fn remove_user(&self, user_id: UserId) -> Result<Option<OsuUser>> {
+        let mut t = self.pool.begin().await?;
+        let u = model::OsuUser::by_user_id(user_id.get() as i64, &mut t)
+            .await?
+            .map(OsuUser::from);
+        match u {
+            None => Ok(None),
+            Some(u) => {
+                model::OsuUser::delete(u.user_id.get() as i64, &mut *t).await?;
+                t.commit().await?;
+                Ok(Some(u))
+            }
+        }
     }
 }
 

@@ -115,7 +115,10 @@ impl OsuUser {
         }
     }
     /// Query an user by their user id.
-    pub async fn by_user_id(user_id: i64, conn: &Pool) -> Result<Option<Self>> {
+    pub async fn by_user_id(
+        user_id: i64,
+        conn: &mut Transaction<'_, Database>,
+    ) -> Result<Option<Self>> {
         let u = match query_as!(
             raw::OsuUser,
             r#"SELECT
@@ -127,13 +130,13 @@ impl OsuUser {
             FROM osu_users WHERE user_id = ?"#,
             user_id
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut **conn)
         .await?
         {
             Some(v) => v,
             None => return Ok(None),
         };
-        let modes = OsuUserMode::from_user(u.user_id, conn).await?;
+        let modes = OsuUserMode::from_user(u.user_id, &mut **conn).await?;
         Ok(Some(Self::from_raw(u, modes)))
     }
 
