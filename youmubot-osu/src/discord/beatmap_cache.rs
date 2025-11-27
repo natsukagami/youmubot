@@ -10,7 +10,6 @@ use crate::{
 /// Does not cache non-Ranked beatmaps.
 #[derive(Clone)]
 pub struct BeatmapMetaCache {
-    client: OsuClient,
     pool: Pool,
 }
 
@@ -26,8 +25,8 @@ impl TypeMapKey for BeatmapMetaCache {
 
 impl BeatmapMetaCache {
     /// Create a new beatmap cache.
-    pub fn new(client: OsuClient, pool: Pool) -> Self {
-        BeatmapMetaCache { client, pool }
+    pub fn new(pool: Pool) -> Self {
+        BeatmapMetaCache { pool }
     }
 
     /// Clean the cache.
@@ -46,9 +45,13 @@ impl BeatmapMetaCache {
         }
     }
 
-    async fn insert_if_possible(&self, id: u64, mode: Option<Mode>) -> Result<Beatmap> {
-        let beatmap = self
-            .client
+    async fn insert_if_possible(
+        &self,
+        client: &OsuClient,
+        id: u64,
+        mode: Option<Mode>,
+    ) -> Result<Beatmap> {
+        let beatmap = client
             .beatmaps(crate::BeatmapRequestKind::Beatmap(id), |f| {
                 if let Some(mode) = mode {
                     f.mode(mode, true);
@@ -77,15 +80,15 @@ impl BeatmapMetaCache {
     }
 
     /// Get the given beatmap
-    pub async fn get_beatmap(&self, id: u64, mode: Mode) -> Result<Beatmap> {
+    pub async fn get_beatmap(&self, client: &OsuClient, id: u64, mode: Mode) -> Result<Beatmap> {
         match self.get_beatmap_db(id, mode).await? {
             Some(v) => Ok(v),
-            None => self.insert_if_possible(id, Some(mode)).await,
+            None => self.insert_if_possible(client, id, Some(mode)).await,
         }
     }
 
     /// Get a beatmap without a mode...
-    pub async fn get_beatmap_default(&self, id: u64) -> Result<Beatmap> {
+    pub async fn get_beatmap_default(&self, client: &OsuClient, id: u64) -> Result<Beatmap> {
         for mode in [Mode::Std, Mode::Taiko, Mode::Catch, Mode::Mania].into_iter() {
             if let Ok(Some(bm)) = self.get_beatmap_db(id, mode).await {
                 if bm.mode == mode {
@@ -94,11 +97,16 @@ impl BeatmapMetaCache {
             }
         }
 
-        self.insert_if_possible(id, None).await
+        self.insert_if_possible(client, id, None).await
     }
 
     /// Get a beatmapset from its ID.
-    pub async fn get_beatmapset(&self, id: u64, mode: Option<Mode>) -> Result<Vec<Beatmap>> {
+    pub async fn get_beatmapset(
+        &self,
+        client: &OsuClient,
+        id: u64,
+        mode: Option<Mode>,
+    ) -> Result<Vec<Beatmap>> {
         let bms = models::CachedBeatmap::by_beatmapset(id as i64, &self.pool).await?;
         if !bms.is_empty() {
             return Ok(bms
@@ -106,8 +114,7 @@ impl BeatmapMetaCache {
                 .map(|v| bincode::deserialize(&v.beatmap[..]).unwrap())
                 .collect());
         }
-        let mut beatmaps = self
-            .client
+        let mut beatmaps = client
             .beatmaps(crate::BeatmapRequestKind::Beatmapset(id), |f| {
                 f.maybe_mode(mode)
             })

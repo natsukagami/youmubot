@@ -278,7 +278,10 @@ async fn handle_listing<U: HasOsuEnv>(
                 return Err(Error::msg("no such play"))?;
             };
 
-            let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(&env.client, play.beatmap_id, mode)
+                .await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, Some(mode));
 
@@ -347,7 +350,10 @@ async fn beatmap<U: HasOsuEnv>(
                         None => bmmods,
                         Some(mods) => mods.to_mods(mode)?,
                     };
-                    let beatmap = env.beatmaps.get_beatmap(beatmap.beatmap_id, mode).await?;
+                    let beatmap = env
+                        .beatmaps
+                        .get_beatmap(&env.client, beatmap.beatmap_id, mode)
+                        .await?;
                     let info = env
                         .oppai
                         .get_beatmap(beatmap.beatmap_id)
@@ -670,7 +676,7 @@ async fn score<U: HasOsuEnv>(
     let embed = {
         let bm = env
             .beatmaps
-            .get_beatmap(score.beatmap_id, score.mode)
+            .get_beatmap(&env.client, score.beatmap_id, score.mode)
             .await?;
         let mode = score.mode;
         let content = env.oppai.get_beatmap(score.beatmap_id).await?;
@@ -716,8 +722,8 @@ async fn parse_map_input(
         Some(map) => {
             if let Ok(id) = map.parse::<u64>() {
                 let beatmap = match mode {
-                    None => env.beatmaps.get_beatmap_default(id).await,
-                    Some(mode) => env.beatmaps.get_beatmap(id, mode).await,
+                    None => env.beatmaps.get_beatmap_default(&env.client, id).await,
+                    Some(mode) => env.beatmaps.get_beatmap(&env.client, id, mode).await,
                 }?;
                 let info = env
                     .oppai
@@ -753,7 +759,7 @@ async fn parse_map_input(
             EmbedType::Beatmap(beatmap, _, _, _) => {
                 let beatmaps = env
                     .beatmaps
-                    .get_beatmapset(beatmap.beatmapset_id, mode)
+                    .get_beatmapset(&env.client, beatmap.beatmapset_id, mode)
                     .await?;
                 EmbedType::Beatmapset(beatmaps, mode)
             }

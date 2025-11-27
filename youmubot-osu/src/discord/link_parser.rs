@@ -164,8 +164,16 @@ impl EmbedType {
         mods: UnparsedMods,
     ) -> Result<Self> {
         let bm = match mode {
-            Some(mode) => env.beatmaps.get_beatmap(beatmap_id, mode).await?,
-            None => env.beatmaps.get_beatmap_default(beatmap_id).await?,
+            Some(mode) => {
+                env.beatmaps
+                    .get_beatmap(&env.client, beatmap_id, mode)
+                    .await?
+            }
+            None => {
+                env.beatmaps
+                    .get_beatmap_default(&env.client, beatmap_id)
+                    .await?
+            }
         };
         let mods = mods.to_mods(mode.unwrap_or(bm.mode))?;
         let info = {
@@ -184,7 +192,9 @@ impl EmbedType {
         mode: Option<Mode>,
     ) -> Result<Self> {
         Ok(Self::Beatmapset(
-            env.beatmaps.get_beatmapset(beatmapset_id, mode).await?,
+            env.beatmaps
+                .get_beatmapset(&env.client, beatmapset_id, mode)
+                .await?,
             mode,
         ))
     }

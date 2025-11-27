@@ -50,7 +50,7 @@ pub fn score_hook<'a>(
                 };
                 let bm = env
                     .beatmaps
-                    .get_beatmap(score.beatmap_id, score.mode)
+                    .get_beatmap(&env.client, score.beatmap_id, score.mode)
                     .await?;
                 let mode = score.mode;
                 let content = env.oppai.get_beatmap(score.beatmap_id).await?;

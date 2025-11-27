@@ -146,11 +146,11 @@ impl Announcer {
             // update stats
             let stats = OsuUserMode {
                 pp: u.pp.unwrap_or(0.0),
-                map_length: calculate_weighted_map_length(&top, &env.beatmaps, mode)
+                map_length: calculate_weighted_map_length(&top, &env, mode)
                     .await
                     .pls_ok()
                     .unwrap_or(0.0),
-                map_age: calculate_weighted_map_age(&top, &env.beatmaps, mode)
+                map_age: calculate_weighted_map_age(&top, &env, mode)
                     .await
                     .pls_ok()
                     .unwrap_or(0),
@@ -359,7 +359,7 @@ impl CollectedScore {
     async fn get_beatmap(&self, env: &OsuEnv) -> Result<(BeatmapWithMode, BeatmapContent)> {
         let beatmap = env
             .beatmaps
-            .get_beatmap_default(self.score.beatmap_id)
+            .get_beatmap_default(&env.client, self.score.beatmap_id)
             .await?;
         let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
         Ok((BeatmapWithMode(beatmap, Some(self.mode)), content))

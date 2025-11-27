@@ -124,7 +124,7 @@ mod scores {
 
                 let beatmap = env
                     .beatmaps
-                    .get_beatmap(score.beatmap_id, score.mode)
+                    .get_beatmap(&env.client, score.beatmap_id, score.mode)
                     .await?;
                 let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
                 let mode = if beatmap.mode == score.mode {
@@ -249,11 +249,14 @@ mod scores {
                 }
                 let meta_cache = &self.env.beatmaps;
                 let oppai = &self.env.oppai;
+                let client = &self.env.client;
 
                 let beatmaps = scores
                     .iter()
                     .map(|play| async move {
-                        let beatmap = meta_cache.get_beatmap(play.beatmap_id, play.mode).await?;
+                        let beatmap = meta_cache
+                            .get_beatmap(client, play.beatmap_id, play.mode)
+                            .await?;
                         let info = {
                             let b = oppai.get_beatmap(beatmap.beatmap_id).await?;
                             b.get_info_with(play.mode, &play.mods)

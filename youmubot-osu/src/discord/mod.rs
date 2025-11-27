@@ -128,7 +128,7 @@ pub async fn setup(
     };
     let osu_client = mk_osu_client().await;
     let oppai_cache = BeatmapCache::new(prelude.http.clone(), prelude.sql.clone());
-    let beatmap_cache = BeatmapMetaCache::new(osu_client.clone(), prelude.sql.clone());
+    let beatmap_cache = BeatmapMetaCache::new(prelude.sql.clone());
 
     // Legacy data
     data.insert::<OsuLastBeatmap>(last_beatmaps.clone());
@@ -517,11 +517,14 @@ impl UserExtras {
             .unwrap_or_else(Vec::new);
 
         let (length, age) = join!(
-            calculate_weighted_map_length(&scores, &env.beatmaps, mode),
-            calculate_weighted_map_age(&scores, &env.beatmaps, mode)
+            calculate_weighted_map_length(&scores, env, mode),
+            calculate_weighted_map_age(&scores, env, mode)
         );
         let best = if let Some(s) = scores.into_iter().next() {
-            let beatmap = env.beatmaps.get_beatmap(s.beatmap_id, mode).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(&env.client, s.beatmap_id, mode)
+                .await?;
             let info = env
                 .oppai
                 .get_beatmap(s.beatmap_id)
@@ -722,7 +725,10 @@ pub async fn recent(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 }
                 count
             };
-            let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(&env.client, play.beatmap_id, mode)
+                .await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
 
@@ -787,7 +793,10 @@ pub async fn pins(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 .get(nth as usize)
                 .await?
                 .ok_or(Error::msg("No such play"))?;
-            let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(&env.client, play.beatmap_id, mode)
+                .await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap_mode = BeatmapWithMode(beatmap, Some(mode));
 
@@ -1109,7 +1118,10 @@ pub async fn top(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
                 .await?
                 .ok_or(Error::msg("No such play"))?;
 
-            let beatmap = env.beatmaps.get_beatmap(play.beatmap_id, mode).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(&env.client, play.beatmap_id, mode)
+                .await?;
             let content = env.oppai.get_beatmap(beatmap.beatmap_id).await?;
             let beatmap = BeatmapWithMode(beatmap, Some(mode));
 
@@ -1206,13 +1218,16 @@ fn scales() -> &'static [f64] {
 
 pub(in crate::discord) async fn calculate_weighted_map_length(
     from_scores: impl IntoIterator<Item = &Score>,
-    cache: &BeatmapMetaCache,
+    env: &OsuEnv,
     mode: Mode,
 ) -> Result<f64> {
     let scores = from_scores
         .into_iter()
         .map(|s| async move {
-            let beatmap = cache.get_beatmap(s.beatmap_id, mode).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(&env.client, s.beatmap_id, mode)
+                .await?;
             Ok(beatmap
                 .difficulty
                 .apply_mods(&s.mods, 0.0 /* dont care */)
@@ -1227,13 +1242,16 @@ pub(in crate::discord) async fn calculate_weighted_map_length(
 
 pub(in crate::discord) async fn calculate_weighted_map_age(
     from_scores: impl IntoIterator<Item = &Score>,
-    cache: &BeatmapMetaCache,
+    env: &OsuEnv,
     mode: Mode,
 ) -> Result<i64> {
     let scores = from_scores
         .into_iter()
         .map(|s| async move {
-            let beatmap = cache.get_beatmap(s.beatmap_id, mode).await?;
+            let beatmap = env
+                .beatmaps
+                .get_beatmap(&env.client, s.beatmap_id, mode)
+                .await?;
             Ok(
                 if let crate::ApprovalStatus::Ranked(at) = beatmap.approval {
                     at.timestamp() as f64
