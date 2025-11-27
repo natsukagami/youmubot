@@ -36,7 +36,7 @@ where
     }
 
     /// Open a previously inserted DB.
-    pub fn open(data: &TypeMap) -> DBWriteGuard<T> {
+    pub fn open(data: &TypeMap) -> DBWriteGuard<'_, T> {
         data.get::<Self>().expect("DB initialized").into()
     }
 }
@@ -69,11 +69,11 @@ where
     T: Send + Sync + Clone + std::fmt::Debug + Serialize + DeserializeOwned,
 {
     /// Borrows the FileDatabase.
-    pub fn borrow(&self) -> Result<std::sync::RwLockReadGuard<T>, DBError> {
+    pub fn borrow(&self) -> Result<std::sync::RwLockReadGuard<'_, T>, DBError> {
         self.db.borrow_data()
     }
     /// Borrows the FileDatabase for writing.
-    pub fn borrow_mut(&mut self) -> Result<std::sync::RwLockWriteGuard<T>, DBError> {
+    pub fn borrow_mut(&mut self) -> Result<std::sync::RwLockWriteGuard<'_, T>, DBError> {
         self.needs_save = true;
         self.db.borrow_data_mut()
     }
