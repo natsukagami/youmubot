@@ -1434,11 +1434,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "leaky-bucket-lite"
-version = "0.5.2"
+name = "leaky-bucket"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1411c737dd21a748044ab29af14b7f920b2dcc277284df6dd986492c98bf5229"
+checksum = "0a396bb213c2d09ed6c5495fd082c991b6ab39c9daf4fff59e6727f85c73e4c5"
 dependencies = [
+ "parking_lot",
+ "pin-project-lite",
  "tokio",
 ]
 
@@ -2074,8 +2076,9 @@ checksum = "907d85647905d8de0b5560a8e2d87b7bf457b4b22cdd8f2025c1ff384435ec25"
 
 [[package]]
 name = "rosu-map"
-version = "0.2.0"
-source = "git+https://github.com/MaxOhn/rosu-map#952bacc3115304c2a62f1db406fc6f677dc2d03b"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b92ea634d8b3eaa4d7fba7bd12045dda1a50ce81401c96af0d9c851b0737544"
 
 [[package]]
 name = "rosu-mods"
@@ -2089,17 +2092,17 @@ dependencies = [
 
 [[package]]
 name = "rosu-pp"
-version = "2.0.0"
-source = "git+https://github.com/MaxOhn/rosu-pp?branch=pp-update#f874d70f3636c484c555839dfeaacbc6706206b8"
+version = "3.1.0"
+source = "git+https://github.com/MaxOhn/rosu-pp?branch=pp-update#5521f1c21a8c32e56202a1f918e7d093b212e445"
 dependencies = [
- "rosu-map 0.2.0",
+ "rosu-map 0.2.1",
  "rosu-mods",
 ]
 
 [[package]]
 name = "rosu-v2"
-version = "0.10.0"
-source = "git+https://github.com/MaxOhn/rosu-v2?branch=lazer#445f5f262ea756e4a306ea0163b4cf922fb4aac2"
+version = "0.11.0"
+source = "git+https://github.com/MaxOhn/rosu-v2?branch=lazer#a5c8b58d4db3c1d090d68c2ea903511bda538bad"
 dependencies = [
  "bytes",
  "dashmap 6.1.0",
@@ -2109,7 +2112,8 @@ dependencies = [
  "hyper-rustls 0.27.5",
  "hyper-util",
  "itoa",
- "leaky-bucket-lite",
+ "leaky-bucket",
+ "pin-project",
  "rosu-mods",
  "serde",
  "serde_json",
@@ -3540,7 +3544,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

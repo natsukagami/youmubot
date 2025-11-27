@@ -161,6 +161,8 @@ pub mod builders {
     }
 
     impl ScoreRequestBuilder {
+        const SCORES_PER_PAGE: usize = 50;
+
         pub(crate) fn new(beatmap_id: u64) -> Self {
             ScoreRequestBuilder {
                 beatmap_id,
@@ -188,7 +190,7 @@ pub mod builders {
         async fn fetch_scores(
             &self,
             osu: &crate::OsuClient,
-            _offset: usize,
+            offset: usize,
         ) -> Result<Vec<models::Score>> {
             let scores = handle_not_found(match &self.user {
                 Some(user) => {
@@ -217,7 +219,7 @@ pub mod builders {
                         r = r.mods(GameModsIntermode::from(mods.inner.clone()));
                     }
                     // r = r.limit(limit); // can't do this just yet because of offset not working
-                    r.await
+                    Ok(r.await?.scores)
                 }
             })?
             .ok_or_else(|| error!("beatmap or user not found"))?;
