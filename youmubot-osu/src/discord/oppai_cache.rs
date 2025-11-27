@@ -60,7 +60,7 @@ impl BeatmapContent {
             .content
             .performance()
             .mode_or_ignore(mode.into())
-            .lazer(mods.is_lazer)
+            .lazer(true)
             .mods(mods.inner.clone());
         let perf = match stats {
             Stats::Raw(stats) => {

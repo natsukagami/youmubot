@@ -351,7 +351,7 @@ mod scores {
                             pp.to_string(),
                             format!("{:.2}%", play.accuracy(play.mode)),
                             format!("{}", rank),
-                            play.mods.to_string(),
+                            play.mods_with_edition(),
                             time_before_now(&play.date),
                             beatmap.clone(),
                         ]

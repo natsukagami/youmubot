@@ -407,7 +407,7 @@ pub async fn show_leaderboard(ctx: &Context, msg: &Message, mut args: Args) -> C
         guild.name(ctx).unwrap(),
         scoreboard_msg,
     );
-    let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
+    let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer());
 
     match style {
         ScoreListStyle::Table => {
@@ -689,9 +689,14 @@ pub(crate) fn rankings_to_table(
                         } else {
                             beatmap.difficulty_name.clone()
                         };
-                        format!("[{:.2}*] {} {}", star, trimmed_diff, score.mods)
+                        format!(
+                            "[{:.2}*] {} {}",
+                            star,
+                            trimmed_diff,
+                            score.mods_with_edition()
+                        )
                     } else {
-                        score.mods.to_string()
+                        score.mods_with_edition()
                     },
                     score.rank.to_string(),
                     format!("{:.2}%", score.accuracy(score.mode)),

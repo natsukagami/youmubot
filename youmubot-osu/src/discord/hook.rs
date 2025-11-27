@@ -123,7 +123,7 @@ pub fn dot_osu_hook<'a>(
                     crate::discord::embeds::beatmap_offline_embed(
                         &beatmap,
                         m, /*For now*/
-                        &Mods::from_str(msg.content.trim(), m, false).unwrap_or_default(),
+                        &Mods::from_str(msg.content.trim(), m).unwrap_or_default(),
                     )
                     .pls_ok()
                 }
@@ -155,8 +155,7 @@ pub fn dot_osu_hook<'a>(
                                 crate::discord::embeds::beatmap_offline_embed(
                                     &beatmap,
                                     m, /*For now*/
-                                    &Mods::from_str(msg.content.trim(), m, false)
-                                        .unwrap_or_default(),
+                                    &Mods::from_str(msg.content.trim(), m).unwrap_or_default(),
                                 )
                                 .pls_ok()
                             })

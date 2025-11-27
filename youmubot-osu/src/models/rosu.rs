@@ -129,7 +129,7 @@ impl From<rosu::score::Score> for Score {
             global_rank: s.rank_global,
             effective_pp: s.weight.map(|w| w.pp as f64),
             mode: s.mode.into(),
-            mods: Mods::from_gamemods(s.mods, s.set_on_lazer),
+            mods: Mods::from_gamemods(s.mods),
             count_300: legacy_stats.count_300 as u64,
             count_100: legacy_stats.count_100 as u64,
             count_50: legacy_stats.count_50 as u64,

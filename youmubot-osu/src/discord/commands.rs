@@ -73,7 +73,7 @@ async fn top<U: HasOsuEnv>(
         ctx,
         plays,
         args,
-        |ctx, b| Box::pin(async move { Ok(b.top_record(ctx.index)) }),
+        |ctx, b| Box::pin(async move { Ok(b.top_record(ctx.index + 1)) }),
         "top",
     )
     .await
@@ -660,7 +660,7 @@ async fn leaderboard<U: HasOsuEnv>(
         "Here are the top scores of **{}** on {}",
         guild.name, scoreboard_msg,
     );
-    let has_lazer_score = scores.iter().any(|v| v.score.mods.is_lazer);
+    let has_lazer_score = scores.iter().any(|v| v.score.is_lazer());
 
     match style {
         ScoreListStyle::Table => {

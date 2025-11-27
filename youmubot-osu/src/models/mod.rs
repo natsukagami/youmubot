@@ -818,6 +818,10 @@ impl Score {
         self.server_accuracy
     }
 
+    pub fn is_lazer(&self) -> bool {
+        self.lazer_build_id.is_some()
+    }
+
     /// Gets the link to the score, if it exists.
     pub fn link(&self) -> Option<String> {
         self.id
@@ -832,5 +836,10 @@ impl Score {
         } else {
             None
         }
+    }
+
+    /// Mods, but with v1 to show that the score was set on stable.
+    pub fn mods_with_edition(&self) -> String {
+        self.mods.to_string()
     }
 }

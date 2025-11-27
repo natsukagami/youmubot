@@ -406,11 +406,17 @@ impl ScoreEmbedBuilder<'_> {
             .unwrap_or_else(|| "".to_owned());
         let diff = b.difficulty.apply_mods(&s.mods, stars);
         let mod_details = mod_details(&s.mods);
+        let played_on_stable = if s.is_lazer() {
+            ""
+        } else {
+            " with **osu!stable**"
+        };
         let description_fields = [
             Some(
                 format!(
-                    "**Played**: {} {} {}",
+                    "**Played**: {}{} {} {}",
                     s.date.format("<t:%s:R>"),
+                    played_on_stable,
                     s.link()
                         .map(|s| format!("[[Score]]({})", s).into())
                         .unwrap_or(Cow::from("")),
@@ -490,9 +496,7 @@ pub(crate) struct FakeScore<'a> {
 
 impl FakeScore<'_> {
     fn score_origin(&self, attrs: &OsuPerformanceAttributes) -> OsuScoreOrigin {
-        if !self.mods.is_lazer {
-            OsuScoreOrigin::Stable
-        } else if self
+        if self
             .mods
             .inner
             .contains_intermode(GameModIntermode::Classic)
@@ -542,7 +546,7 @@ impl FakeScore<'_> {
             .n100(self.n100)
             .n50(self.n50)
             .misses(self.nmiss)
-            .lazer(self.mods.is_lazer)
+            .lazer(true)
             .mods(self.mods.inner.clone());
         let state = perf.generate_state()?;
         let accuracy = state.accuracy(self.score_origin(attrs)) * 100.0;
@@ -712,7 +716,13 @@ pub(crate) fn user_embed(u: User, ex: UserExtras) -> CreateEmbed {
                         v.pp.unwrap() /*Top record should have pp*/
                     ))
                     .push(" - ")
-                    .push_line(v.date.format("<t:%s:R>").to_string())
+                    .push(v.date.format("<t:%s:R>").to_string())
+                    .push(if v.is_lazer() {
+                        ""
+                    } else {
+                        " with **osu!stable**"
+                    })
+                    .push_line("")
                     .push("on ")
                     .push_line(format!(
                         "[{} - {} [{}]]({})**{} **",
