@@ -36,10 +36,10 @@ pub(crate) struct Ratelimited<T> {
 impl<T> Ratelimited<T> {
     fn new(inner: T) -> Self {
         let rl = RateLimiter::builder()
-            .max(60)
-            .interval(Duration::from_mins(1))
-            .refill(60)
-            .initial(60)
+            .max(20)
+            .interval(Duration::from_secs(1))
+            .refill(1)
+            .initial(0)
             .fair(true)
             .build();
         Ratelimited { inner, limiter: rl }
