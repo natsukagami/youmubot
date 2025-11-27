@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::lock::Mutex;
+use leaky_bucket::RateLimiter;
 use models::*;
 use request::builders::*;
 use request::scores::Fetch;
@@ -20,9 +22,37 @@ pub const MAX_TOP_SCORES_INDEX: usize = 200;
 /// Client is the client that will perform calls to the osu! api server.
 #[derive(Clone)]
 pub struct OsuClient {
-    rosu: Arc<rosu_v2::Osu>,
+    rosu: Arc<Ratelimited<rosu_v2::Osu>>,
 
     user_header_cache: Arc<Mutex<HashMap<u64, Option<UserHeader>>>>,
+}
+
+pub(crate) struct Ratelimited<T> {
+    inner: T,
+    limiter: RateLimiter,
+}
+
+impl<T> Ratelimited<T> {
+    fn new(inner: T) -> Self {
+        let rl = RateLimiter::builder()
+            .max(60)
+            .interval(Duration::from_mins(1))
+            .refill(60)
+            .initial(60)
+            .fair(true)
+            .build();
+        Ratelimited { inner, limiter: rl }
+    }
+
+    pub async fn acquire_one(&self) -> &T {
+        self.limiter.acquire_one().await;
+        &self.inner
+    }
+
+    pub async fn _acquire(&self, tokens: usize) -> &T {
+        self.limiter.acquire(tokens).await;
+        &self.inner
+    }
 }
 
 pub fn vec_try_into<U, T: std::convert::TryFrom<U>>(v: Vec<U>) -> Result<Vec<T>, T::Error> {
@@ -44,7 +74,7 @@ impl OsuClient {
             .build()
             .await?;
         Ok(OsuClient {
-            rosu: Arc::new(rosu),
+            rosu: Arc::new(Ratelimited::new(rosu)),
             user_header_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -141,7 +171,7 @@ impl OsuClient {
     }
 
     pub async fn score(&self, score_id: u64) -> Result<Option<Score>, Error> {
-        let s = match self.rosu.score(score_id).await {
+        let s = match self.rosu.acquire_one().await.score(score_id).await {
             Ok(v) => v,
             Err(rosu_v2::error::OsuError::NotFound) => return Ok(None),
             e => e?,

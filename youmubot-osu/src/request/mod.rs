@@ -1,9 +1,9 @@
 use core::fmt;
 use std::sync::Arc;
 
-use crate::OsuClient;
 use crate::models::{Mode, Mods, UserEvent};
 use crate::request::scores::FetchPure;
+use crate::OsuClient;
 use rosu_v2::error::OsuError;
 use youmubot_prelude::*;
 
@@ -65,8 +65,8 @@ pub mod builders {
     use crate::models::{self, Score};
     use crate::request::scores::FetchPure;
 
-    use super::OsuClient;
     use super::scores::Fetch;
+    use super::OsuClient;
     use super::*;
     /// A builder for a Beatmap request.
     pub struct BeatmapRequestBuilder {
@@ -94,7 +94,15 @@ pub mod builders {
         pub(crate) async fn build(self, client: &OsuClient) -> Result<Vec<models::Beatmap>> {
             Ok(match self.kind {
                 BeatmapRequestKind::Beatmap(id) => {
-                    match handle_not_found(client.rosu.beatmap().map_id(id as u32).await)? {
+                    match handle_not_found(
+                        client
+                            .rosu
+                            .acquire_one()
+                            .await
+                            .beatmap()
+                            .map_id(id as u32)
+                            .await,
+                    )? {
                         Some(mut bm) => {
                             let set = bm.mapset.take().unwrap();
                             vec![models::Beatmap::from_rosu(bm, &set)]
@@ -103,7 +111,9 @@ pub mod builders {
                     }
                 }
                 BeatmapRequestKind::Beatmapset(id) => {
-                    let mut set = match handle_not_found(client.rosu.beatmapset(id as u32).await)? {
+                    let mut set = match handle_not_found(
+                        client.rosu.acquire_one().await.beatmapset(id as u32).await,
+                    )? {
                         Some(v) => v,
                         None => return Ok(vec![]),
                     };
@@ -113,8 +123,15 @@ pub mod builders {
                         .collect()
                 }
                 BeatmapRequestKind::BeatmapHash(hash) => {
-                    let mut bm = match handle_not_found(client.rosu.beatmap().checksum(hash).await)?
-                    {
+                    let mut bm = match handle_not_found(
+                        client
+                            .rosu
+                            .acquire_one()
+                            .await
+                            .beatmap()
+                            .checksum(hash)
+                            .await,
+                    )? {
                         Some(v) => v,
                         None => return Ok(vec![]),
                     };
@@ -141,7 +158,7 @@ pub mod builders {
         }
 
         pub(crate) async fn build(self, client: &OsuClient) -> Result<Option<models::User>> {
-            let mut r = client.rosu.user(self.user);
+            let mut r = client.rosu.acquire_one().await.user(self.user);
             if let Some(mode) = self.mode {
                 r = r.mode(mode.into());
             }
@@ -197,6 +214,8 @@ pub mod builders {
                 Some(user) => {
                     let mut r = osu
                         .rosu
+                        .acquire_one()
+                        .await
                         .beatmap_user_scores(self.beatmap_id as u32, user.clone());
                     if let Some(mode) = self.mode {
                         r = r.mode(mode.into());
@@ -212,7 +231,12 @@ pub mod builders {
                     }
                 }
                 None => {
-                    let mut r = osu.rosu.beatmap_scores(self.beatmap_id as u32).global();
+                    let mut r = osu
+                        .rosu
+                        .acquire_one()
+                        .await
+                        .beatmap_scores(self.beatmap_id as u32)
+                        .global();
                     if let Some(mode) = &self.mode {
                         r = r.mode((*mode).into());
                     }
@@ -275,6 +299,8 @@ pub mod builders {
             let scores = handle_not_found({
                 let mut r = client
                     .rosu
+                    .acquire_one()
+                    .await
                     .user_scores(self.user.clone())
                     .limit(Self::SCORES_PER_PAGE)
                     .offset(offset);
@@ -336,6 +362,8 @@ impl FetchPure for UserEventRequest {
         Ok(handle_not_found(
             client
                 .rosu
+                .acquire_one()
+                .await
                 .recent_activity(self.user.clone())
                 .limit(Self::ITEMS_PER_PAGE)
                 .offset(offset)

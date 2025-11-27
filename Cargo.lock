@@ -3914,6 +3914,7 @@ dependencies = [
  "futures",
  "futures-util",
  "lazy_static",
+ "leaky-bucket",
  "poise",
  "rand",
  "regex",
