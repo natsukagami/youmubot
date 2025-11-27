@@ -110,9 +110,6 @@ impl Announcer {
         mut user: OsuUser,
         broadcast_to: Vec<ChannelId>,
     ) {
-        if broadcast_to.is_empty() {
-            return; // Skip update if there are no broadcasting channels
-        }
         if user.failures == MAX_FAILURES {
             return;
         }
