@@ -65,6 +65,7 @@ impl Beatmap {
                 .unwrap_or(0.0),
             play_count: bm.playcount as u64,
             pass_count: bm.passcount as u64,
+            owners: bm.owners.map(|v| v.into_iter().map(From::from).collect()),
         }
     }
 }
@@ -104,6 +105,15 @@ impl User {
 impl From<rosu::event::Event> for UserEvent {
     fn from(value: rosu::event::Event) -> Self {
         Self(value)
+    }
+}
+
+impl From<rosu::beatmap::BeatmapOwner> for UserHeader {
+    fn from(value: rosu::beatmap::BeatmapOwner) -> Self {
+        Self {
+            username: value.username.to_string(),
+            id: value.user_id as u64,
+        }
     }
 }
 

@@ -28,41 +28,50 @@ pub(crate) fn grouped_number(num: u64) -> String {
 }
 
 fn beatmap_description(b: &Beatmap, mods: &Mods) -> String {
-    MessageBuilder::new()
-        .push_bold_line(b.approval.to_string())
-        .push({
-            let link = b.download_link(crate::BeatmapSite::Bancho);
-            format!(
-                "Download: [[Link]({})] [[No Video]({}?noVideo=1)] [[BeatConnect]({})] [[Chimu]({})]",
-                link,
-                link,
-                b.download_link(crate::BeatmapSite::Beatconnect),
-                b.download_link(crate::BeatmapSite::Chimu),
-            )
-        })
-        .push_line(format!(" [[Beatmapset]({})]", b.beatmapset_link()))
-        .push("Language: ")
-        .push_bold(b.language.to_string())
-        .push(" | Genre: ")
-        .push_bold_line(b.genre.to_string())
-        .push(
-            b.source
-                .as_ref()
-                .map(|v| format!("Source: **{}**\n", v))
-                .unwrap_or_else(|| "".to_owned()),
-        )
-        .push("Tags: ")
-        .push_line(
-            b.tags
+    let mut m = MessageBuilder::new();
+    m.push_bold_line(b.approval.to_string());
+    if let Some(owners) = b.non_gd_owners() {
+        m.push("Mapped by ").push_bold_line(
+            owners
                 .iter()
-                .map(|v| MessageBuilder::new().push_mono_safe(v).build())
-                .take(10)
-                .chain(std::iter::once("...".to_owned()))
+                .map(|h| h.mention().to_string())
                 .collect::<Vec<_>>()
-                .join(" "),
+                .join(", "),
+        );
+    }
+    m.push({
+        let link = b.download_link(crate::BeatmapSite::Bancho);
+        format!(
+            "Download: [[Link]({})] [[No Video]({}?noVideo=1)] [[BeatConnect]({})] [[Chimu]({})]",
+            link,
+            link,
+            b.download_link(crate::BeatmapSite::Beatconnect),
+            b.download_link(crate::BeatmapSite::Chimu),
         )
-        .push_line(mod_details(mods).unwrap_or("".into()))
-        .build()
+    })
+    .push_line(format!(" [[Beatmapset]({})]", b.beatmapset_link()))
+    .push("Language: ")
+    .push_bold(b.language.to_string())
+    .push(" | Genre: ")
+    .push_bold_line(b.genre.to_string())
+    .push(
+        b.source
+            .as_ref()
+            .map(|v| format!("Source: **{}**\n", v))
+            .unwrap_or_else(|| "".to_owned()),
+    )
+    .push("Tags: ")
+    .push_line(
+        b.tags
+            .iter()
+            .map(|v| MessageBuilder::new().push_mono_safe(v).build())
+            .take(10)
+            .chain(std::iter::once("...".to_owned()))
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+    .push_line(mod_details(mods).unwrap_or("".into()))
+    .build()
 }
 
 fn mod_details(mods: &Mods) -> Option<Cow<'_, str>> {
@@ -251,8 +260,25 @@ pub fn beatmapset_embed(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
         .color(0xffb6c1)
         .description(beatmap_description(b, Mods::NOMOD))
         .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
+            let owners: Cow<str> = match b.non_gd_owners() {
+                None => "".into(),
+                Some(owners) => format!(
+                    " by {}",
+                    owners
+                        .iter()
+                        .map(|h| MessageBuilder::new().push_bold_safe(&h.username).build())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+                .into(),
+            };
             (
-                format!("[{}]", b.difficulty_name),
+                MessageBuilder::new()
+                    .push("[")
+                    .push_bold_safe(&b.difficulty_name)
+                    .push("]")
+                    .push(owners)
+                    .build(),
                 b.difficulty
                     .format_info(m.unwrap_or(b.mode), Mods::NOMOD, b),
                 false,

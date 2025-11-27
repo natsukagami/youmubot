@@ -380,6 +380,7 @@ pub struct Beatmap {
     pub rating: f64,
     pub play_count: u64,
     pub pass_count: u64,
+    pub owners: Option<Vec<UserHeader>>,
 }
 
 const NEW_MODE_NAMES: [&str; 4] = ["osu", "taiko", "fruits", "mania"];
@@ -497,10 +498,22 @@ impl Beatmap {
 
     /// Full title with creator name if needed
     pub fn full_title(&self, mods: &Mods, stars: f64) -> String {
-        let creator: Cow<str> = if self.difficulty_name.contains("'s") {
-            "".into()
-        } else {
-            format!(" by {}", self.creator).into()
+        let creator: Cow<str> = match self.non_gd_owners() {
+            Some(owners)
+                if owners.len() == 1 && self.difficulty_name.contains(&owners[0].username) =>
+            {
+                "".into()
+            }
+            Some(owners) => format!(
+                " by {}",
+                owners
+                    .iter()
+                    .map(|v| v.username.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+            .into(),
+            _ => format!(" by {}", self.creator).into(),
         };
 
         MessageBuilder::new()
@@ -514,6 +527,15 @@ impl Beatmap {
             .push(format!(" ({:.2}\\*)", stars))
             .push_safe(creator)
             .build()
+    }
+
+    /// Returns the list of owners only in the case where it is not the same as the beatmapset owner.
+    pub fn non_gd_owners(&self) -> Option<&Vec<UserHeader>> {
+        match &self.owners {
+            None => None,
+            Some(owners) if owners.len() == 1 && owners[0].id == self.creator_id => None,
+            Some(owners) => Some(owners),
+        }
     }
 }
 
@@ -646,7 +668,7 @@ impl UserEvent {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserHeader {
     pub id: u64,
     pub username: String,
@@ -699,7 +721,12 @@ struct UserHeaderLink<'a>(&'a String, u64);
 
 impl Display for UserHeaderLink<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}](<https://osu.ppy.sh/users/{}>)", self.0, self.1)
+        write!(
+            f,
+            "[{}](<https://osu.ppy.sh/users/{}>)",
+            MessageBuilder::new().push_safe(self.0).build(),
+            self.1
+        )
     }
 }
 
