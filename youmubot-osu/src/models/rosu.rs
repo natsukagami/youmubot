@@ -58,7 +58,7 @@ impl Beatmap {
                 .map(|rs| {
                     (rs.iter()
                         .enumerate()
-                        .map(|(r, id)| ((r + 1) as u32 * *id))
+                        .map(|(r, id)| (r + 1) as u32 * *id)
                         .sum::<u32>()) as f64
                         / (rs.iter().sum::<u32>() as f64)
                 })

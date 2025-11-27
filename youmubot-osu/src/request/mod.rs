@@ -1,10 +1,10 @@
 use core::fmt;
 use std::sync::Arc;
 
-use crate::models::{Mode, Mods, UserEvent};
 use crate::OsuClient;
+use crate::models::{Mode, Mods, UserEvent};
+use crate::request::scores::FetchPure;
 use rosu_v2::error::OsuError;
-use scores::Fetch;
 use youmubot_prelude::*;
 
 pub(crate) mod scores;
@@ -63,9 +63,10 @@ pub mod builders {
     use rosu_v2::model::mods::GameModsIntermode;
 
     use crate::models::{self, Score};
+    use crate::request::scores::FetchPure;
 
-    use super::scores::Fetch;
     use super::OsuClient;
+    use super::scores::Fetch;
     use super::*;
     /// A builder for a Beatmap request.
     pub struct BeatmapRequestBuilder {
@@ -161,7 +162,7 @@ pub mod builders {
     }
 
     impl ScoreRequestBuilder {
-        const SCORES_PER_PAGE: usize = 50;
+        const _SCORES_PER_PAGE: usize = 50;
 
         pub(crate) fn new(beatmap_id: u64) -> Self {
             ScoreRequestBuilder {
@@ -190,7 +191,7 @@ pub mod builders {
         async fn fetch_scores(
             &self,
             osu: &crate::OsuClient,
-            offset: usize,
+            _offset: usize,
         ) -> Result<Vec<models::Score>> {
             let scores = handle_not_found(match &self.user {
                 Some(user) => {
@@ -292,13 +293,17 @@ pub mod builders {
         }
 
         pub(crate) async fn build(self, client: OsuClient) -> Result<impl LazyBuffer<Score>> {
-            self.make_buffer(client).await
+            self.as_fetch().make_buffer(client).await
         }
     }
 
-    impl Fetch for UserScoreRequestBuilder {
+    impl FetchPure for UserScoreRequestBuilder {
         type Item = Score;
-        async fn fetch(&self, client: &crate::OsuClient, offset: usize) -> Result<Vec<Score>> {
+        async fn fetch_offset(
+            &self,
+            client: &crate::OsuClient,
+            offset: usize,
+        ) -> Result<Vec<Score>> {
             self.with_offset(client, offset).await
         }
 
@@ -319,11 +324,15 @@ pub struct UserEventRequest {
     pub user: UserID,
 }
 
-impl Fetch for UserEventRequest {
+impl FetchPure for UserEventRequest {
     type Item = UserEvent;
     const ITEMS_PER_PAGE: usize = 50;
 
-    async fn fetch(&self, client: &crate::OsuClient, offset: usize) -> Result<Vec<Self::Item>> {
+    async fn fetch_offset(
+        &self,
+        client: &crate::OsuClient,
+        offset: usize,
+    ) -> Result<Vec<Self::Item>> {
         Ok(handle_not_found(
             client
                 .rosu

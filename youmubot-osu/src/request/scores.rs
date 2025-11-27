@@ -6,18 +6,19 @@ use crate::OsuClient;
 
 pub const MAX_SCORE_PER_PAGE: usize = 1000;
 
-/// Fetch scores given an offset.
-/// Implemented for score requests.
+/// A stream of items.
 pub trait Fetch: Send {
     type Item: Send + Sync + 'static;
-    /// Scores per page.
-    const ITEMS_PER_PAGE: usize = MAX_SCORE_PER_PAGE;
-    /// Fetch items given an offset.
-    fn fetch(
-        &self,
+
+    /// Fetch the next batch of items.
+    fn next(
+        &mut self,
         client: &crate::OsuClient,
-        offset: usize,
-    ) -> impl Future<Output = Result<Vec<Self::Item>>> + Send;
+    ) -> impl Future<Output = Result<Option<Vec<Self::Item>>>> + Send;
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
 
     /// Create a buffer from the given Fetch implementation.
     fn make_buffer(
@@ -28,6 +29,58 @@ pub trait Fetch: Send {
         Self: Sized,
     {
         Fetcher::new(client, self)
+    }
+}
+
+/// Fetch scores given an offset.
+pub trait FetchPure: Send {
+    type Item: Send + Sync + 'static;
+
+    const ITEMS_PER_PAGE: usize = MAX_SCORE_PER_PAGE;
+
+    /// Fetch scores given an offset.
+    /// If less than `ITEMS_PER_PAGE` items are returned, it is considered the final page.
+    fn fetch_offset(
+        &self,
+        client: &crate::OsuClient,
+        offset: usize,
+    ) -> impl Future<Output = Result<Vec<Self::Item>>> + Send;
+
+    /// Returns a `Fetch` implementation.
+    fn as_fetch(self) -> impl Fetch<Item = Self::Item>
+    where
+        Self: Sized,
+    {
+        FetchPureImpl {
+            inner: self,
+            current_offset: 0,
+            ended: false,
+        }
+    }
+}
+
+struct FetchPureImpl<T> {
+    inner: T,
+    current_offset: usize,
+    ended: bool,
+}
+
+impl<T: FetchPure> Fetch for FetchPureImpl<T> {
+    type Item = T::Item;
+
+    async fn next(&mut self, client: &crate::OsuClient) -> Result<Option<Vec<Self::Item>>> {
+        if self.ended {
+            return Ok(None);
+        }
+        let results = self.inner.fetch_offset(client, self.current_offset).await?;
+        if results.len() < T::ITEMS_PER_PAGE {
+            self.ended = true;
+        }
+        if results.is_empty() {
+            return Ok(None);
+        }
+        self.current_offset += results.len();
+        Ok(Some(results))
     }
 }
 
@@ -155,7 +208,11 @@ impl<T: Fetch> LazyBuffer<T::Item> for Fetcher<T> {
     fn length_fetched(&self) -> Size {
         let count = self.len();
         if self.more_exists {
-            Size::AtLeast(count)
+            self.fetcher
+                .size_hint()
+                .1
+                .map(Size::Total)
+                .unwrap_or(Size::AtLeast(count))
         } else {
             Size::Total(count)
         }
@@ -209,17 +266,14 @@ impl<T: Fetch> Fetcher<T> {
         if !self.more_exists {
             return Ok(false);
         }
-        let offset = self.len();
-        let scores = self.fetcher.fetch(&self.client, offset).await?;
-        if scores.len() < T::ITEMS_PER_PAGE {
-            self.more_exists = false;
-        }
-        if scores.is_empty() {
-            return Ok(false);
-        }
+        let scores = match self.fetcher.next(&self.client).await? {
+            None => return Ok(false),
+            Some(res) => res,
+        };
         self.items.extend(scores);
         Ok(true)
     }
+
     fn len(&self) -> usize {
         self.items.len()
     }

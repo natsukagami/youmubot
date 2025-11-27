@@ -9,6 +9,8 @@ use request::scores::Fetch;
 use request::*;
 use youmubot_prelude::*;
 
+use crate::request::scores::FetchPure;
+
 pub mod discord;
 pub mod models;
 pub mod request;
@@ -77,6 +79,7 @@ impl OsuClient {
     /// Fetch user events for an user.
     pub async fn user_events(&self, user: UserID) -> Result<impl LazyBuffer<UserEvent>> {
         request::UserEventRequest { user }
+            .as_fetch()
             .make_buffer(self.clone())
             .await
     }
