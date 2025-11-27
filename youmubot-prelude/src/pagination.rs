@@ -96,8 +96,8 @@ pub trait Paginate: Send + Sized {
     // }
 
     /// A list of buttons to create that would interact with pagination logic.
-    fn interaction_buttons(&self) -> Vec<CreateButton> {
-        default_buttons(self)
+    fn interaction_buttons(&self, buttons: Vec<CreateButton>) -> Vec<CreateButton> {
+        buttons
     }
 
     /// Handle the incoming reaction. Defaults to calling `handle_pagination_reaction`, but you can do some additional handling
@@ -136,7 +136,9 @@ pub trait Paginate: Send + Sized {
 }
 
 pub async fn do_render(p: &mut impl Paginate, page: u8, m: &mut impl CanEdit) -> Result<bool> {
-    let btns = vec![CreateActionRow::Buttons(p.interaction_buttons())];
+    let btns = vec![CreateActionRow::Buttons(
+        p.interaction_buttons(default_buttons(p)),
+    )];
     do_render_with_btns(p, page, m, btns).await
 }
 
@@ -213,6 +215,10 @@ impl<Inner: Paginate> Paginate for WithPageCount<Inner> {
 
     fn is_empty(&self) -> Option<bool> {
         Some(self.page_count == 0)
+    }
+
+    fn interaction_buttons(&self, buttons: Vec<CreateButton>) -> Vec<CreateButton> {
+        self.inner.interaction_buttons(buttons)
     }
 }
 

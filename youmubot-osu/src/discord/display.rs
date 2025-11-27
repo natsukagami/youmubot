@@ -557,15 +557,14 @@ mod beatmapset {
             ))
         }
 
-        fn interaction_buttons(&self) -> Vec<CreateButton> {
-            let mut btns = pagination::default_buttons(self);
-            btns.insert(
+        fn interaction_buttons(&self, mut buttons: Vec<CreateButton>) -> Vec<CreateButton> {
+            buttons.insert(
                 0,
                 CreateButton::new(SHOW_ALL)
                     .emoji(ReactionType::try_from(SHOW_ALL_EMOTE).unwrap())
                     .label("Show all"),
             );
-            btns
+            buttons
         }
 
         async fn handle_reaction(
