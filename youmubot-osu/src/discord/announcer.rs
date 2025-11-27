@@ -47,15 +47,17 @@ pub struct Announcer {
     mapping_events: Arc<DashMap<UserId, Vec<UserEventMapping>>>,
     filled: flume::Sender<()>,
     filled_recv: flume::Receiver<()>,
+    env: OsuEnv,
 }
 
 impl Announcer {
-    pub fn new() -> Self {
+    pub fn new(env: OsuEnv) -> Self {
         let (send, recv) = flume::bounded(1);
         Self {
             mapping_events: Arc::new(DashMap::new()),
             filled: send,
             filled_recv: recv,
+            env,
         }
     }
 
@@ -64,6 +66,7 @@ impl Announcer {
         MappingAnnouncer {
             mapping_events: self.mapping_events.clone(),
             filled_recv: self.filled_recv.clone(),
+            env: self.env.clone(),
         }
     }
 }
@@ -71,6 +74,7 @@ impl Announcer {
 struct MappingAnnouncer {
     mapping_events: Arc<DashMap<UserId, Vec<UserEventMapping>>>,
     filled_recv: flume::Receiver<()>,
+    env: OsuEnv,
 }
 
 #[async_trait]
@@ -78,18 +82,17 @@ impl youmubot_prelude::Announcer for Announcer {
     async fn updates(
         &mut self,
         ctx: CacheAndHttp,
-        d: AppData,
+        _d: AppData,
         channels: MemberToChannels,
     ) -> Result<()> {
-        let env = d.read().await.get::<OsuEnv>().unwrap().clone();
         // For each user...
-        let users = env.saved_users.all().await?;
+        let users = self.env.saved_users.all().await?;
         users
             .into_iter()
             .map(|osu_user| {
                 channels
                     .channels_of(ctx.clone(), osu_user.user_id)
-                    .then(|chs| self.update_user(ctx.clone(), &env, osu_user, chs))
+                    .then(|chs| self.update_user(ctx.clone(), &self.env, osu_user, chs))
             })
             .collect::<stream::FuturesUnordered<_>>()
             .collect::<()>()
@@ -466,10 +469,9 @@ impl youmubot_prelude::Announcer for MappingAnnouncer {
     async fn updates(
         &mut self,
         ctx: CacheAndHttp,
-        d: AppData,
+        _d: AppData,
         channels: MemberToChannels,
     ) -> Result<()> {
-        let env = d.read().await.get::<OsuEnv>().unwrap().clone();
         self.filled_recv.recv_async().await?;
         self.mapping_events
             .iter_mut()
@@ -485,7 +487,7 @@ impl youmubot_prelude::Announcer for MappingAnnouncer {
                 let r = R {
                     ann: self,
                     ctx: &ctx,
-                    env: &env,
+                    env: &self.env,
                     user_id,
                     maps,
                 };

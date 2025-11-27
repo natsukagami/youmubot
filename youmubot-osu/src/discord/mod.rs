@@ -57,7 +57,7 @@ mod server_rank;
 pub(crate) struct OsuClient;
 
 impl TypeMapKey for OsuClient {
-    type Value = Arc<crate::OsuClient>;
+    type Value = crate::OsuClient;
 }
 
 /// The environment for osu! app commands.
@@ -68,7 +68,7 @@ pub struct OsuEnv {
     pub(crate) saved_users: OsuSavedUsers,
     pub(crate) last_beatmaps: OsuLastBeatmap,
     // clients
-    pub(crate) client: Arc<crate::OsuClient>,
+    pub(crate) client: crate::OsuClient,
     pub(crate) oppai: BeatmapCache,
     pub(crate) beatmaps: BeatmapMetaCache,
 }
@@ -114,7 +114,7 @@ pub async fn setup(
     let last_beatmaps = OsuLastBeatmap::new(prelude.sql.clone());
 
     // API client
-    let osu_client = Arc::new(
+    let mk_osu_client = async || {
         OsuHttpClient::new(
             std::env::var("OSU_API_CLIENT_ID")
                 .expect("Please set OSU_API_CLIENT_ID as osu! api v2 client ID.")
@@ -124,17 +124,11 @@ pub async fn setup(
                 .expect("Please set OSU_API_CLIENT_SECRET as osu! api v2 client secret."),
         )
         .await
-        .expect("osu! should be initialized"),
-    );
+        .expect("osu! should be initialized")
+    };
+    let osu_client = mk_osu_client().await;
     let oppai_cache = BeatmapCache::new(prelude.http.clone(), prelude.sql.clone());
     let beatmap_cache = BeatmapMetaCache::new(osu_client.clone(), prelude.sql.clone());
-
-    // Announcer
-    let ann = announcer::Announcer::new();
-    let map_ann = ann.mapping_announcer();
-    announcers
-        .add(announcer::ANNOUNCER_KEY, ann)
-        .add(announcer::ANNOUNCER_MAPPING_KEY, map_ann);
 
     // Legacy data
     data.insert::<OsuLastBeatmap>(last_beatmaps.clone());
@@ -153,6 +147,17 @@ pub async fn setup(
     };
 
     data.insert::<OsuEnv>(env.clone());
+
+    // Announcer
+    let ann = announcer::Announcer::new(OsuEnv {
+        // give the announcer its own osu client with a separate rate limiter
+        client: mk_osu_client().await,
+        ..env.clone()
+    });
+    let map_ann = ann.mapping_announcer();
+    announcers
+        .add(announcer::ANNOUNCER_KEY, ann)
+        .add(announcer::ANNOUNCER_MAPPING_KEY, map_ann);
 
     Ok(env)
 }

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use youmubot_db_sql::{models::osu as models, Pool};
 use youmubot_prelude::*;
 
@@ -12,7 +10,7 @@ use crate::{
 /// Does not cache non-Ranked beatmaps.
 #[derive(Clone)]
 pub struct BeatmapMetaCache {
-    client: Arc<OsuClient>,
+    client: OsuClient,
     pool: Pool,
 }
 
@@ -28,7 +26,7 @@ impl TypeMapKey for BeatmapMetaCache {
 
 impl BeatmapMetaCache {
     /// Create a new beatmap cache.
-    pub fn new(client: Arc<OsuClient>, pool: Pool) -> Self {
+    pub fn new(client: OsuClient, pool: Pool) -> Self {
         BeatmapMetaCache { client, pool }
     }
 
