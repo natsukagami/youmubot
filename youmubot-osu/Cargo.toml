@@ -25,7 +25,7 @@ serde = { version = "1.0.137", features = ["derive"] }
 serenity = "0.12"
 poise = { git = "https://github.com/serenity-rs/poise", branch = "current" }
 zip = "0.6.2"
-rand = "0.8"
+rand = "0.9"
 futures = "0.3"
 futures-util = "0.3"
 thiserror = "2"
