@@ -23,9 +23,7 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
-      "poise-0.6.1" = "sha256-iXyp9sR/vzPsexGPdRjfuKyFcGqvDdqiBAXnuw/HFo8=";
-      "rosu-v2-0.11.0" = "sha256-DF/UDb7bnwn5ESBEfZ0iDOyf4c/9NsEDWL45BObeve4=";
-      "rosu-pp-3.1.0" = "sha256-06nCeJreMVqDj89x31yHV5zz2kfJ9zXccafUbGuKDho=";
+      "rosu-v2-0.11.0" = "sha256-q4zacirIDyHPx8trp0HvfITBR02Of7usFjLooIczAOI=";
     };
   };
 
