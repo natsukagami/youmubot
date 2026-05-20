@@ -277,7 +277,10 @@ mod scores {
                                 let pp = b.get_pp_from(
                                     p.mode,
                                     Some(p.max_combo),
-                                    Stats::Raw(&p.statistics),
+                                    Stats::Raw {
+                                        stats: &p.statistics,
+                                        legacy_total_score: p.legacy_total_score(),
+                                    },
                                     &p.mods,
                                 );
                                 Ok(format!("{:.2}[?]", pp))

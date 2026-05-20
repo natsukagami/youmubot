@@ -40,8 +40,14 @@ pub struct BeatmapInfo {
 
 /// Stats to be consumed by [BeatmapContent::get_pp_from].
 pub enum Stats<'a> {
-    Raw(&'a ScoreStatistics),
-    AccOnly { acc: f64, misses: u32 },
+    Raw {
+        stats: &'a ScoreStatistics,
+        legacy_total_score: Option<u32>,
+    },
+    AccOnly {
+        acc: f64,
+        misses: u32,
+    },
 }
 
 /// Beatmap Info with attached 95/98/99/100% FC pp.
@@ -63,10 +69,18 @@ impl BeatmapContent {
             .lazer(true)
             .mods(mods.inner.clone());
         let perf = match stats {
-            Stats::Raw(stats) => {
+            Stats::Raw {
+                stats,
+                legacy_total_score,
+            } => {
                 let max_combo =
                     combo.unwrap_or_else(|| self.get_info_with(mode, mods).attrs.max_combo());
-                perf.state(Self::stats_to_state(stats, mode, max_combo))
+                perf.state(Self::stats_to_state(
+                    stats,
+                    mode,
+                    max_combo,
+                    legacy_total_score,
+                ))
             }
             Stats::AccOnly { acc, misses } => if let Some(combo) = combo {
                 perf.combo(combo)
@@ -80,7 +94,12 @@ impl BeatmapContent {
         attrs.pp()
     }
 
-    fn stats_to_state(stats: &ScoreStatistics, mode: Mode, max_combo: u32) -> ScoreState {
+    fn stats_to_state(
+        stats: &ScoreStatistics,
+        mode: Mode,
+        max_combo: u32,
+        legacy_total_score: Option<u32>,
+    ) -> ScoreState {
         let legacy = stats.as_legacy(mode.into());
         ScoreState {
             max_combo,
@@ -93,6 +112,7 @@ impl BeatmapContent {
             n100: legacy.count_100,
             n50: legacy.count_50,
             misses: legacy.count_miss,
+            legacy_total_score,
         }
     }
 

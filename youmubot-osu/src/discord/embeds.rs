@@ -381,7 +381,10 @@ impl ScoreEmbedBuilder<'_> {
                     let pp = content.get_pp_from(
                         mode,
                         Some(s.max_combo),
-                        Stats::Raw(&s.statistics),
+                        Stats::Raw {
+                            stats: &s.statistics,
+                            legacy_total_score: s.legacy_total_score(),
+                        },
                         &s.mods,
                     );
                     (pp, format!("{:.2}pp [?]", pp))
@@ -390,13 +393,21 @@ impl ScoreEmbedBuilder<'_> {
             let mut fc_stats = s.statistics.clone();
             fc_stats.great += fc_stats.miss;
             fc_stats.miss = 0;
-            Some(content.get_pp_from(mode, None, Stats::Raw(&fc_stats), &s.mods))
-                .filter(|&v| pp.0 < v) /* must be larger than real pp */
-                .map(|value| {
-                    let (_, original) = &pp;
-                    format!("{} ({:.2}pp if FC?)", original, value)
-                })
-                .unwrap_or(pp.1)
+            Some(content.get_pp_from(
+                mode,
+                None,
+                Stats::Raw {
+                    stats: &fc_stats,
+                    legacy_total_score: None,
+                },
+                &s.mods,
+            ))
+            .filter(|&v| pp.0 < v) /* must be larger than real pp */
+            .map(|value| {
+                let (_, original) = &pp;
+                format!("{} ({:.2}pp if FC?)", original, value)
+            })
+            .unwrap_or(pp.1)
         } else {
             pp.1
         };
@@ -575,7 +586,7 @@ impl FakeScore<'_> {
             .lazer(true)
             .mods(self.mods.inner.clone());
         let state = perf.generate_state()?;
-        let accuracy = state.accuracy(self.score_origin(attrs)) * 100.0;
+        let accuracy = state.hitresults.accuracy(self.score_origin(attrs)) * 100.0;
         let acc = format!("{:.2}%", accuracy);
         let score_line: Cow<str> = if self.is_ss(attrs.max_combo()) {
             "SS".into()

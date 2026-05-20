@@ -523,7 +523,10 @@ async fn get_leaderboard(
                             op.get_pp_from(
                                 mode_override.unwrap_or(b.mode),
                                 Some(score.max_combo),
-                                Stats::Raw(&score.statistics),
+                                Stats::Raw {
+                                    stats: &score.statistics,
+                                    legacy_total_score: score.legacy_total_score(),
+                                },
                                 &score.mods,
                             ),
                         )

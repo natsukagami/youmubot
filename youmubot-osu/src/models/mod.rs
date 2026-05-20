@@ -869,4 +869,13 @@ impl Score {
     pub fn mods_with_edition(&self) -> String {
         self.mods.to_string()
     }
+
+    /// Total score, if on stable
+    pub fn legacy_total_score(&self) -> Option<u32> {
+        if self.is_lazer() {
+            None
+        } else {
+            Some(self.score as u32)
+        }
+    }
 }
