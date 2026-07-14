@@ -364,8 +364,8 @@ impl ScoreEmbedBuilder<'_> {
         let accuracy = s.accuracy(mode);
         let info = content.get_info_with(mode, &s.mods);
         let stars = info.attrs.stars();
-        let score_line = score_line(s, accuracy, &info);
-        let pp = pp_line(mode, s, content);
+        let score_line = score_line(s, accuracy, &info, false);
+        let pp = pp_line(mode, s, content, false);
         let pp_gained = {
             let effective_pp = s.effective_pp.or_else(|| {
                 s.pp.zip(self.top_record)
@@ -475,9 +475,10 @@ impl ScoreEmbedBuilder<'_> {
     }
 }
 
-fn pp_line(mode: Mode, s: &Score, content: &BeatmapContent) -> String {
+fn pp_line(mode: Mode, s: &Score, content: &BeatmapContent, bolden: bool) -> String {
+    let marker = if bolden { "**" } else { "" };
     let pp =
-        s.pp.map(|pp| (pp, format!("{:.2}pp", pp)))
+        s.pp.map(|pp| (pp, format!("{}{:.2}{}pp", marker, pp, marker)))
             .unwrap_or_else(|| {
                 let pp = content.get_pp_from(
                     mode,
@@ -488,7 +489,7 @@ fn pp_line(mode: Mode, s: &Score, content: &BeatmapContent) -> String {
                     },
                     &s.mods,
                 );
-                (pp, format!("{:.2}pp [?]", pp))
+                (pp, format!("{}{:.2}{}pp [?]", marker, pp, marker))
             });
     let pp = if !s.perfect {
         let mut fc_stats = s.statistics.clone();
@@ -515,10 +516,16 @@ fn pp_line(mode: Mode, s: &Score, content: &BeatmapContent) -> String {
     pp
 }
 
-fn score_line(s: &Score, accuracy: f64, info: &super::oppai_cache::BeatmapInfo) -> String {
+fn score_line(
+    s: &Score,
+    accuracy: f64,
+    info: &super::oppai_cache::BeatmapInfo,
+    bolden: bool,
+) -> String {
+    let marker = if bolden { "**" } else { "" };
     match s.rank {
-        Rank::SS | Rank::SSH => "SS".to_string(),
-        _ if s.perfect => format!("{:.2}% FC", accuracy),
+        Rank::SS | Rank::SSH => format!("{}SS{}", marker, marker),
+        _ if s.perfect => format!("{}{:.2}% FC{}", marker, accuracy, marker),
         Rank::F => {
             let display = {
                 let p = ((s.count_300 + s.count_100 + s.count_50 + s.count_miss) as f64)
@@ -526,10 +533,10 @@ fn score_line(s: &Score, accuracy: f64, info: &super::oppai_cache::BeatmapInfo) 
                     * 100.0;
                 format!("FAILED @ {:.2}%", p)
             };
-            format!("{:.2}% {} combo [{}]", accuracy, s.max_combo, display)
+            format!("{}{:.2}%{} {}{}{} combo [{}]", marker, accuracy, marker, marker, s.max_combo, marker, display)
         }
         v => format!(
-            "{:.2}% {}x {} miss {} rank",
+            "{marker}{:.2}{marker}% {marker}{}{marker}x {marker}{}{marker} miss {marker}{}{marker} rank",
             accuracy, s.max_combo, s.count_miss, v
         ),
     }
@@ -800,17 +807,17 @@ pub(crate) fn user_embed(u: User, ex: UserExtras) -> CreateEmbed {
 fn achievements_line(c: &CollectedScore) -> String {
     let mut res = Vec::new();
     if let Some(v) = &c.kind.top_record {
-        res.push(format!("#{} top record!", *v + 1));
+        res.push(format!("#**{}** top record!", *v + 1));
     };
     if let Some(v) = &c.kind.world_record {
-        res.push(format!("#{} global rankings!", *v + 1));
+        res.push(format!("#**{}** global rankings!", *v + 1));
     };
     res.join(" | ")
 }
 
 pub(crate) fn scores_summary_embed(
     cs: &[(CollectedScore, BeatmapWithMode, BeatmapContent)],
-    u: &User,
+    u: &UserHeader,
 ) -> CreateEmbed {
     CreateEmbed::new()
         .title(format!("{} new plays from {}", cs.len(), u.username))
@@ -823,13 +830,16 @@ pub(crate) fn scores_summary_embed(
 
             let title = bm.0.full_title(&s.score.mods, stars);
             let value = format!(
-                "**[Score]({})**: {} | {} | {}\n\n{}",
+                "> **[[Score]]({})** {} | {}\n{} | {}\n\n-# {}",
                 s.score.link().unwrap_or("".to_owned()),
-                score_line(&s.score, s.score.accuracy(s.mode), &info),
-                pp_line(s.mode, &s.score, content),
+                s.score.date.format("<t:%s:R>"),
                 achievements_line(s),
+                score_line(&s.score, s.score.accuracy(s.mode), &info, true),
+                pp_line(s.mode, &s.score, content, true),
                 diff.format_info(s.mode, &s.score.mods, &bm.0)
-            );
+                    .replace("\n", "\n-# ")
+            )
+            .replace("\n", "\n> ");
 
             (title, value, false)
         }))

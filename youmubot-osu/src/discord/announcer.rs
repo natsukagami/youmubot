@@ -21,6 +21,7 @@ use youmubot_prelude::*;
 
 use crate::discord::calculate_weighted_map_age;
 use crate::discord::db::OsuUserMode;
+use crate::discord::embeds::scores_summary_embed;
 use crate::discord::interaction::mapset_button;
 use crate::models::{UserEventMapping, UserHeader};
 use crate::scores::LazyBuffer;
@@ -219,11 +220,14 @@ impl Announcer {
             let ctx = ctx.clone();
             let broadcast_to = broadcast_to.clone();
             spawn_future(async move {
-                for v in to_announce.into_iter() {
-                    v.send_message(&ctx, &env, user_id, &broadcast_to)
-                        .await
-                        .pls_ok();
-                }
+                // for v in to_announce.into_iter() {
+                //     v.send_message(&ctx, &env, user_id, &broadcast_to)
+                //         .await
+                //         .pls_ok();
+                // }
+                CollectedScore::send_all(to_announce, &ctx, &env, user_id, &broadcast_to)
+                    .await
+                    .pls_ok()
             });
         } else {
             eprintln!("[osu] Skipping user {} due to raced update", user_id)
@@ -363,6 +367,101 @@ impl CollectedScore {
 }
 
 impl CollectedScore {
+    async fn send_all(
+        scores: Vec<Self>,
+        ctx: impl CacheHttp,
+        env: &OsuEnv,
+        mention: UserId,
+        channels: &[ChannelId],
+    ) -> Result<Vec<Message>> {
+        // split the scores into ones worth sending separately
+        let (individuals, mut batch) = scores
+            .into_iter()
+            .partition::<Vec<_>, _>(|f| f.kind.is_worth_message(f.mode));
+
+        let individuals = individuals
+            .into_iter()
+            .map(|v| v.send_message(&ctx, env, mention, channels))
+            .collect::<stream::FuturesUnordered<_>>()
+            .filter_map(|v| future::ready(v.pls_ok()))
+            .collect::<Vec<_>>();
+
+        batch.sort_by_key(|s| s.score.date);
+
+        let (a, b) = futures::join!(
+            individuals,
+            Self::send_batch(batch, &ctx, env, mention, channels)
+        );
+
+        Ok(a.into_iter().flatten().chain(b.into_iter()).collect())
+    }
+
+    async fn send_batch(
+        scores: Vec<Self>,
+        ctx: impl CacheHttp,
+        env: &OsuEnv,
+        mention: UserId,
+        channels: &[ChannelId],
+    ) -> Vec<Message> {
+        if scores.len() <= 2 {
+            scores
+                .into_iter()
+                .map(|v| v.send_message(&ctx, env, mention, channels))
+                .collect::<stream::FuturesUnordered<_>>()
+                .filter_map(|v| future::ready(v.pls_ok()))
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .flatten()
+                .collect()
+        } else {
+            let scores = scores
+                .into_iter()
+                .map(async |v| {
+                    let (b, c) = v.get_beatmap(env).await?;
+                    Ok((v, b, c)) as Result<_>
+                })
+                .collect::<stream::FuturesUnordered<_>>()
+                .filter_map(|v| future::ready(v.pls_ok()))
+                .collect::<Vec<_>>()
+                .await;
+
+            scores
+                .chunks(4)
+                .flat_map(|ch| {
+                    let ctx = &ctx;
+                    let embed = scores_summary_embed(ch, &ch[0].0.user);
+
+                    channels
+                        .iter()
+                        .map(move |m| Self::send_batch_to(*m, mention, ctx, embed.clone()))
+                })
+                .collect::<stream::FuturesUnordered<_>>()
+                .filter_map(|v| future::ready(v.pls_ok()))
+                .collect::<Vec<_>>()
+                .await
+        }
+    }
+
+    async fn send_batch_to(
+        channel: ChannelId,
+        mention: UserId,
+        ctx: &impl CacheHttp,
+        embed: serenity::all::CreateEmbed,
+    ) -> Result<Message> {
+        let guild = channel.to_channel(ctx).await?.guild().unwrap().guild_id;
+        let mem = guild.member(ctx, mention).await?;
+        let msg = channel
+            .send_message(
+                ctx,
+                CreateMessage::new()
+                    .content(format!("New scores from **{}**!", mem.distinct()))
+                    .add_embed(embed),
+            )
+            .await?;
+        Ok(msg)
+    }
+
     async fn send_message(
         self,
         ctx: impl CacheHttp,
@@ -469,10 +568,7 @@ impl ScoreType {
     }
 
     fn announcement_msg(&self, mode: Mode, mention: &Member) -> String {
-        let mention_user = self.top_record.is_some_and(|r| r <= 25)
-            || self
-                .world_record
-                .is_some_and(|w| if mode == Mode::Std { w <= 100 } else { w <= 50 });
+        let mention_user = self.is_worth_message(mode);
         let title = if self.top_record.is_some() {
             "New top record"
         } else if self.world_record.is_some() {
@@ -485,6 +581,13 @@ impl ScoreType {
         } else {
             format!("{} from **{}**!", title, mention.distinct())
         }
+    }
+
+    pub fn is_worth_message(&self, mode: Mode) -> bool {
+        self.top_record.is_some_and(|r| r <= 25)
+            || self
+                .world_record
+                .is_some_and(|w| if mode == Mode::Std { w <= 100 } else { w <= 50 })
     }
 }
 
