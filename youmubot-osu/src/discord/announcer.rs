@@ -279,6 +279,33 @@ struct CollectedScore {
 
 impl CollectedScore {
     fn merge(scores: impl IntoIterator<Item = Self>) -> impl Iterator<Item = Self> {
+        let scores = {
+            let mut mp = std::collections::HashMap::<u64, Vec<Self>>::new();
+            scores
+                .into_iter()
+                .for_each(|v| match mp.entry(v.score.beatmap_id) {
+                    std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
+                        let ss = occupied_entry.get_mut();
+                        if ss
+                            .iter()
+                            .find(|w| {
+                                w.score.mode == v.score.mode
+                                    && w.score.mods == v.score.mods
+                                    && w.score.score >= v.score.score
+                                    && w.score.pp >= v.score.pp
+                            })
+                            .is_none()
+                        {
+                            ss.push(v);
+                        }
+                    }
+                    std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                        vacant_entry.insert(vec![v]);
+                    }
+                });
+
+            mp.into_values().flatten()
+        };
         let mut mp = std::collections::HashMap::<u64, Self>::new();
         scores
             .into_iter()
