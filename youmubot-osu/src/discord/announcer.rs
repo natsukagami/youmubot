@@ -270,7 +270,7 @@ impl Announcer {
     }
 }
 
-struct CollectedScore {
+pub(crate) struct CollectedScore {
     pub user: UserHeader,
     pub score: Score,
     pub mode: Mode,
@@ -442,7 +442,7 @@ impl CollectedScore {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ScoreType {
+pub(crate) struct ScoreType {
     pub top_record: Option<u8>,
     pub world_record: Option<u16>,
 }

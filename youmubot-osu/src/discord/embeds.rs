@@ -1,6 +1,9 @@
 use super::{oppai_cache::Stats, BeatmapWithMode, UserExtras};
 use crate::{
-    discord::oppai_cache::{BeatmapContent, BeatmapInfoWithPP},
+    discord::{
+        announcer::CollectedScore,
+        oppai_cache::{BeatmapContent, BeatmapInfoWithPP},
+    },
     models::{ApprovalStatus, Beatmap, Difficulty, Mode, Mods, Rank, Score, User},
     UserHeader,
 };
@@ -13,6 +16,9 @@ use serenity::{
 };
 use std::{borrow::Cow, time::Duration};
 use youmubot_prelude::*;
+
+/// osu! pink colour
+const COLOUR_OSU_PINK: i32 = 0xffb6c1;
 
 /// Writes a number grouped in groups of 3.
 pub(crate) fn grouped_number(num: u64) -> String {
@@ -143,7 +149,7 @@ pub fn beatmap_offline_embed(
             CreateEmbedAuthor::new(&metadata.creator)
                 .url(format!("https://osu.ppy.sh/users/{}", metadata.creator))
         })
-        .color(0xffb6c1)
+        .color(COLOUR_OSU_PINK)
         .field(
             "Calculated pp",
             format!(
@@ -206,7 +212,7 @@ pub fn beatmap_embed(
         )
         .url(b.link())
         .image(b.cover_url())
-        .color(0xffb6c1)
+        .color(COLOUR_OSU_PINK)
         .fields({
             let pp = info.1;
             std::iter::once((
@@ -257,7 +263,7 @@ pub fn beatmapset_embed(bs: &'_ [Beatmap], m: Option<Mode>) -> CreateEmbed {
             "https://assets.ppy.sh/beatmaps/{}/covers/cover.jpg",
             b.beatmapset_id
         ))
-        .color(0xffb6c1)
+        .color(COLOUR_OSU_PINK)
         .description(beatmap_description(b, Mods::NOMOD))
         .fields(bs.iter().rev().take(MAX_DIFFS).rev().map(|b: &Beatmap| {
             let owners: Cow<str> = match b.non_gd_owners() {
@@ -358,59 +364,8 @@ impl ScoreEmbedBuilder<'_> {
         let accuracy = s.accuracy(mode);
         let info = content.get_info_with(mode, &s.mods);
         let stars = info.attrs.stars();
-        let score_line = match s.rank {
-            Rank::SS | Rank::SSH => "SS".to_string(),
-            _ if s.perfect => format!("{:.2}% FC", accuracy),
-            Rank::F => {
-                let display = {
-                    let p = ((s.count_300 + s.count_100 + s.count_50 + s.count_miss) as f64)
-                        / (info.object_count as f64)
-                        * 100.0;
-                    format!("FAILED @ {:.2}%", p)
-                };
-                format!("{:.2}% {} combo [{}]", accuracy, s.max_combo, display)
-            }
-            v => format!(
-                "{:.2}% {}x {} miss {} rank",
-                accuracy, s.max_combo, s.count_miss, v
-            ),
-        };
-        let pp =
-            s.pp.map(|pp| (pp, format!("{:.2}pp", pp)))
-                .unwrap_or_else(|| {
-                    let pp = content.get_pp_from(
-                        mode,
-                        Some(s.max_combo),
-                        Stats::Raw {
-                            stats: &s.statistics,
-                            legacy_total_score: s.legacy_total_score(),
-                        },
-                        &s.mods,
-                    );
-                    (pp, format!("{:.2}pp [?]", pp))
-                });
-        let pp = if !s.perfect {
-            let mut fc_stats = s.statistics.clone();
-            fc_stats.great += fc_stats.miss;
-            fc_stats.miss = 0;
-            Some(content.get_pp_from(
-                mode,
-                None,
-                Stats::Raw {
-                    stats: &fc_stats,
-                    legacy_total_score: None,
-                },
-                &s.mods,
-            ))
-            .filter(|&v| pp.0 < v) /* must be larger than real pp */
-            .map(|value| {
-                let (_, original) = &pp;
-                format!("{} ({:.2}pp if FC?)", original, value)
-            })
-            .unwrap_or(pp.1)
-        } else {
-            pp.1
-        };
+        let score_line = score_line(s, accuracy, &info);
+        let pp = pp_line(mode, s, content);
         let pp_gained = {
             let effective_pp = s.effective_pp.or_else(|| {
                 s.pp.zip(self.top_record)
@@ -476,7 +431,7 @@ impl ScoreEmbedBuilder<'_> {
                     .url(u.link())
                     .icon_url(u.avatar_url()),
             )
-            .color(0xffb6c1)
+            .color(COLOUR_OSU_PINK)
             .title(
                 MessageBuilder::new()
                     .push_safe(&u.username)
@@ -517,6 +472,66 @@ impl ScoreEmbedBuilder<'_> {
             m = m.footer(CreateEmbedFooter::new(footer));
         }
         m
+    }
+}
+
+fn pp_line(mode: Mode, s: &Score, content: &BeatmapContent) -> String {
+    let pp =
+        s.pp.map(|pp| (pp, format!("{:.2}pp", pp)))
+            .unwrap_or_else(|| {
+                let pp = content.get_pp_from(
+                    mode,
+                    Some(s.max_combo),
+                    Stats::Raw {
+                        stats: &s.statistics,
+                        legacy_total_score: s.legacy_total_score(),
+                    },
+                    &s.mods,
+                );
+                (pp, format!("{:.2}pp [?]", pp))
+            });
+    let pp = if !s.perfect {
+        let mut fc_stats = s.statistics.clone();
+        fc_stats.great += fc_stats.miss;
+        fc_stats.miss = 0;
+        Some(content.get_pp_from(
+            mode,
+            None,
+            Stats::Raw {
+                stats: &fc_stats,
+                legacy_total_score: None,
+            },
+            &s.mods,
+        ))
+        .filter(|&v| pp.0 < v) /* must be larger than real pp */
+        .map(|value| {
+            let (_, original) = &pp;
+            format!("{} ({:.2}pp if FC?)", original, value)
+        })
+        .unwrap_or(pp.1)
+    } else {
+        pp.1
+    };
+    pp
+}
+
+fn score_line(s: &Score, accuracy: f64, info: &super::oppai_cache::BeatmapInfo) -> String {
+    match s.rank {
+        Rank::SS | Rank::SSH => "SS".to_string(),
+        _ if s.perfect => format!("{:.2}% FC", accuracy),
+        Rank::F => {
+            let display = {
+                let p = ((s.count_300 + s.count_100 + s.count_50 + s.count_miss) as f64)
+                    / (info.object_count as f64)
+                    * 100.0;
+                format!("FAILED @ {:.2}%", p)
+            };
+            format!("{:.2}% {} combo [{}]", accuracy, s.max_combo, display)
+        }
+        v => format!(
+            "{:.2}% {}x {} miss {} rank",
+            accuracy, s.max_combo, s.count_miss, v
+        ),
     }
 }
 
@@ -617,7 +632,7 @@ impl FakeScore<'_> {
             .author(
                 CreateEmbedAuthor::new(&youmu.name).icon_url(youmu.static_avatar_url().unwrap()),
             )
-            .color(0xffb6c1)
+            .color(COLOUR_OSU_PINK)
             .title(
                 MessageBuilder::new()
                     .push_safe(&youmu.name)
@@ -691,7 +706,7 @@ pub(crate) fn user_embed(u: User, ex: UserExtras) -> CreateEmbed {
     CreateEmbed::new()
         .title(MessageBuilder::new().push_safe(u.username).build())
         .url(format!("https://osu.ppy.sh/users/{}", u.id))
-        .color(0xffb6c1)
+        .color(COLOUR_OSU_PINK)
         .thumbnail(format!("https://a.ppy.sh/{}", u.id))
         .description(format!("Member since **{}**", u.joined.format("<t:%s:R>")))
         .field(
@@ -779,5 +794,43 @@ pub(crate) fn user_embed(u: User, ex: UserExtras) -> CreateEmbed {
                     .build(),
                 false,
             )
+        }))
+}
+
+fn achievements_line(c: &CollectedScore) -> String {
+    let mut res = Vec::new();
+    if let Some(v) = &c.kind.top_record {
+        res.push(format!("#{} top record!", *v + 1));
+    };
+    if let Some(v) = &c.kind.world_record {
+        res.push(format!("#{} global rankings!", *v + 1));
+    };
+    res.join(" | ")
+}
+
+pub(crate) fn scores_summary_embed(
+    cs: &[(CollectedScore, BeatmapWithMode, BeatmapContent)],
+    u: &User,
+) -> CreateEmbed {
+    CreateEmbed::new()
+        .title(format!("{} new plays from {}", cs.len(), u.username))
+        .colour(COLOUR_OSU_PINK)
+        .thumbnail(u.avatar_url())
+        .fields(cs.iter().map(|(s, bm, content)| {
+            let info = content.get_info_with(s.mode, &s.score.mods);
+            let stars = info.attrs.stars();
+            let diff = bm.0.difficulty.apply_mods(&s.score.mods, stars);
+
+            let title = bm.0.full_title(&s.score.mods, stars);
+            let value = format!(
+                "**[Score]({})**: {} | {} | {}\n\n{}",
+                s.score.link().unwrap_or("".to_owned()),
+                score_line(&s.score, s.score.accuracy(s.mode), &info),
+                pp_line(s.mode, &s.score, content),
+                achievements_line(s),
+                diff.format_info(s.mode, &s.score.mods, &bm.0)
+            );
+
+            (title, value, false)
         }))
 }
